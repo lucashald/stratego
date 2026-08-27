@@ -2,6 +2,7 @@ class_name StrategoBoardView
 extends Control
 
 signal order_changed(message: String)
+signal examine_requested(piece_id: int)
 signal selection_changed(description: String)
 signal zoom_changed(percent: int)
 signal undo_availability_changed(available: bool)
@@ -42,6 +43,15 @@ var drag_start := Vector2.ZERO
 var drag_current := Vector2.ZERO
 var drag_selecting := false
 var drag_additive := false
+var drag_force_select := false
+
+const CONTEXT_EXAMINE := 0
+const CONTEXT_SHOOT := 1
+const CONTEXT_SUPPRESS := 2
+
+var _context_menu: PopupMenu = null
+var _context_menu_cell := Vector2i(-1, -1)
+var _context_menu_piece := -1
 var middle_panning := false
 var order_undo_stack: Array[Dictionary] = []
 
@@ -602,22 +612,7 @@ func _gui_input(event: InputEvent) -> void:
 	if not interaction_enabled or game.game_over or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
 		return
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		if not selected_piece_ids.is_empty():
-			var before := _current_order_snapshot()
-			var result: Dictionary
-			if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
-				for piece_id in selected_piece_ids:
-					game.clear_unit_order(viewing_player, piece_id)
-				result = {"ok": true, "message": "Removed the selected leftover move%s." % ["s" if selected_piece_ids.size() > 1 else ""]}
-			elif selected_piece_ids.size() > 1:
-				result = game.pop_group_order_step(viewing_player, selected_piece_ids)
-			else:
-				result = game.pop_order_step(viewing_player, selected_piece_id)
-			if bool(result.get("ok", false)) and before != _current_order_snapshot():
-				_record_order_undo(before)
-			order_changed.emit(result.get("message", "Removed the last impulse."))
-			_emit_selected_description()
-			queue_redraw()
+		_open_context_menu(event.position)
 		accept_event()
 		return
 	if event.button_index != MOUSE_BUTTON_LEFT:
@@ -628,6 +623,7 @@ func _gui_input(event: InputEvent) -> void:
 		drag_current = event.position
 		drag_selecting = false
 		drag_additive = event.shift_pressed or event.ctrl_pressed
+		drag_force_select = event.alt_pressed
 		accept_event()
 		return
 	if not left_button_down:
@@ -636,7 +632,7 @@ func _gui_input(event: InputEvent) -> void:
 	if drag_selecting:
 		_select_in_rect(Rect2(drag_start, drag_current - drag_start).abs(), drag_additive)
 	else:
-		_handle_left_click(event.position, drag_additive)
+		_handle_left_click(event.position, drag_additive, drag_force_select)
 	drag_selecting = false
 	queue_redraw()
 	accept_event()
@@ -655,14 +651,92 @@ func _select_in_rect(rect: Rect2, additive: bool) -> void:
 	_emit_selected_description()
 
 
-func _handle_left_click(screen_position: Vector2, additive: bool) -> void:
+## Right-click menu for a board square. Examine is always offered; Shoot and
+## Suppress Square appear only when a selected Archer could actually declare
+## them, so the menu doubles as a statement of what is legal right now.
+func _open_context_menu(screen_position: Vector2) -> void:
+	var geometry := _board_geometry()
+	var local: Vector2 = screen_position - Vector2(geometry.origin)
+	if local.x < 0 or local.y < 0 or local.x >= geometry.side or local.y >= geometry.side:
+		return
+	var cell := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
+	if not game.is_inside(cell): return
+	var occupant := game.piece_at(cell)
+	var visible_occupant := not occupant.is_empty() and game.is_piece_visible_to(occupant, viewing_player)
+	if _context_menu == null:
+		_context_menu = PopupMenu.new()
+		_context_menu.id_pressed.connect(_on_context_menu_pressed)
+		add_child(_context_menu)
+	_context_menu.clear()
+	_context_menu_cell = cell
+	_context_menu_piece = int(occupant.id) if visible_occupant else StrategoGame.EMPTY
+	if visible_occupant:
+		_context_menu.add_item("Examine", CONTEXT_EXAMINE)
+	var archer_id := _selected_archer_id()
+	if archer_id != StrategoGame.EMPTY:
+		var enemy_here := visible_occupant and not game.are_allied_players(viewing_player, int(occupant.player))
+		if enemy_here and game.ranged_order_is_available(viewing_player, archer_id, cell, int(occupant.id)):
+			_context_menu.add_item("Shoot", CONTEXT_SHOOT)
+		if game.ranged_order_is_available(viewing_player, archer_id, cell):
+			_context_menu.add_item("Suppress Square", CONTEXT_SUPPRESS)
+	if _context_menu.item_count == 0: return
+	_context_menu.position = Vector2i(get_screen_position() + screen_position)
+	_context_menu.reset_size()
+	_context_menu.popup()
+
+
+func _selected_archer_id() -> int:
+	if not interaction_enabled or game.phase != StrategoGame.PHASE_PLANNING: return StrategoGame.EMPTY
+	for piece_id in selected_piece_ids:
+		if game.pieces[piece_id].role == StrategoGame.ROLE_ARCHER: return int(piece_id)
+	return StrategoGame.EMPTY
+
+
+func _on_context_menu_pressed(id: int) -> void:
+	if id == CONTEXT_EXAMINE:
+		if _context_menu_piece != StrategoGame.EMPTY: examine_requested.emit(_context_menu_piece)
+		return
+	var archer_id := _selected_archer_id()
+	if archer_id == StrategoGame.EMPTY: return
+	var before := _current_order_snapshot()
+	var result: Dictionary
+	if id == CONTEXT_SHOOT:
+		result = game.set_ranged_order(viewing_player, archer_id, _context_menu_cell, _context_menu_piece)
+	else:
+		result = game.set_suppress_order(viewing_player, archer_id, _context_menu_cell)
+	if bool(result.get("ok", false)) and before != _current_order_snapshot():
+		_record_order_undo(before)
+	order_changed.emit("Order updated." if bool(result.get("ok", false)) else String(result.get("message", "Invalid order.")))
+	_emit_selected_description()
+	queue_redraw()
+
+
+## True when a click on an occupied friendly square should extend the current
+## order rather than select the formation standing there. The engine allows a
+## formation to step into a square a friendly one is vacating, so refusing to
+## issue the order at all would be more restrictive than the rules.
+func _click_continues_order(clicked: Vector2i) -> bool:
+	if not interaction_enabled or selected_piece_ids.is_empty() or selected_piece_id == StrategoGame.EMPTY:
+		return false
+	for piece_id in selected_piece_ids:
+		if game.pieces[piece_id].position == clicked: return false
+	var anchor_id := _command_anchor_id()
+	if anchor_id == StrategoGame.EMPTY: return false
+	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
+	return StrategoGame.are_adjacent(projected, clicked)
+
+
+func _handle_left_click(screen_position: Vector2, additive: bool, force_select: bool = false) -> void:
 	var geometry := _board_geometry()
 	var local: Vector2 = screen_position - Vector2(geometry.origin)
 	if local.x < 0 or local.y < 0 or local.x >= geometry.side or local.y >= geometry.side:
 		return
 	var clicked := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
 	var clicked_piece := game.piece_at(clicked)
-	if not clicked_piece.is_empty() and int(clicked_piece.player) == viewing_player and game.is_movable(clicked_piece):
+	var selects_clicked_piece := not clicked_piece.is_empty() and int(clicked_piece.player) == viewing_player and game.is_movable(clicked_piece)
+	if selects_clicked_piece and not force_select and _click_continues_order(clicked):
+		selects_clicked_piece = false
+	if selects_clicked_piece:
 		var clicked_id := int(clicked_piece.id)
 		if additive:
 			if clicked_id in selected_piece_ids:
@@ -695,8 +769,10 @@ func _handle_left_click(screen_position: Vector2, additive: bool) -> void:
 			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction)
 	elif leftover_mode:
 		result = game.set_leftover_order(viewing_player, selected_piece_id, clicked)
-	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked):
-		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked)
+	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked, int(clicked_piece.id)):
+		# Clicking a formation is aimed fire; suppressing a square is the
+		# right-click menu's job.
+		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked, int(clicked_piece.id))
 	else:
 		result = game.append_order_step(viewing_player, selected_piece_id, clicked)
 	if bool(result.get("ok", false)) and before != _current_order_snapshot():

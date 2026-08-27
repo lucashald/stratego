@@ -44,7 +44,8 @@ func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, _rng: R
 	if piece.role == StrategoGame.ROLE_ARCHER:
 		var ranged_enemy := _ranged_enemy(game, piece.position, player)
 		if not ranged_enemy.is_empty():
-			game.set_unit_order(player, int(piece.id), [], ranged_enemy.position)
+			# Aimed fire, so the shot follows the formation if it moves.
+			game.set_unit_order(player, int(piece.id), [], ranged_enemy.position, Vector2i(-1, -1), int(ranged_enemy.id))
 			return
 	var target := _choose_target(game, piece, player)
 	var path: Array[Vector2i] = []
@@ -86,7 +87,7 @@ func _ranged_enemy(game: StrategoGame, position: Vector2i, player: int) -> Dicti
 	for target: Dictionary in game.pieces:
 		if not target.alive or target.type == StrategoGame.FLAG or game.are_allied_players(player, int(target.player)) or not game.is_piece_visible_to(target, player):
 			continue
-		var distance := absi(position.x - target.position.x) + absi(position.y - target.position.y)
+		var distance := StrategoGame.grid_distance(position, target.position)
 		if distance in [1, 2] and distance < best_distance:
 			best = target
 			best_distance = distance

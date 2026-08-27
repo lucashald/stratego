@@ -137,8 +137,13 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	var archer_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(6, 6))
 	var long_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(8, 6))
 	_expect(bool(long_shot.ok), "stationary Archers accept ranged targets up to two squares away")
-	var too_distant_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(9, 6))
-	_expect(not bool(too_distant_shot.ok), "Archer orders reject ranged targets beyond two squares")
+	var overwatch_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(9, 6))
+	_expect(bool(overwatch_shot.ok), "stationary Archers may aim beyond two squares as overwatch")
+	_expect(game.declared_shot_type_for(StrategoGame.RED, archer_id, Vector2i(9, 6)) == StrategoGame.SHOT_LONG, "an overwatch declaration is a long shot")
+	var moved_long_shot := game.set_unit_order(StrategoGame.RED, archer_id, [Vector2i(6, 7)], Vector2i(8, 6))
+	_expect(not bool(moved_long_shot.ok), "an Archer that has ordered movement may only declare an adjacent target")
+	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
+	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
 
 
 func _test_group_orders_are_atomic() -> void:
@@ -373,13 +378,66 @@ func _test_ranged_focus_fire_is_simultaneous() -> void:
 	var long_events := _ready_and_resolve(long_game, [4])
 	var long_shots := _events_with_action(long_events, "ranged")
 	_expect(long_shots.size() == 1 and int(long_shots[0].range) == 2 and int(long_shots[0].movement_cost) == 3, "a stationary Light Archer can fire at range 2 by consuming its full movement")
-	_expect(long_game.pieces[long_target].strength == 2 and int(long_game.pieces[long_archer].movement_used) == 3, "range-2 fire deals normal ranged damage and leaves no leftover movement")
-	var conditional_game := _test_game()
-	var conditional_archer := conditional_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
-	conditional_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
-	var conditional_order := conditional_game.set_unit_order(StrategoGame.RED, conditional_archer, [Vector2i(1, 2)], Vector2i(3, 1))
-	var conditional_events := _ready_and_resolve(conditional_game)
-	_expect(bool(conditional_order.ok) and _events_with_action(conditional_events, "ranged").is_empty(), "range-2 eligibility uses actual movement: a contingent long shot is skipped if the Archer moved")
+	_expect(long_game.pieces[long_target].strength == 2, "range-2 fire deals normal ranged damage")
+	_expect(long_game.movement_committed(long_game.pieces[long_archer]) == 3 and not long_game.can_receive_leftover_order(StrategoGame.RED, long_archer), "a long shot that fires consumes everything and leaves no leftover movement")
+	_test_aimed_fire_follows_its_target()
+	_test_suppressing_fire_hits_the_square()
+	_test_fizzled_shots_still_cost_the_aim_point()
+
+
+## Aimed fire tracks the formation: a target that moves but stays in range is
+## still hit, which is the whole point of targeting a unit rather than a square.
+func _test_aimed_fire_follows_its_target() -> void:
+	var game := _test_game()
+	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	var target := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
+	game.set_unit_order(StrategoGame.RED, archer, [], Vector2i(3, 1), Vector2i(-1, -1), target)
+	game.set_unit_order(StrategoGame.BLUE, target, [Vector2i(2, 1)])
+	var events := _ready_and_resolve(game, [4])
+	var shots := _events_with_action(events, "ranged")
+	_expect(shots.size() == 1 and int(shots[0].target_id) == target, "aimed fire still hits a target that moved within range")
+	_expect(int(shots[0].range) == 1, "the shot resolves at the range the target actually ended up at")
+	var away_game := _test_game()
+	var away_archer := away_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	var away_target := away_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
+	away_game.set_unit_order(StrategoGame.RED, away_archer, [], Vector2i(3, 1), Vector2i(-1, -1), away_target)
+	away_game.set_unit_order(StrategoGame.BLUE, away_target, [Vector2i(4, 1), Vector2i(5, 1), Vector2i(6, 1)])
+	var away_events := _ready_and_resolve(away_game)
+	_expect(_events_with_action(away_events, "ranged").is_empty(), "aimed fire finds nothing when the target breaks out of range")
+	_expect(_events_with_action(away_events, "ranged_fizzle").size() == 1, "a shot that finds nothing is reported as a fizzle")
+
+
+## Suppressing fire is aimed at ground, so whoever holds that square takes it.
+func _test_suppressing_fire_hits_the_square() -> void:
+	var game := _test_game()
+	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	var mover := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 1), 6)
+	game.set_suppress_order(StrategoGame.RED, archer, Vector2i(3, 1))
+	game.set_unit_order(StrategoGame.BLUE, mover, [Vector2i(3, 1)])
+	var events := _ready_and_resolve(game, [4])
+	var shots := _events_with_action(events, "ranged")
+	_expect(shots.size() == 1 and int(shots[0].target_id) == mover, "suppressing fire hits whoever moves onto the targeted square")
+
+
+## The aim point is spent during main movement, so a shot that never fires still
+## costs it. That is what stops overwatch from being free for a Heavy Archer.
+func _test_fizzled_shots_still_cost_the_aim_point() -> void:
+	var game := _test_game()
+	var light := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	var heavy := game.add_piece(StrategoGame.HEAVY_ARCHER, StrategoGame.RED, Vector2i(1, 5), 7)
+	var bait := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 1), 6)
+	game.set_unit_order(StrategoGame.RED, light, [], Vector2i(5, 1), Vector2i(-1, -1), bait)
+	game.set_unit_order(StrategoGame.RED, heavy, [], Vector2i(5, 1), Vector2i(-1, -1), bait)
+	game.set_unit_order(StrategoGame.BLUE, bait, [Vector2i(6, 1), Vector2i(7, 1), Vector2i(8, 1)])
+	# Stop after main and ranged so leftover eligibility can still be inspected.
+	for player in game.active_players.duplicate():
+		game.mark_player_ready(player)
+	var events := game.resolve_main_and_ranged()
+	_expect(game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING, "the round pauses for leftover planning after ranged fire")
+	_expect(_events_with_action(events, "ranged_fizzle").size() == 2, "both overwatch declarations fizzle when the target never closes")
+	_expect(int(game.pieces[light].aim_spent) == 1 and int(game.pieces[heavy].aim_spent) == 1, "a fizzled shot still spends the aim point")
+	_expect(game.can_receive_leftover_order(StrategoGame.RED, light), "a Light Archer keeps a leftover move after a fizzled shot")
+	_expect(not game.can_receive_leftover_order(StrategoGame.RED, heavy), "aiming costs a Heavy Archer its entire round")
 
 
 func _test_archer_loss_blocks_shot_and_win_allows_it() -> void:

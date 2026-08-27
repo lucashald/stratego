@@ -73,6 +73,7 @@ func _build_interface() -> void:
 	board_view = StrategoBoardView.new()
 	board_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	board_view.order_changed.connect(_on_order_changed)
+	board_view.examine_requested.connect(_on_examine_requested)
 	board_view.selection_changed.connect(_on_selection_changed)
 	board_view.zoom_changed.connect(_on_zoom_changed)
 	board_view.undo_availability_changed.connect(_on_undo_availability_changed)
@@ -945,6 +946,27 @@ func _on_order_changed(message: String) -> void:
 	_update_interface(false)
 
 
+## Examine reports what the formation is and what its role and weight do. A
+## fuller panel belongs here later; for now it answers "what am I looking at".
+func _on_examine_requested(piece_id: int) -> void:
+	if piece_id < 0 or piece_id >= game.pieces.size(): return
+	var piece: Dictionary = game.pieces[piece_id]
+	var role := String(piece.role)
+	var weight := String(piece.weight)
+	var role_note: String = {
+		StrategoGame.ROLE_INFANTRY: "+%d battle score when defending." % StrategoGame.ROLE_BONUS,
+		StrategoGame.ROLE_CAVALRY: "+%d battle score when attacking." % StrategoGame.ROLE_BONUS,
+		StrategoGame.ROLE_ARCHER: "No melee bonus; may shoot during the ranged phase.",
+	}.get(role, "")
+	var known := game.is_piece_visible_to(piece, board_view.viewing_player)
+	var strength := "Strength %d/%d." % [int(piece.strength), int(piece.max_strength)] if known else "Strength unknown."
+	_log_line("%s: %s %s. Movement %d, Armor %d. %s %s" % [
+		String(piece.type), weight.capitalize(), role.capitalize(),
+		game.movement_limit_for(piece), int(piece.armor), strength, role_note,
+	], true)
+	detail_label.text = "%s %s · movement %d · armor %d · %s" % [weight.capitalize(), role.capitalize(), game.movement_limit_for(piece), int(piece.armor), strength]
+
+
 func _on_selection_changed(description: String) -> void:
 	detail_label.text = description
 	_update_inspector()
@@ -1074,7 +1096,7 @@ func _update_inspector() -> void:
 		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty()
 	if board_view == null or game == null or board_view.selected_piece_ids.is_empty():
 		inspector_title.text = "ISSUE FORMATION ORDERS"
-		inspector_stats.text = "Select one or more banners.\n\n[color=#9fc8e8]Shift-click or drag[/color] to build a group.\n\nMouse wheel zooms; middle-drag pans."
+		inspector_stats.text = "Select one or more banners.\n\n[color=#9fc8e8]Shift-click or drag[/color] to build a group.\n\n[color=#9fc8e8]Alt-click[/color] selects a formation instead of stepping into its square.\n\nMouse wheel zooms; middle-drag pans."
 		inspector_order.text = "No formation selected"
 		return
 	if board_view.selected_piece_ids.size() > 1:

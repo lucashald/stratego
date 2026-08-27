@@ -3,6 +3,11 @@ extends RefCounted
 
 const BOARD_SIZE := 20
 const DEFAULT_VISION_RANGE := 4
+
+## Board topology. Every adjacency and distance question in the engine goes
+## through these four functions, so a different grid (hex, or square with
+## diagonals) only needs them and DIRECTIONS rewritten.
+const DIRECTIONS: Array[Vector2i] = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
 const EMPTY := -1
 const BLUE := 0
 const RED := 1
@@ -35,6 +40,9 @@ const PHASE_RESOLVING := "resolving"
 const PHASE_GAME_OVER := "game_over"
 const SCENARIO_FOUR_PLAYER := "four_player"
 const SCENARIO_BRIDGE := "bridge"
+const SHOT_SHORT := "short"
+const SHOT_LONG := "long"
+const AIM_COST := 1
 const STATUS_READY := "ready"
 const STATUS_WON := "won"
 const STATUS_LOST := "lost"
@@ -45,7 +53,7 @@ const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
 const REPLAY_FORMAT := "wego-formations-replay"
-const REPLAY_VERSION := 1
+const REPLAY_VERSION := 2
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const ARMOR_BY_WEIGHT := {WEIGHT_LIGHT: 0, WEIGHT_MEDIUM: 1, WEIGHT_HEAVY: 2}
@@ -318,7 +326,7 @@ func add_piece(type: String, player: int, position: Vector2i, strength_override:
 		"id": id, "type": type, "player": player, "role": String(definition.role), "weight": weight,
 		"strength": starting_strength, "max_strength": starting_strength, "armor": int(ARMOR_BY_WEIGHT.get(weight, 0)),
 		"position": position, "previous_position": position, "alive": true, "revealed_to": [], "seen_by": [],
-		"round_status": STATUS_READY, "movement_used": 0, "melee_count": 0, "participated_in_combat": false,
+		"round_status": STATUS_READY, "movement_used": 0, "aim_spent": 0, "melee_count": 0, "participated_in_combat": false,
 		"main_done": false, "move_count": 0, "recent_positions": [position],
 	})
 	board[position.y][position.x] = id
@@ -414,7 +422,40 @@ func projected_main_destination(piece_id: int) -> Vector2i:
 	return pieces[piece_id].position if path.is_empty() else path.back()
 
 
-func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1)) -> Dictionary:
+## Validates a declared shot and returns {ok, shot_type, message}.
+##
+## Movement spent restricts what may be declared; the declared range sets the
+## price. A formation that has already ordered movement may only take a short
+## shot at an adjacent square. A stationary one may take either, and may aim
+## beyond range 2 as overwatch, which is a long shot that fires only if the
+## target closes. Targets must be visible: no blind fire into fog.
+func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], target: Vector2i, target_id: int) -> Dictionary:
+	if piece.role != ROLE_ARCHER:
+		return {"ok": false, "message": "Only Archers can receive ranged orders."}
+	if not is_inside(target) or is_blocked_terrain(target):
+		return {"ok": false, "message": "Archers cannot target that square."}
+	if target_id >= 0:
+		if target_id >= pieces.size() or not pieces[target_id].alive:
+			return {"ok": false, "message": "That formation is no longer on the battlefield."}
+		var aimed: Dictionary = pieces[target_id]
+		if are_allied_players(player, int(aimed.player)):
+			return {"ok": false, "message": "Archers cannot target an allied formation."}
+		if not is_piece_visible_to(aimed, player):
+			return {"ok": false, "message": "Archers can only target a formation they can see."}
+	elif not is_position_visible_to(target, player):
+		return {"ok": false, "message": "Archers can only target a square they can see."}
+	var origin: Vector2i = piece.position if path.is_empty() else path.back()
+	var declared_range := grid_distance(origin, target)
+	if declared_range == 0:
+		return {"ok": false, "message": "Archers cannot target their own square."}
+	if not path.is_empty():
+		if declared_range != 1:
+			return {"ok": false, "message": "After moving, Archers may only target an adjacent square."}
+		return {"ok": true, "shot_type": SHOT_SHORT}
+	return {"ok": true, "shot_type": SHOT_SHORT if declared_range == 1 else SHOT_LONG}
+
+
+func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1), ranged_target_id: int = -1) -> Dictionary:
 	if phase != PHASE_PLANNING or game_over or player in ready_players:
 		return {"ok": false, "message": "Orders can only be changed during planning."}
 	if piece_id < 0 or piece_id >= pieces.size(): return {"ok": false, "message": "Unknown formation."}
@@ -425,22 +466,31 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 	var previous: Vector2i = piece.position
 	for value in path:
 		var step: Vector2i = value
-		if previous.distance_to(step) != 1.0 or not is_inside(step) or is_blocked_terrain(step):
+		if not are_adjacent(previous, step) or not is_inside(step) or is_blocked_terrain(step):
 			return {"ok": false, "message": "Paths must use adjacent passable squares."}
 		normalized_path.append(step)
 		previous = step
 	var movement_cost := normalized_path.size()
+	var shot_type := ""
 	if ranged_target.x >= 0:
-		if piece.role != ROLE_ARCHER: return {"ok": false, "message": "Only Archers can receive ranged orders."}
-		if not _ranged_order_can_resolve(piece, normalized_path, ranged_target):
-			return {"ok": false, "message": "Archers may target an adjacent square after moving, or a square up to range 2 if they remain stationary."}
+		var declaration := _declared_shot_type(piece, player, normalized_path, ranged_target, ranged_target_id)
+		if not bool(declaration.get("ok", false)): return declaration
+		shot_type = String(declaration.shot_type)
+		# Aiming reserves one point during main movement whichever shot it is.
+		# A long shot spends the remainder in the ranged phase, but only if it
+		# actually fires, so the rest stays available to a shot that fizzles.
+		movement_cost += 1
 	if leftover.x >= 0:
-		if previous.distance_to(leftover) != 1.0 or not is_inside(leftover) or is_blocked_terrain(leftover):
+		if not are_adjacent(previous, leftover) or not is_inside(leftover) or is_blocked_terrain(leftover):
 			return {"ok": false, "message": "Leftover movement is one adjacent passable square."}
 		movement_cost += 1
 	if movement_cost > movement_limit_for(piece):
 		return {"ok": false, "message": "That order exceeds the formation's movement allowance."}
-	var candidate := {"piece_id": piece_id, "player": player, "path": normalized_path, "ranged_target": ranged_target, "leftover": leftover}
+	var candidate := {
+		"piece_id": piece_id, "player": player, "path": normalized_path,
+		"ranged_target": ranged_target, "ranged_target_id": ranged_target_id if ranged_target.x >= 0 else -1,
+		"shot_type": shot_type, "leftover": leftover,
+	}
 	if not _same_player_order_is_clear(player, piece_id, candidate):
 		return {"ok": false, "message": "Friendly formations would collide on the same impulse."}
 	if player not in orders: orders[player] = {}
@@ -452,7 +502,7 @@ func append_order_step(player: int, piece_id: int, step: Vector2i) -> Dictionary
 	var current := order_for_piece(piece_id)
 	var path: Array = current.get("path", []).duplicate()
 	path.append(step)
-	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)))
+	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)), int(current.get("ranged_target_id", -1)))
 
 
 func append_group_order_step(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
@@ -465,7 +515,7 @@ func pop_order_step(player: int, piece_id: int) -> Dictionary:
 	var current := order_for_piece(piece_id)
 	var path: Array = current.get("path", []).duplicate()
 	if not path.is_empty(): path.pop_back()
-	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)))
+	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)), int(current.get("ranged_target_id", -1)))
 
 
 func pop_group_order_step(player: int, piece_ids: Array[int]) -> Dictionary:
@@ -507,6 +557,8 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 			"player": player,
 			"path": path,
 			"ranged_target": current.get("ranged_target", Vector2i(-1, -1)),
+			"ranged_target_id": int(current.get("ranged_target_id", -1)),
+			"shot_type": String(current.get("shot_type", "")),
 			"leftover": current.get("leftover", Vector2i(-1, -1)),
 		}
 		candidates[piece_id] = candidate
@@ -535,55 +587,81 @@ func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -
 	var order := supplied_order if not supplied_order.is_empty() else order_for_piece(piece_id)
 	var piece: Dictionary = pieces[piece_id]
 	var spent := int(order.get("path", []).size())
-	var target: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
-	if target.x >= 0:
-		var path: Array = order.get("path", [])
-		var projected: Vector2i = piece.position if path.is_empty() else path.back()
-		if _grid_distance(projected, target) == 1 and path.size() < movement_limit_for(piece):
-			spent += 1
-		elif path.is_empty() and _grid_distance(piece.position, target) == 2:
-			spent = movement_limit_for(piece)
+	# Only the aim point is reserved at planning time. A long shot spends the
+	# rest during the ranged phase, and only if it actually fires.
+	if not String(order.get("shot_type", "")).is_empty():
+		spent += AIM_COST
 	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
 		spent += 1
 	return spent
 
 
-func _grid_distance(first: Vector2i, second: Vector2i) -> int:
+## Step distance between two cells, ignoring terrain and occupancy.
+static func grid_distance(first: Vector2i, second: Vector2i) -> int:
 	return absi(first.x - second.x) + absi(first.y - second.y)
 
 
-func _ranged_order_can_resolve(piece: Dictionary, path: Array[Vector2i], target: Vector2i) -> bool:
-	if not is_inside(target):
-		return false
-	var projected: Vector2i = piece.position if path.is_empty() else path.back()
-	var short_after_path := _grid_distance(projected, target) == 1 and path.size() < movement_limit_for(piece)
-	var stationary_option := _grid_distance(piece.position, target) in [1, 2]
-	return short_after_path or stationary_option
+## True when a formation can step directly from one cell to the other.
+static func are_adjacent(first: Vector2i, second: Vector2i) -> bool:
+	return grid_distance(first, second) == 1
 
 
-func ranged_order_is_available(player: int, piece_id: int, target: Vector2i) -> bool:
+## Every cell one step from origin, including off-board ones. Callers filter
+## for is_inside and is_blocked_terrain themselves.
+static func neighbors(origin: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for direction: Vector2i in DIRECTIONS: result.append(origin + direction)
+	return result
+
+
+## Every cell within reach steps of origin, origin included. Used for vision
+## and for any range-limited targeting.
+static func cells_within_range(origin: Vector2i, reach: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for y_offset in range(-reach, reach + 1):
+		var horizontal_reach := reach - absi(y_offset)
+		for x_offset in range(-horizontal_reach, horizontal_reach + 1):
+			result.append(origin + Vector2i(x_offset, y_offset))
+	return result
+
+
+## Whether the given square can currently be declared as a target, and as which
+## shot. Returns an empty string when the declaration would be rejected, so the
+## UI can offer Shoot and Suppress only where they would take.
+func declared_shot_type_for(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> String:
 	if phase != PHASE_PLANNING or piece_id < 0 or piece_id >= pieces.size():
-		return false
+		return ""
 	var piece: Dictionary = pieces[piece_id]
 	if int(piece.player) != player or piece.role != ROLE_ARCHER:
-		return false
+		return ""
 	var current := order_for_piece(piece_id)
 	var typed_path: Array[Vector2i] = []
 	for step in current.get("path", []):
 		typed_path.append(step)
-	return _ranged_order_can_resolve(piece, typed_path, target)
+	var declaration := _declared_shot_type(piece, player, typed_path, target, target_id)
+	return String(declaration.get("shot_type", "")) if bool(declaration.get("ok", false)) else ""
 
 
-func set_ranged_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+func ranged_order_is_available(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> bool:
+	return not declared_shot_type_for(player, piece_id, target, target_id).is_empty()
+
+
+## Aimed fire at a formation: it is shot wherever it stands, if still in range.
+func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> Dictionary:
 	var current := order_for_piece(piece_id)
-	return set_unit_order(player, piece_id, current.get("path", []), target, current.get("leftover", Vector2i(-1, -1)))
+	return set_unit_order(player, piece_id, current.get("path", []), target, current.get("leftover", Vector2i(-1, -1)), target_id)
+
+
+## Suppressing fire at a square: whatever is standing there gets shot.
+func set_suppress_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	return set_ranged_order(player, piece_id, target, -1)
 
 
 func set_leftover_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	if phase == PHASE_LEFTOVER_PLANNING:
 		return _set_leftover_phase_order(player, piece_id, target)
 	var current := order_for_piece(piece_id)
-	return set_unit_order(player, piece_id, current.get("path", []), current.get("ranged_target", Vector2i(-1, -1)), target)
+	return set_unit_order(player, piece_id, current.get("path", []), current.get("ranged_target", Vector2i(-1, -1)), target, int(current.get("ranged_target_id", -1)))
 
 
 func set_group_leftover_step(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
@@ -650,7 +728,7 @@ func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> 
 	if not can_receive_leftover_order(player, piece_id):
 		return {"ok": false, "message": "That formation has no leftover movement available."}
 	var piece: Dictionary = pieces[piece_id]
-	if piece.position.distance_to(target) != 1.0 or not is_inside(target) or is_blocked_terrain(target):
+	if not are_adjacent(piece.position, target) or not is_inside(target) or is_blocked_terrain(target):
 		return {"ok": false, "message": "Leftover movement is one adjacent passable square."}
 	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
 	if player not in orders:
@@ -727,7 +805,7 @@ func _same_player_leftover_orders_are_clear(player: int) -> bool:
 	for piece: Dictionary in own_pieces:
 		var target: Vector2i = piece.position
 		var planned: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
-		if _eligible_for_leftover(piece) and planned.x >= 0 and piece.position.distance_to(planned) == 1.0:
+		if _eligible_for_leftover(piece) and planned.x >= 0 and are_adjacent(piece.position, planned):
 			target = planned
 		if target in destinations:
 			return false
@@ -738,9 +816,9 @@ func _same_player_leftover_orders_are_clear(player: int) -> bool:
 			var second: Dictionary = own_pieces[second_index]
 			var first_target: Vector2i = order_for_piece(int(first.id)).get("leftover", first.position)
 			var second_target: Vector2i = order_for_piece(int(second.id)).get("leftover", second.position)
-			if not _eligible_for_leftover(first) or first.position.distance_to(first_target) != 1.0:
+			if not _eligible_for_leftover(first) or not are_adjacent(first.position, first_target):
 				first_target = first.position
-			if not _eligible_for_leftover(second) or second.position.distance_to(second_target) != 1.0:
+			if not _eligible_for_leftover(second) or not are_adjacent(second.position, second_target):
 				second_target = second.position
 			if first_target == second.position and second_target == first.position and first.position != second.position:
 				return false
@@ -863,6 +941,7 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 	phase = PHASE_RESOLVING
 	last_round_events.clear()
 	_begin_round_state()
+	_charge_declared_aim()
 	_record_all_sightings()
 	for impulse in range(1, 4):
 		var proposals: Array[Dictionary] = []
@@ -899,7 +978,7 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 	for piece: Dictionary in pieces:
 		if not _eligible_for_leftover(piece): continue
 		var target: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
-		if target.x >= 0 and piece.position.distance_to(target) == 1.0:
+		if target.x >= 0 and are_adjacent(piece.position, target):
 			leftover_proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": target, "is_attacker": true, "impulse": 4})
 	if not leftover_proposals.is_empty():
 		leftover_events.append_array(_resolve_movement_batch(leftover_proposals, "leftover"))
@@ -917,11 +996,21 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 	return leftover_events.duplicate(true)
 
 
+## Aiming is paid for during main movement, before anyone moves, so the point
+## is gone whether or not the shot finds a target later in the round.
+func _charge_declared_aim() -> void:
+	for piece: Dictionary in pieces:
+		if not piece.alive or piece.role != ROLE_ARCHER: continue
+		if String(order_for_piece(int(piece.id)).get("shot_type", "")).is_empty(): continue
+		pieces[piece.id].aim_spent = AIM_COST
+
+
 func _begin_round_state() -> void:
 	for piece: Dictionary in pieces:
 		if piece.alive:
 			pieces[piece.id].round_status = STATUS_READY
 			pieces[piece.id].movement_used = 0
+			pieces[piece.id].aim_spent = 0
 			pieces[piece.id].melee_count = 0
 			pieces[piece.id].participated_in_combat = false
 			pieces[piece.id].main_done = false
@@ -1214,17 +1303,39 @@ func _resolve_retreat_battle(group: Array, target: Vector2i, batch_name: String)
 
 func _resolve_ranged_phase() -> Array[Dictionary]:
 	var shots: Array[Dictionary] = []
+	var fizzles: Array[Dictionary] = []
 	for piece: Dictionary in pieces:
+		var order := order_for_piece(int(piece.id))
+		var shot_type := String(order.get("shot_type", ""))
+		if shot_type.is_empty(): continue
 		if not _eligible_to_shoot(piece): continue
-		var target_position: Vector2i = order_for_piece(int(piece.id)).get("ranged_target", Vector2i(-1, -1))
-		var shot_range := _grid_distance(piece.position, target_position)
-		var shot_cost := _ranged_shot_cost(piece, target_position)
-		if shot_cost <= 0: continue
-		var target := piece_at(target_position)
-		if target.is_empty() or are_allied_players(int(piece.player), int(target.player)) or target.type == FLAG: continue
+		var target_position: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+		var target_id := int(order.get("ranged_target_id", -1))
+		# Aimed fire follows the formation; suppressing fire hits whoever holds
+		# the square. Either way the aim point is already spent.
+		var target: Dictionary = {}
+		if target_id >= 0:
+			if target_id < pieces.size() and pieces[target_id].alive: target = pieces[target_id]
+		else:
+			target = piece_at(target_position)
+		if not target.is_empty() and (are_allied_players(int(piece.player), int(target.player)) or target.type == FLAG):
+			target = {}
+		var shot_range := grid_distance(piece.position, target.position) if not target.is_empty() else -1
+		var maximum_range := 1 if shot_type == SHOT_SHORT else 2
+		if target.is_empty() or shot_range > maximum_range:
+			fizzles.append({
+				"shooter_id": int(piece.id), "from": piece.position, "to": target_position,
+				"shot_type": shot_type, "target_id": target_id,
+				"reason": "no_target" if target.is_empty() else "out_of_range",
+			})
+			continue
 		var resolution := calculate_ranged(piece, target)
-		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target_position, "range": shot_range, "movement_cost": shot_cost, "resolution": resolution})
-		pieces[piece.id].movement_used = int(pieces[piece.id].movement_used) + shot_cost
+		# A long shot that finds its mark consumes everything the formation had.
+		var extra_cost := 0
+		if shot_type == SHOT_LONG:
+			extra_cost = maxi(0, movement_limit_for(piece) - int(piece.movement_used) - int(piece.aim_spent))
+		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": int(piece.aim_spent) + extra_cost, "resolution": resolution})
+		pieces[piece.id].movement_used = int(pieces[piece.id].movement_used) + extra_cost
 		pieces[piece.id].participated_in_combat = true
 	var total_damage: Dictionary = {}
 	for shot: Dictionary in shots:
@@ -1249,27 +1360,34 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		}
 		battle_history.append(event.duplicate(true))
 		events.append(event)
+	# A shot that found nothing still happened, and the aim point is still gone.
+	# Reporting it keeps the log honest about why an Archer did not fire.
+	for fizzle: Dictionary in fizzles:
+		var fizzle_event := {
+			"ok": true, "action": "ranged_fizzle", "batch": "ranged", "combat": false, "ranged": true,
+			"from": fizzle.from, "to": fizzle.to, "shooter_id": int(fizzle.shooter_id),
+			"target_id": int(fizzle.target_id), "shot_type": String(fizzle.shot_type),
+			"movement_cost": AIM_COST, "result": String(fizzle.reason),
+			"known_to": _battle_viewers_for_ids([int(fizzle.shooter_id)]),
+		}
+		battle_history.append(fizzle_event.duplicate(true))
+		events.append(fizzle_event)
 	return events
 
 
 func _eligible_to_shoot(piece: Dictionary) -> bool:
 	if not is_movable(piece) or piece.role != ROLE_ARCHER or String(piece.round_status) not in [STATUS_READY, STATUS_WON]:
 		return false
-	var target: Vector2i = order_for_piece(int(piece.id)).get("ranged_target", Vector2i(-1, -1))
-	return target.x >= 0 and _ranged_shot_cost(piece, target) > 0
+	return not String(order_for_piece(int(piece.id)).get("shot_type", "")).is_empty()
 
 
-func _ranged_shot_cost(piece: Dictionary, target: Vector2i) -> int:
-	var distance := _grid_distance(piece.position, target)
-	if distance == 1 and int(piece.movement_used) < movement_limit_for(piece):
-		return 1
-	if distance == 2 and int(piece.movement_used) == 0:
-		return movement_limit_for(piece)
-	return 0
+## Points a formation has already committed this round, movement plus aiming.
+func movement_committed(piece: Dictionary) -> int:
+	return int(piece.movement_used) + int(piece.aim_spent)
 
 
 func _eligible_for_leftover(piece: Dictionary) -> bool:
-	return is_movable(piece) and String(piece.round_status) in [STATUS_READY, STATUS_WON] and int(piece.movement_used) < movement_limit_for(piece) and int(piece.melee_count) < 2
+	return is_movable(piece) and String(piece.round_status) in [STATUS_READY, STATUS_WON] and movement_committed(piece) < movement_limit_for(piece) and int(piece.melee_count) < 2
 
 
 func _movement_event(piece_id: int, from: Vector2i, to: Vector2i, batch_name: String) -> Dictionary:
@@ -1399,6 +1517,7 @@ func _encode_main_orders() -> Array[Dictionary]:
 				"piece_id": piece_id,
 				"path": path,
 				"ranged_target": _encode_position(order.get("ranged_target", Vector2i(-1, -1))),
+				"ranged_target_id": int(order.get("ranged_target_id", -1)),
 				"leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
 			})
 	return encoded
@@ -1443,6 +1562,143 @@ static func _json_safe(value: Variant) -> Variant:
 			converted.append(_json_safe(item))
 		return converted
 	return value
+
+
+## Legal single steps out of a cell: on-board, passable, ignoring occupancy.
+## Occupancy is deliberately not filtered, because moving into an occupied
+## square is how attacks happen.
+func legal_steps_for(piece_id: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if piece_id < 0 or piece_id >= pieces.size(): return result
+	for candidate: Vector2i in neighbors(pieces[piece_id].position):
+		if is_inside(candidate) and not is_blocked_terrain(candidate): result.append(candidate)
+	return result
+
+
+## Per-formation combat totals for the whole match, derived from battle_history.
+##
+## Combat events record damage taken, not dealt, so dealt is attributed by the
+## same rule the resolver uses: a formation takes damage from the highest
+## opposing score, so that opponent is credited. Ranged events name their
+## shooter directly and need no inference.
+func combat_damage_summary() -> Dictionary:
+	var totals: Dictionary = {}
+	for piece: Dictionary in pieces:
+		totals[int(piece.id)] = {
+			"id": int(piece.id), "code": String(piece.type), "player": int(piece.player),
+			"dealt": 0, "taken": 0, "kills": 0, "battles": 0,
+			"alive": bool(piece.alive), "strength": int(piece.strength),
+			"max_strength": int(piece.max_strength),
+		}
+	# Focus fire reports every contributing shot as destroying the target, so
+	# credit the kill once rather than to each shooter.
+	var ranged_kill_counted: Dictionary = {}
+	for event: Dictionary in battle_history:
+		if String(event.get("action", "")) == "ranged_fizzle": continue
+		if bool(event.get("ranged", false)):
+			var shooter := int(event.get("shooter_id", EMPTY))
+			var target := int(event.get("target_id", EMPTY))
+			var shot_damage := int(event.get("defender_damage", 0))
+			if shooter in totals:
+				totals[shooter].dealt += shot_damage
+				totals[shooter].battles += 1
+				if String(event.get("result", "")) == "ranged_destroyed" and target not in ranged_kill_counted:
+					ranged_kill_counted[target] = true
+					totals[shooter].kills += 1
+			if target in totals:
+				totals[target].taken += shot_damage
+				totals[target].battles += 1
+			continue
+		var scores: Dictionary = event.get("scores", {})
+		var damage: Dictionary = event.get("damage", {})
+		var outcomes: Dictionary = event.get("outcomes", {})
+		var participants: Array = event.get("participants", [])
+		for participant in participants:
+			var id := int(participant)
+			if id in totals: totals[id].battles += 1
+		for key in damage:
+			var victim := int(key)
+			var amount := int(damage[key])
+			if amount <= 0: continue
+			if victim in totals: totals[victim].taken += amount
+			var dealer := EMPTY
+			var best_score := -1
+			for participant in participants:
+				var other := int(participant)
+				if other == victim or _team_for_piece(other) == _team_for_piece(victim): continue
+				var other_score := int(scores.get(str(other), scores.get(other, -1)))
+				if other_score > best_score:
+					best_score = other_score
+					dealer = other
+			if dealer in totals:
+				totals[dealer].dealt += amount
+				if String(outcomes.get(str(victim), outcomes.get(victim, ""))) == "destroyed":
+					totals[dealer].kills += 1
+	return totals
+
+
+## Movement a formation can still be ordered to spend right now.
+##
+## piece.movement_used is only reset by _begin_round_state(), which runs at the
+## start of resolve_main_and_ranged() rather than at the end of the round, so
+## during PHASE_PLANNING it still holds the previous round's total. Nothing in
+## the engine is misled by that (order validation compares path length against
+## the movement limit, and resolution resets before it reads the value), but an
+## external controller reading the raw field during planning would compute the
+## wrong budget.
+func _movement_available_for(piece: Dictionary) -> int:
+	if phase == PHASE_PLANNING: return movement_limit_for(piece)
+	return maxi(0, movement_limit_for(piece) - movement_committed(piece))
+
+
+## Full-truth board state for an external controller. The player argument is
+## the viewer; it is currently unused because this view is omniscient, but it
+## keeps the signature stable for a later fog-limited variant.
+func observed_state(player: int) -> Dictionary:
+	var formations: Array = []
+	for piece: Dictionary in pieces:
+		if not piece.alive: continue
+		var order: Dictionary = order_for_piece(int(piece.id))
+		var path: Array = []
+		for step: Vector2i in order.get("path", []): path.append(_encode_position(step))
+		formations.append({
+			"id": int(piece.id), "code": String(piece.type), "player": int(piece.player),
+			"mine": int(piece.player) == player, "role": String(piece.role), "weight": String(piece.weight),
+			"strength": int(piece.strength), "max_strength": int(piece.max_strength),
+			"armor": int(piece.armor), "movement": movement_limit_for(piece),
+			"movement_used": int(piece.movement_used),
+			"movement_available": _movement_available_for(piece),
+			"position": _encode_position(piece.position),
+			"status": String(piece.round_status), "main_done": bool(piece.main_done),
+			"planned_path": path,
+			"planned_ranged": _encode_position(order.get("ranged_target", Vector2i(-1, -1))),
+			"planned_ranged_id": int(order.get("ranged_target_id", -1)),
+			"shot_type": String(order.get("shot_type", "")),
+			"aim_spent": int(piece.aim_spent),
+			"planned_leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
+		})
+	var terrain := {"lakes": [], "water": [], "bridge": []}
+	for y in BOARD_SIZE:
+		for x in BOARD_SIZE:
+			var cell := Vector2i(x, y)
+			if is_bridge(cell): terrain.bridge.append(_encode_position(cell))
+			elif is_lake(cell): terrain.lakes.append(_encode_position(cell))
+			elif is_water(cell): terrain.water.append(_encode_position(cell))
+	var state := {
+		"fog": false, "viewer": player, "board_size": BOARD_SIZE,
+		"scenario": scenario, "round": round_number, "turn": turn_number, "phase": phase,
+		"active_players": active_players, "eliminated_players": eliminated_players,
+		"ready_players": ready_players, "game_over": game_over, "winner": winner,
+		"end_reason": end_reason, "terrain": terrain, "formations": formations,
+	}
+	if scenario == SCENARIO_BRIDGE:
+		state["objective"] = {
+			"attacker": bridge_attacker, "defender": bridge_defender,
+			"river_y": BRIDGE_RIVER_Y, "turn_limit": bridge_turn_limit,
+			"strength_target": bridge_strength_target,
+			"attacker_strength_across": bridge_strength_across(),
+		}
+	return state
 
 
 static func _digest_value(value: Variant) -> String:
@@ -1552,6 +1808,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		var candidate := {
 			"piece_id": piece_id, "player": player, "path": path,
 			"ranged_target": _decode_position(entry.get("ranged_target", [-1, -1])),
+			"ranged_target_id": int(entry.get("ranged_target_id", -1)),
 			"leftover": _decode_position(entry.get("leftover", [-1, -1])),
 		}
 		if player not in orders:
@@ -1559,7 +1816,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		orders[player][piece_id] = candidate
 		candidates.append(candidate)
 	for candidate: Dictionary in candidates:
-		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover)
+		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover, int(candidate.ranged_target_id))
 		if not bool(result.get("ok", false)):
 			orders.clear()
 			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
@@ -1582,7 +1839,7 @@ func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
 		var target := _decode_position(entry.get("target", [-1, -1]))
 		if piece_id in seen_ids or not can_receive_leftover_order(player, piece_id):
 			return {"ok": false, "message": "A recorded leftover order references an ineligible formation."}
-		if pieces[piece_id].position.distance_to(target) != 1.0 or not is_inside(target) or is_blocked_terrain(target):
+		if not are_adjacent(pieces[piece_id].position, target) or not is_inside(target) or is_blocked_terrain(target):
 			return {"ok": false, "message": "A recorded leftover destination is invalid."}
 		seen_ids[piece_id] = true
 		if player not in orders:
@@ -1801,11 +2058,8 @@ func _ensure_visibility_cache() -> void:
 	for piece: Dictionary in pieces:
 		if not piece.alive: continue
 		var visible_cells: Dictionary = _visible_cells_by_player[int(piece.player)]
-		for y_offset in range(-vision_range, vision_range + 1):
-			var horizontal_reach := vision_range - absi(y_offset)
-			for x_offset in range(-horizontal_reach, horizontal_reach + 1):
-				var visible_position: Vector2i = piece.position + Vector2i(x_offset, y_offset)
-				if is_inside(visible_position): visible_cells[visible_position] = true
+		for visible_position: Vector2i in cells_within_range(piece.position, vision_range):
+			if is_inside(visible_position): visible_cells[visible_position] = true
 	_visibility_dirty = false
 	_cached_vision_range = vision_range
 

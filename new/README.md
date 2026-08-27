@@ -15,8 +15,8 @@ During planning:
 1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
 2. Click one of the large on-map direction arrows, use the inspector's **Move Selection** buttons, or press an arrow/WASD key to draw the main path. With several formations selected, that direction is applied to every member that still has unused movement. Exhausted Heavy or Medium formations are skipped while faster formations continue. Terrain, off-board, or friendly-collision failures still reject the resulting group step.
 3. Ghosts numbered 1–3 show the square each formation intends to occupy on each impulse.
-4. In **Settings**, enable **Archer target mode** and click a visible enemy to schedule a shot. An Archer can fire at range 1 by spending one unused movement point, or at range 2 if it remains stationary during main movement; a range-2 shot consumes its full movement.
-5. Right-click to remove the selected formation or group's last main-path impulse. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
+4. Right-click a square for **Examine**, and, with an Archer selected, **Shoot** or **Suppress Square**. Shoot aims at that formation and follows it if it moves; Suppress aims at the ground and hits whoever is standing there when the shot resolves. Aiming costs one movement point during main movement, spent whether or not the shot finds a target. Movement already ordered restricts what may be declared: a formation that has moved may only target an adjacent square, while a stationary one may also declare a long shot, including overwatch on a target further than two squares away that fires only if it closes. A long shot that fires consumes everything the Archer had left.
+5. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
 6. Choose **End Planning** when planning is complete.
 
 Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
@@ -35,7 +35,7 @@ The game rejects orders from one player that would make friendly formations occu
 
 1. Main movement resolves simultaneously in three impulses: Light moves on 1, 2, and 3; Medium moves on 2 and 3; Heavy moves only on 3. Only movement steps actually attempted are spent, including an attempted entry that ends in a bounce.
 2. Every melee batch resolves, followed by all retreats from that batch simultaneously.
-3. Eligible Archer attacks resolve simultaneously. A range-1 shot costs one unused movement point; a stationary range-2 shot consumes the Archer's full movement.
+3. Eligible Archer attacks resolve simultaneously. Aiming has already cost one movement point during main movement; a long shot that finds its target consumes the Archer's remaining movement, while a short shot or a shot that fizzles costs only the aim point.
 4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one square.
 5. Victory is checked at the end of the round.
 
@@ -83,7 +83,7 @@ Run **Test New.bat**, or:
 godot --headless --path . --script res://tests/test_runner.gd
 ```
 
-The deterministic suite covers setup, fog, delayed weight-based impulse timing, actual movement spending, order rejection, allied and combat bounces, crossing attacks, doubled winner Armor, natural 10s, multiway battles, highest-opponent damage, focus fire, range-1 and stationary range-2 Archer fire, leftover melee, blocked retreats, retreat battles, transient sightings, bridge victory, withdrawal, the absence of automatic collapse, replay JSON/file round trips, replay tamper rejection, and four-bot round resolution.
+The deterministic suite covers setup, fog, delayed weight-based impulse timing, actual movement spending, order rejection, allied and combat bounces, crossing attacks, doubled winner Armor, natural 10s, multiway battles, highest-opponent damage, focus fire, aimed and suppressing Archer fire, overwatch fizzles and their aim cost, leftover melee, blocked retreats, retreat battles, transient sightings, bridge victory, withdrawal, the absence of automatic collapse, replay JSON/file round trips, replay tamper rejection, and four-bot round resolution.
 
 ## Piece codes
 

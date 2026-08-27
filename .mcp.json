@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "stratego": {
+      "command": "node",
+      "args": ["mcp/server.js"],
+      "env": {
+        "STRATEGO_PORT": "8791"
+      }
+    }
+  }
+}

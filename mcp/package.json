@@ -1,0 +1,15 @@
+{
+  "name": "stratego-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for driving the WEGO formations prototype",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.23.8"
+  }
+}
