@@ -40,6 +40,15 @@ const PHASE_RESOLVING := "resolving"
 const PHASE_GAME_OVER := "game_over"
 const SCENARIO_FOUR_PLAYER := "four_player"
 const SCENARIO_BRIDGE := "bridge"
+const OBJECTIVE_HOLD_SQUARE := "hold_square"
+const OBJECTIVE_REACH_AREA := "reach_area"
+const OBJECTIVE_SURVIVE := "survive"
+const SCENARIO_MEETING := "meeting"
+const DEFAULT_HOLD_ROUNDS := 3
+const TERRAIN_OPEN := ""
+const TERRAIN_LAKE := "lake"
+const TERRAIN_WATER := "water"
+const TERRAIN_BRIDGE := "bridge"
 const SHOT_SHORT := "short"
 const SHOT_LONG := "long"
 const AIM_COST := 1
@@ -53,7 +62,7 @@ const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
 const REPLAY_FORMAT := "wego-formations-replay"
-const REPLAY_VERSION := 2
+const REPLAY_VERSION := 3
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const ARMOR_BY_WEIGHT := {WEIGHT_LIGHT: 0, WEIGHT_MEDIUM: 1, WEIGHT_HEAVY: 2}
@@ -86,6 +95,12 @@ const BRIDGE_DEFENDER_ROSTER := [
 	HEAVY_INFANTRY, HEAVY_INFANTRY, HEAVY_INFANTRY, MEDIUM_INFANTRY, MEDIUM_INFANTRY, LIGHT_INFANTRY,
 	HEAVY_ARCHER, HEAVY_ARCHER, MEDIUM_ARCHER, MEDIUM_ARCHER, LIGHT_ARCHER, MEDIUM_CAVALRY,
 ]
+## Symmetric roster for meeting engagements: both sides field the same twelve so
+## a result reflects play and unit design rather than an army-list advantage.
+const MEETING_ROSTER := [
+	HEAVY_INFANTRY, HEAVY_INFANTRY, MEDIUM_INFANTRY, MEDIUM_INFANTRY, LIGHT_INFANTRY, LIGHT_INFANTRY,
+	HEAVY_ARCHER, MEDIUM_ARCHER, LIGHT_ARCHER, HEAVY_CAVALRY, MEDIUM_CAVALRY, LIGHT_CAVALRY,
+]
 const LAKES := [
 	Vector2i(7, 7), Vector2i(8, 7), Vector2i(11, 7), Vector2i(12, 7),
 	Vector2i(7, 8), Vector2i(8, 8), Vector2i(11, 8), Vector2i(12, 8),
@@ -94,6 +109,8 @@ const LAKES := [
 ]
 
 var board: Array = []
+var terrain: Dictionary = {}
+var objectives: Array[Dictionary] = []
 var pieces: Array[Dictionary] = []
 var active_players: Array[int] = []
 var eliminated_players: Array[int] = []
@@ -122,6 +139,8 @@ var bridge_attacker := BLUE
 var bridge_defender := RED
 var bridge_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var bridge_strength_target := BRIDGE_STRENGTH_TARGET
+var _meeting_hold_rounds := DEFAULT_HOLD_ROUNDS
+var _meeting_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var setup_seed := 0
 var replay_rounds: Array[Dictionary] = []
 
@@ -163,6 +182,8 @@ func setup_empty() -> void:
 	last_round_events.clear()
 	last_move = {"from": Vector2i(-1, -1), "to": Vector2i(-1, -1), "visible_to": [], "action": ""}
 	phase = PHASE_PLANNING
+	terrain.clear()
+	objectives.clear()
 	scenario = SCENARIO_FOUR_PLAYER
 	configured_player_count = 4
 	round_number = 1
@@ -180,6 +201,8 @@ func setup_empty() -> void:
 	bridge_defender = RED
 	bridge_turn_limit = DEFAULT_BRIDGE_TURN_LIMIT
 	bridge_strength_target = BRIDGE_STRENGTH_TARGET
+	_meeting_hold_rounds = DEFAULT_HOLD_ROUNDS
+	_meeting_turn_limit = DEFAULT_BRIDGE_TURN_LIMIT
 	setup_seed = 0
 	replay_rounds.clear()
 	current_player = BLUE
@@ -196,6 +219,7 @@ func setup_empty() -> void:
 func setup_random(seed_value: int = 0, player_count: int = 4, use_private_battle_results: bool = true, _unused_legacy_range: int = 0) -> void:
 	setup_empty()
 	scenario = SCENARIO_FOUR_PLAYER
+	apply_lake_terrain()
 	configured_player_count = clampi(player_count, 2, 4)
 	private_battle_results = use_private_battle_results
 	_seed_rng(seed_value)
@@ -216,15 +240,51 @@ func setup_bridge(seed_value: int = 0, attacker: int = BLUE, defender: int = RED
 	bridge_attacker = attacker
 	bridge_defender = defender
 	bridge_turn_limit = maxi(1, turn_limit)
+	apply_river_terrain(BRIDGE_RIVER_Y, BRIDGE_COLUMNS)
 	player_teams[attacker] = attacker
 	player_teams[defender] = defender
 	_seed_rng(seed_value)
 	_place_roster(attacker, BRIDGE_ATTACKER_ROSTER, _bridge_attacker_deployment(), _rng)
 	_place_roster(defender, BRIDGE_DEFENDER_ROSTER, _bridge_defender_deployment(), _rng)
+	# Breakthrough is declared first so it beats the turn limit on the last round.
+	add_reach_area_objective(attacker, Rect2i(0, 0, BOARD_SIZE, BRIDGE_RIVER_Y), bridge_strength_target, "bridge_breakthrough")
+	add_survive_objective(defender, bridge_turn_limit, "turn_limit")
 	active_players.assign([defender, attacker])
 	_sort_active_players()
 	current_player = attacker
 	_record_all_sightings()
+
+
+## Meeting engagement: both armies deploy on their own back rank with identical
+## rosters, and the win goes to whoever holds the centre square alone at the end
+## of `hold_rounds` consecutive rounds. Neither side starts anywhere near it, so
+## unlike the bridge crossing, arriving first is actually possible.
+func setup_meeting(seed_value: int = 0, first: int = BLUE, second: int = RED, hold_rounds: int = DEFAULT_HOLD_ROUNDS, turn_limit: int = DEFAULT_BRIDGE_TURN_LIMIT, use_private_battle_results: bool = true) -> void:
+	setup_empty()
+	scenario = SCENARIO_MEETING
+	configured_player_count = 2
+	private_battle_results = use_private_battle_results
+	apply_lake_terrain()
+	player_teams[first] = first
+	player_teams[second] = second
+	_seed_rng(seed_value)
+	_meeting_hold_rounds = maxi(1, hold_rounds)
+	_meeting_turn_limit = maxi(1, turn_limit)
+	var objective := Vector2i(BOARD_SIZE / 2, BOARD_SIZE / 2)
+	set_terrain(objective, TERRAIN_OPEN)
+	_place_roster(first, MEETING_ROSTER, _back_rank_deployment(BOARD_SIZE - 1), _rng)
+	_place_roster(second, MEETING_ROSTER, _back_rank_deployment(0), _rng)
+	add_hold_square_objective(objective, hold_rounds, turn_limit)
+	active_players.assign([second, first])
+	_sort_active_players()
+	current_player = first
+	_record_all_sightings()
+
+
+func _back_rank_deployment(row: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for x in BOARD_SIZE: cells.append(Vector2i(x, row))
+	return cells
 
 
 func _seed_rng(seed_value: int) -> void:
@@ -299,6 +359,8 @@ func _bridge_defender_deployment() -> Array[Vector2i]:
 func valid_deployment_cells(player: int) -> Array[Vector2i]:
 	if scenario == SCENARIO_BRIDGE:
 		return _bridge_attacker_deployment() if player == bridge_attacker else _bridge_defender_deployment()
+	if scenario == SCENARIO_MEETING:
+		return _back_rank_deployment(BOARD_SIZE - 1 if player == current_player else 0)
 	return _starting_cells(player)
 
 
@@ -360,16 +422,150 @@ func is_inside(position: Vector2i) -> bool:
 	return position.x >= 0 and position.y >= 0 and position.x < BOARD_SIZE and position.y < BOARD_SIZE
 
 
+## Objectives are typed records rather than per-scenario branches, so a new
+## scenario is a setup function plus a list of these, and both the replay format
+## and an external controller can read the win condition without special cases.
+##
+## hold_square: a player wins by holding one square, alone, at the end of each
+## of `rounds` consecutive rounds. Any round the holder is absent or the enemy
+## is present resets that player's streak to zero.
+func add_hold_square_objective(square: Vector2i, rounds: int, turn_limit: int) -> void:
+	objectives.append({
+		"type": OBJECTIVE_HOLD_SQUARE, "square": square,
+		"rounds": maxi(1, rounds), "turn_limit": maxi(1, turn_limit), "streaks": {},
+	})
+
+
+## Losing your whole army loses the game regardless of the objective. Applies to
+## objective scenarios; four-player elimination is handled by team survival.
+func _finish_if_army_destroyed() -> bool:
+	if objectives.is_empty() or active_players.size() != 2: return false
+	for player in active_players:
+		if total_strength(player) > 0: continue
+		var survivor := active_players[0] if active_players[1] == player else active_players[1]
+		_finish_game(survivor, "army_destroyed")
+		return true
+	return false
+
+
+## reach_area: a player wins by having `strength` worth of surviving formations
+## inside a rectangle at the end of a round. Rectangles rather than cell lists
+## keep the replay format small and the objective describable in one sentence.
+func add_reach_area_objective(player: int, area: Rect2i, strength: int, reason: String = "reached_objective") -> void:
+	objectives.append({
+		"type": OBJECTIVE_REACH_AREA, "player": player, "area": area,
+		"strength": maxi(1, strength), "reason": reason,
+	})
+
+
+## survive: a player wins simply by still being in the game at `until_round`.
+## Paired with reach_area, this is an attacker/defender scenario.
+func add_survive_objective(player: int, until_round: int, reason: String = "held_out") -> void:
+	objectives.append({"type": OBJECTIVE_SURVIVE, "player": player, "until_round": maxi(1, until_round), "reason": reason})
+
+
+## A square that represents where a player should be heading, derived from the
+## objectives rather than the scenario id. Returns (-1,-1) when the scenario has
+## no positional objective for that player, such as pure survival.
+func objective_aim_point(player: int) -> Vector2i:
+	for objective: Dictionary in objectives:
+		var kind := String(objective.type)
+		if kind == OBJECTIVE_HOLD_SQUARE:
+			return objective.square
+		if kind == OBJECTIVE_REACH_AREA:
+			var area: Rect2i = objective.area
+			if int(objective.player) == player:
+				return area.position + area.size / 2
+			# The defender's aim point is the same ground, seen from the far side.
+			return Vector2i(area.position.x + area.size.x / 2, area.end.y)
+	return Vector2i(-1, -1)
+
+
+## Strength a player currently has standing inside an area.
+func strength_in_area(player: int, area: Rect2i) -> int:
+	var total := 0
+	for piece: Dictionary in pieces:
+		if piece.alive and int(piece.player) == player and piece.type != FLAG and area.has_point(piece.position):
+			total += int(piece.strength)
+	return total
+
+
+## Objectives resolve in the order they were declared, so a scenario decides its
+## own precedence: the bridge attacker breaking through on the final round beats
+## the defender's turn-limit win because it is declared first.
+func _check_objectives() -> void:
+	for index in objectives.size():
+		var objective: Dictionary = objectives[index]
+		var kind := String(objective.type)
+		var reason := String(objective.get("reason", kind))
+		if kind == OBJECTIVE_REACH_AREA:
+			if strength_in_area(int(objective.player), objective.area) >= int(objective.strength):
+				_finish_game(int(objective.player), reason)
+				return
+			continue
+		if kind == OBJECTIVE_SURVIVE:
+			if round_number >= int(objective.until_round):
+				_finish_game(int(objective.player), reason)
+				return
+			continue
+		if kind != OBJECTIVE_HOLD_SQUARE:
+			continue
+		var square: Vector2i = objective.square
+		var occupant := piece_at(square)
+		var holder := int(occupant.player) if not occupant.is_empty() and occupant.type != FLAG else DRAW
+		var streaks: Dictionary = objective.streaks
+		for player in active_players:
+			var holds := holder != DRAW and are_allied_players(player, holder)
+			streaks[player] = int(streaks.get(player, 0)) + 1 if holds else 0
+			if int(streaks[player]) >= int(objective.rounds):
+				_finish_game(player, "held_objective")
+				return
+		objectives[index].streaks = streaks
+		if round_number >= int(objective.turn_limit):
+			# Nobody consolidated the position, so nobody earned it.
+			_finish_game(DRAW, "objective_contested")
+			return
+
+
+## Rounds each player has currently held an objective square in a row.
+func objective_streak(objective_index: int, player: int) -> int:
+	if objective_index < 0 or objective_index >= objectives.size(): return 0
+	return int(objectives[objective_index].get("streaks", {}).get(player, 0))
+
+
+## Lays a river across the board with crossings at the given columns.
+func apply_river_terrain(river_y: int, crossings: Array) -> void:
+	for x in BOARD_SIZE:
+		var cell := Vector2i(x, river_y)
+		set_terrain(cell, TERRAIN_BRIDGE if x in crossings else TERRAIN_WATER)
+
+
+## The four impassable ponds of the classic symmetric board.
+func apply_lake_terrain() -> void:
+	for cell: Vector2i in LAKES: set_terrain(cell, TERRAIN_LAKE)
+
+
+## Terrain is data, not a function of which scenario is loaded, so a new map
+## only has to populate the dictionary during setup.
+func set_terrain(position: Vector2i, kind: String) -> void:
+	if kind.is_empty(): terrain.erase(position)
+	else: terrain[position] = kind
+
+
+func terrain_at(position: Vector2i) -> String:
+	return String(terrain.get(position, TERRAIN_OPEN))
+
+
 func is_lake(position: Vector2i) -> bool:
-	return scenario != SCENARIO_BRIDGE and position in LAKES
+	return terrain_at(position) == TERRAIN_LAKE
 
 
 func is_water(position: Vector2i) -> bool:
-	return scenario == SCENARIO_BRIDGE and position.y == BRIDGE_RIVER_Y and position.x not in BRIDGE_COLUMNS
+	return terrain_at(position) == TERRAIN_WATER
 
 
 func is_bridge(position: Vector2i) -> bool:
-	return scenario == SCENARIO_BRIDGE and position.y == BRIDGE_RIVER_Y and position.x in BRIDGE_COLUMNS
+	return terrain_at(position) == TERRAIN_BRIDGE
 
 
 func is_blocked_terrain(position: Vector2i) -> bool:
@@ -1698,7 +1894,47 @@ func observed_state(player: int) -> Dictionary:
 			"strength_target": bridge_strength_target,
 			"attacker_strength_across": bridge_strength_across(),
 		}
+	if not objectives.is_empty(): state["objectives"] = describe_objectives()
 	return state
+
+
+## Objectives as plain data with their current progress, one entry per
+## objective. Each carries a one-line `summary` so an external controller can
+## state the win condition without knowing the scenario.
+func describe_objectives() -> Array:
+	var described: Array = []
+	for index in objectives.size():
+		var objective: Dictionary = objectives[index]
+		var kind := String(objective.type)
+		var entry := {"type": kind}
+		if kind == OBJECTIVE_HOLD_SQUARE:
+			var streaks: Dictionary = {}
+			for candidate in active_players: streaks[candidate] = objective_streak(index, candidate)
+			entry["square"] = _encode_position(objective.square)
+			entry["rounds_required"] = int(objective.rounds)
+			entry["turn_limit"] = int(objective.turn_limit)
+			entry["consecutive_rounds_held"] = streaks
+			entry["summary"] = "Hold %s alone at the end of %d consecutive rounds. A draw if nobody has by round %d." % [
+				str(objective.square), int(objective.rounds), int(objective.turn_limit),
+			]
+		elif kind == OBJECTIVE_REACH_AREA:
+			var area: Rect2i = objective.area
+			var owner := int(objective.player)
+			entry["player"] = owner
+			entry["area"] = [area.position.x, area.position.y, area.size.x, area.size.y]
+			entry["strength_required"] = int(objective.strength)
+			entry["strength_present"] = strength_in_area(owner, area)
+			entry["summary"] = "%s wins with %d Strength inside rows %d-%d at the end of a round (currently %d)." % [
+				player_name(owner), int(objective.strength), area.position.y, area.end.y - 1, strength_in_area(owner, area),
+			]
+		elif kind == OBJECTIVE_SURVIVE:
+			entry["player"] = int(objective.player)
+			entry["until_round"] = int(objective.until_round)
+			entry["summary"] = "%s wins by still standing at the end of round %d." % [
+				player_name(int(objective.player)), int(objective.until_round),
+			]
+		described.append(entry)
+	return described
 
 
 static func _digest_value(value: Variant) -> String:
@@ -1747,6 +1983,7 @@ func build_replay_document() -> Dictionary:
 			"private_battle_results": private_battle_results, "vision_range": vision_range,
 			"bridge_attacker": bridge_attacker, "bridge_defender": bridge_defender,
 			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
+			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
 			"teams": teams,
 		},
 		"rounds": replay_rounds.duplicate(true),
@@ -1878,6 +2115,8 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 	if replay_scenario == SCENARIO_BRIDGE:
 		replay_game.setup_bridge(seed, int(setup.get("bridge_attacker", BLUE)), int(setup.get("bridge_defender", RED)), int(setup.get("bridge_turn_limit", DEFAULT_BRIDGE_TURN_LIMIT)), privacy)
 		replay_game.bridge_strength_target = int(setup.get("bridge_strength_target", BRIDGE_STRENGTH_TARGET))
+	elif replay_scenario == SCENARIO_MEETING:
+		replay_game.setup_meeting(seed, BLUE, RED, int(setup.get("meeting_hold_rounds", DEFAULT_HOLD_ROUNDS)), int(setup.get("meeting_turn_limit", DEFAULT_BRIDGE_TURN_LIMIT)), privacy)
 	elif replay_scenario == SCENARIO_FOUR_PLAYER:
 		replay_game.setup_random(seed, int(setup.get("player_count", 4)), privacy)
 	else:
@@ -1967,11 +2206,8 @@ func _finish_round() -> void:
 	ply_count += 1
 	turn_number = round_number
 	_check_flag_eliminations()
-	if not game_over and scenario == SCENARIO_BRIDGE:
-		if bridge_strength_across() >= bridge_strength_target: _finish_game(bridge_attacker, "bridge_breakthrough")
-		elif round_number >= bridge_turn_limit: _finish_game(bridge_defender, "turn_limit")
-		elif total_strength(bridge_attacker) <= 0: _finish_game(bridge_defender, "attacker_destroyed")
-		elif total_strength(bridge_defender) <= 0: _finish_game(bridge_attacker, "defender_destroyed")
+	if not game_over: _finish_if_army_destroyed()
+	if not game_over: _check_objectives()
 	if not game_over and scenario == SCENARIO_FOUR_PLAYER: _finish_if_one_team_remains()
 	if game_over:
 		phase = PHASE_GAME_OVER

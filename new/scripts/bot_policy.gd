@@ -108,6 +108,11 @@ func _choose_target(game: StrategoGame, piece: Dictionary, player: int) -> Vecto
 
 
 func _scenario_target(game: StrategoGame, player: int) -> Vector2i:
+	# Objective-driven scenarios name their own aim point, so the bot needs no
+	# per-scenario branch to play them.
+	var aim := game.objective_aim_point(player)
+	if aim.x >= 0:
+		return aim
 	if game.scenario == StrategoGame.SCENARIO_BRIDGE:
 		if player == game.bridge_attacker:
 			return Vector2i(StrategoGame.BRIDGE_COLUMNS[1], 0)

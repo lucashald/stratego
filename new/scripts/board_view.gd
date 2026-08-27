@@ -233,6 +233,15 @@ func _draw_surroundings() -> void:
 		draw_circle(Vector2(px, py), radius, tint)
 
 
+## Objective squares are marked so the contested ground is legible without
+## reading the scenario text.
+func _is_objective_square(position: Vector2i) -> bool:
+	for objective: Dictionary in game.objectives:
+		if String(objective.type) == StrategoGame.OBJECTIVE_HOLD_SQUARE and objective.square == position:
+			return true
+	return false
+
+
 func _draw_battlefield(origin: Vector2, cell: float, side: float) -> void:
 	draw_rect(Rect2(origin - Vector2(5, 5), Vector2(side + 10, side + 10)), Color("#332b1c"), true)
 	for y in StrategoGame.BOARD_SIZE:
@@ -247,7 +256,11 @@ func _draw_battlefield(origin: Vector2, cell: float, side: float) -> void:
 				ground = Color("#254f59").lerp(Color("#39717a"), variation * 0.35)
 			elif game.is_bridge(position):
 				ground = Color("#795c37").lerp(Color("#9a7748"), variation * 0.25)
+			elif _is_objective_square(position):
+				ground = Color("#6d5a2a").lerp(Color("#a08a3c"), variation * 0.3)
 			draw_rect(rect, ground, true)
+			if _is_objective_square(position):
+				draw_rect(rect.grow(-cell * 0.12), GOLD, false, maxf(1.5, cell * 0.07))
 			_draw_cell_texture(position, rect, cell)
 			if not reveal_all and not game.game_over and not game.is_position_visible_to(position, viewing_player):
 				draw_rect(rect, FOG_COLOR, true)

@@ -8,7 +8,7 @@ The stable classic game remains in `../classic/`.
 
 Run **Play New.bat** from the repository root, or open this directory in Godot 4.3 or newer.
 
-The default game is the two-player bridge scenario. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, withdraw, or manage replays.
+The default game is the two-player bridge scenario. **New Meeting** starts the symmetric centre-square battle instead. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, withdraw, or manage replays.
 
 During planning:
 
@@ -70,6 +70,22 @@ Fog remains four-square Manhattan vision. Seeing an enemy during any impulse rec
 - The four bridge squares are normal squares; the other river squares are impassable.
 - Blue wins by ending a round with at least 20 current Strength north of the river.
 - Red wins if Blue has not done so by the end of Round 20. The turn limit is explicitly a testing value.
+
+## Meeting engagement
+
+Both armies field the same twelve formations and deploy on their own back rank, so neither side starts near the objective and arriving first is actually possible. The centre square is the objective: hold it alone at the end of three consecutive rounds to win. Losing it for a single round resets the count, and if neither side has consolidated it by round 20 the battle is a draw.
+
+Unlike the bridge crossing, trading evenly does not favour either side: the win goes to whoever holds the ground, not to whoever survives the attrition.
+
+## Scenarios and objectives
+
+Terrain and victory conditions are data rather than per-scenario branches. A scenario lays its terrain during setup and declares one or more typed objectives:
+
+- `reach_area` — a player wins with a given Strength inside a rectangle at the end of a round
+- `hold_square` — a player wins by holding one square alone for a number of consecutive rounds
+- `survive` — a player wins by still standing at a given round
+
+Objectives resolve in the order declared, so a scenario sets its own precedence; the bridge attacker breaking through on the final round beats the defender's turn-limit win because it is declared first. Losing an entire army loses the game regardless. Each objective reports a one-line summary of its win condition alongside its current progress, so a bot or external controller can play a new scenario without special-casing it.
 
 ## Four-player mode
 

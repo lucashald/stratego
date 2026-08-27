@@ -105,8 +105,8 @@ server.tool(
 
 server.tool(
   "new_game",
-  "Start a fresh game. Defaults to the bridge scenario with you as the attacker.",
-  { seed: z.number().int().optional(), scenario: z.enum(["bridge", "four_player"]).optional() },
+  "Start a fresh game. bridge: cross the river with 20 strength. meeting: symmetric back-rank deployment, win by holding the centre square for 3 consecutive rounds. four_player: fog battle with Flags.",
+  { seed: z.number().int().optional(), scenario: z.enum(["bridge", "four_player", "meeting"]).optional() },
   (args) => forward("new_game", args),
 );
 

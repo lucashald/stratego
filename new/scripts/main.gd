@@ -471,7 +471,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_theme_constant_override("h_separation", 6)
 	game_buttons.add_theme_constant_override("v_separation", 6)
 	box.add_child(game_buttons)
-	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")]]:
+	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")]]:
 		var button := _make_button(String(definition[0]), 145)
 		button.pressed.connect(definition[1])
 		game_buttons.add_child(button)
@@ -566,6 +566,22 @@ func start_bridge_game() -> void:
 	_clear_logs()
 	_log_line("Bridge battle started. You command the Blue attacker.", true)
 	_log_line("Red may deploy anywhere north of the river; Blue begins on its board edge.")
+	settings_drawer.visible = false
+	_update_interface()
+
+
+func start_meeting_game() -> void:
+	session_id += 1
+	resolution_mode = false
+	spectator_mode = false
+	replay_view_mode = false
+	selected_scenario = StrategoGame.SCENARIO_MEETING
+	game = StrategoGame.new()
+	game.setup_meeting(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, StrategoGame.DEFAULT_HOLD_ROUNDS, 20, privacy_toggle.button_pressed)
+	_configure_board(false)
+	_clear_logs()
+	_log_line("Meeting engagement started. You command Blue.", true)
+	_log_line("Both armies are identical and deploy on their own back rank. Hold the centre square alone at the end of %d rounds in a row to win; if neither side does by round 20 the battle is a draw." % StrategoGame.DEFAULT_HOLD_ROUNDS)
 	settings_drawer.visible = false
 	_update_interface()
 
@@ -1051,6 +1067,13 @@ func _update_interface(update_detail: bool = true) -> void:
 		objective_label.text = "%d / %d across river" % [game.bridge_strength_across(), game.bridge_strength_target]
 		objective_progress.max_value = game.bridge_strength_target
 		objective_progress.value = game.bridge_strength_across()
+	elif game.scenario == StrategoGame.SCENARIO_MEETING and not game.objectives.is_empty():
+		var required := int(game.objectives[0].rounds)
+		var held := game.objective_streak(0, StrategoGame.BLUE)
+		var rival := game.objective_streak(0, StrategoGame.RED)
+		objective_label.text = "Centre held %d / %d  (Red %d)" % [held, required, rival]
+		objective_progress.max_value = required
+		objective_progress.value = held
 	else:
 		objective_label.text = "%d Strength remaining" % game.total_strength(StrategoGame.BLUE)
 		objective_progress.max_value = maxf(1.0, game.total_strength(StrategoGame.BLUE))

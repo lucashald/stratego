@@ -35,6 +35,7 @@ func _run() -> void:
 	_test_combat_reveal_requires_current_sight()
 	_test_bridge_end_of_round_victory()
 	_test_withdrawal_preserves_survivors_and_no_collapse()
+	_test_meeting_engagement_hold_objective()
 	_test_deterministic_replay_export()
 	_test_bot_round_smoke()
 	print("\n%d checks, %d failures" % [checks, failures])
@@ -586,6 +587,8 @@ func _test_bridge_end_of_round_victory() -> void:
 	breakthrough.bridge_attacker = StrategoGame.BLUE
 	breakthrough.bridge_defender = StrategoGame.RED
 	breakthrough.bridge_turn_limit = 20
+	breakthrough.add_reach_area_objective(StrategoGame.BLUE, Rect2i(0, 0, StrategoGame.BOARD_SIZE, StrategoGame.BRIDGE_RIVER_Y), 20, "bridge_breakthrough")
+	breakthrough.add_survive_objective(StrategoGame.RED, 20, "turn_limit")
 	breakthrough.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 8), 20)
 	breakthrough.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 0), 10)
 	_ready_and_resolve(breakthrough)
@@ -595,10 +598,82 @@ func _test_bridge_end_of_round_victory() -> void:
 	deadline.bridge_attacker = StrategoGame.BLUE
 	deadline.bridge_defender = StrategoGame.RED
 	deadline.bridge_turn_limit = 1
+	deadline.add_reach_area_objective(StrategoGame.BLUE, Rect2i(0, 0, StrategoGame.BOARD_SIZE, StrategoGame.BRIDGE_RIVER_Y), 20, "bridge_breakthrough")
+	deadline.add_survive_objective(StrategoGame.RED, 1, "turn_limit")
 	deadline.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 19), 10)
 	deadline.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 0), 10)
 	_ready_and_resolve(deadline)
 	_expect(deadline.game_over and deadline.winner == StrategoGame.RED and deadline.end_reason == "turn_limit", "defender wins when the attacker fails by the testing turn limit")
+
+
+## Holding the centre must be consecutive: losing it for a single round sends
+## the streak back to zero, and a contested objective at the limit is a draw.
+func _test_meeting_engagement_hold_objective() -> void:
+	var setup_game := StrategoGame.new()
+	setup_game.setup_meeting(7)
+	_expect(setup_game.scenario == StrategoGame.SCENARIO_MEETING, "meeting engagement loads its own scenario")
+	_expect(setup_game.objectives.size() == 1 and setup_game.objectives[0].square == Vector2i(10, 10), "the meeting objective is the centre square")
+	var blue_rows: Array = []
+	var red_rows: Array = []
+	for piece: Dictionary in setup_game.pieces:
+		if int(piece.player) == StrategoGame.BLUE: blue_rows.append(int(piece.position.y))
+		else: red_rows.append(int(piece.position.y))
+	_expect(blue_rows.count(19) == blue_rows.size() and red_rows.count(0) == red_rows.size(), "both armies deploy on their own back rank")
+	_expect(setup_game.total_strength(StrategoGame.BLUE) == setup_game.total_strength(StrategoGame.RED), "meeting engagements start symmetric")
+
+	var game := StrategoGame.new()
+	game.setup_empty()
+	game.scenario = StrategoGame.SCENARIO_MEETING
+	var objective := Vector2i(5, 5)
+	game.add_hold_square_objective(objective, 3, 12)
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, objective)
+	var rival := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 8))
+	_ready_and_resolve(game)
+	_expect(game.objective_streak(0, StrategoGame.BLUE) == 1, "holding the square banks one round")
+	_ready_and_resolve(game)
+	_expect(game.objective_streak(0, StrategoGame.BLUE) == 2 and not game.game_over, "two rounds is not yet enough")
+	# Step off, and the consolidation has to start over.
+	game.set_unit_order(StrategoGame.BLUE, holder, [Vector2i(5, 4)])
+	_ready_and_resolve(game)
+	_expect(game.objective_streak(0, StrategoGame.BLUE) == 0, "leaving the square resets the streak")
+	game.set_unit_order(StrategoGame.BLUE, holder, [Vector2i(5, 5)])
+	_ready_and_resolve(game)
+	_expect(game.objective_streak(0, StrategoGame.BLUE) == 1, "retaking the square starts a fresh streak")
+	_ready_and_resolve(game)
+	_ready_and_resolve(game)
+	_expect(game.game_over and game.winner == StrategoGame.BLUE and game.end_reason == "held_objective", "three consecutive rounds wins the objective")
+	_expect(game.pieces[rival].alive, "the objective is won by holding it, not by destroying the enemy")
+
+	var replayable := StrategoGame.new()
+	replayable.setup_meeting(4, StrategoGame.BLUE, StrategoGame.RED, 3, 6)
+	var bot := StrategoBotPolicy.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4
+	for round_index in 3:
+		if replayable.game_over: break
+		for player in replayable.active_players.duplicate():
+			bot.plan_round(replayable, player, rng)
+			replayable.mark_player_ready(player)
+		replayable.resolve_main_and_ranged()
+		for player in replayable.active_players.duplicate():
+			bot.plan_leftover(replayable, player, rng)
+			replayable.mark_player_ready(player)
+		replayable.resolve_leftover_phase()
+	var document := replayable.build_replay_document()
+	_expect(String(document.setup.scenario) == StrategoGame.SCENARIO_MEETING, "a meeting replay records its scenario")
+	var verified := StrategoGame.run_replay(document)
+	_expect(bool(verified.get("ok", false)), "a meeting engagement replays deterministically: %s" % String(verified.get("message", "")))
+	_expect(String(verified.get("digest", "")) == replayable.state_digest(), "the meeting replay reconstructs the exact final state")
+
+	var drawn := StrategoGame.new()
+	drawn.setup_empty()
+	drawn.scenario = StrategoGame.SCENARIO_MEETING
+	drawn.add_hold_square_objective(Vector2i(5, 5), 3, 2)
+	drawn.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(1, 1))
+	drawn.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(9, 9))
+	_ready_and_resolve(drawn)
+	_ready_and_resolve(drawn)
+	_expect(drawn.game_over and drawn.winner == StrategoGame.DRAW and drawn.end_reason == "objective_contested", "an objective nobody consolidates is a draw")
 
 
 func _test_withdrawal_preserves_survivors_and_no_collapse() -> void:

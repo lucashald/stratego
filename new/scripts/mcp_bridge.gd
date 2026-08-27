@@ -139,6 +139,9 @@ func _new_game(args: Dictionary) -> Dictionary:
 	if scenario == StrategoGame.SCENARIO_BRIDGE:
 		game.setup_bridge(seed_value)
 		controlled_player = game.bridge_attacker
+	elif scenario == StrategoGame.SCENARIO_MEETING:
+		game.setup_meeting(seed_value)
+		controlled_player = StrategoGame.BLUE
 	else:
 		game.setup_random(seed_value, int(args.get("player_count", 4)))
 		controlled_player = StrategoGame.BLUE
