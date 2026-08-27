@@ -41,10 +41,11 @@ func plan_leftover(game: StrategoGame, player: int, _rng: RandomNumberGenerator)
 
 
 func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, _rng: RandomNumberGenerator) -> void:
-	var adjacent_enemy := _adjacent_enemy(game, piece.position, player)
-	if piece.role == StrategoGame.ROLE_ARCHER and not adjacent_enemy.is_empty():
-		game.set_unit_order(player, int(piece.id), [], adjacent_enemy.position)
-		return
+	if piece.role == StrategoGame.ROLE_ARCHER:
+		var ranged_enemy := _ranged_enemy(game, piece.position, player)
+		if not ranged_enemy.is_empty():
+			game.set_unit_order(player, int(piece.id), [], ranged_enemy.position)
+			return
 	var target := _choose_target(game, piece, player)
 	var path: Array[Vector2i] = []
 	var position: Vector2i = piece.position
@@ -79,12 +80,17 @@ func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, _rng: R
 		game.set_unit_order(player, int(piece.id), [])
 
 
-func _adjacent_enemy(game: StrategoGame, position: Vector2i, player: int) -> Dictionary:
-	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
-		var target := game.observed_piece_at(position + direction, player)
-		if not target.is_empty() and not game.are_allied_players(player, int(target.player)) and target.type != StrategoGame.FLAG:
-			return target
-	return {}
+func _ranged_enemy(game: StrategoGame, position: Vector2i, player: int) -> Dictionary:
+	var best: Dictionary = {}
+	var best_distance := 3
+	for target: Dictionary in game.pieces:
+		if not target.alive or target.type == StrategoGame.FLAG or game.are_allied_players(player, int(target.player)) or not game.is_piece_visible_to(target, player):
+			continue
+		var distance := absi(position.x - target.position.x) + absi(position.y - target.position.y)
+		if distance in [1, 2] and distance < best_distance:
+			best = target
+			best_distance = distance
+	return best
 
 
 func _choose_target(game: StrategoGame, piece: Dictionary, player: int) -> Vector2i:

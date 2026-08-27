@@ -291,7 +291,7 @@ func _draw_order_ghosts(origin: Vector2, cell: float) -> void:
 				_draw_arrow_head(previous_center, center, cell)
 				draw_circle(center, cell * 0.27, Color(0.04, 0.18, 0.34, 0.9))
 				draw_arc(center, cell * 0.27, 0.0, TAU, 28, Color("#a6d5ff"), maxf(1.6, cell * 0.045))
-				_draw_centered_text(font, str(index + 1), Rect2(center - Vector2(cell * 0.25, cell * 0.25), Vector2(cell * 0.5, cell * 0.5)), int(cell * 0.25), Color.WHITE)
+				_draw_centered_text(font, str(game.impulse_for_movement_step(game.pieces[piece_id], index)), Rect2(center - Vector2(cell * 0.25, cell * 0.25), Vector2(cell * 0.5, cell * 0.5)), int(cell * 0.25), Color.WHITE)
 				previous = position
 			if not path.is_empty():
 				_draw_hex(_cell_center(path.back(), origin, cell), cell * 0.48, Color(0.15, 0.48, 0.76, 0.2), Color("#75c2ff"), maxf(1.5, cell * 0.04))
@@ -341,13 +341,7 @@ func _piece_has_unused_movement(piece_id: int) -> bool:
 		return false
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		return game.can_receive_leftover_order(viewing_player, piece_id)
-	var order := game.order_for_piece(piece_id)
-	var spent := int(order.get("path", []).size())
-	if order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
-		spent += 1
-	if not leftover_mode and order.get("leftover", Vector2i(-1, -1)).x >= 0:
-		spent += 1
-	return spent < game.movement_limit_for(game.pieces[piece_id])
+	return game.planned_movement_reserved(piece_id) < game.movement_limit_for(game.pieces[piece_id])
 
 
 func _draw_direction_marker(center: Vector2, direction: Vector2i, cell: float, color: Color) -> void:
@@ -701,7 +695,7 @@ func _handle_left_click(screen_position: Vector2, additive: bool) -> void:
 			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction)
 	elif leftover_mode:
 		result = game.set_leftover_order(viewing_player, selected_piece_id, clicked)
-	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and projected.distance_to(clicked) == 1.0:
+	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked):
 		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked)
 	else:
 		result = game.append_order_step(viewing_player, selected_piece_id, clicked)

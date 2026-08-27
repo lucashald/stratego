@@ -8,14 +8,14 @@ The stable classic game remains in `../classic/`.
 
 Run **Play New.bat** from the repository root, or open this directory in Godot 4.3 or newer.
 
-The default game is the two-player bridge scenario. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, or withdraw.
+The default game is the two-player bridge scenario. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, withdraw, or manage replays.
 
 During planning:
 
 1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
 2. Click one of the large on-map direction arrows, use the inspector's **Move Selection** buttons, or press an arrow/WASD key to draw the main path. With several formations selected, that direction is applied to every member that still has unused movement. Exhausted Heavy or Medium formations are skipped while faster formations continue. Terrain, off-board, or friendly-collision failures still reject the resulting group step.
 3. Ghosts numbered 1–3 show the square each formation intends to occupy on each impulse.
-4. In **Settings**, enable **Archer target mode** and click an adjacent visible enemy to schedule a shot.
+4. In **Settings**, enable **Archer target mode** and click a visible enemy to schedule a shot. An Archer can fire at range 1 by spending one unused movement point, or at range 2 if it remains stationary during main movement; a range-2 shot consumes its full movement.
 5. Right-click to remove the selected formation or group's last main-path impulse. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
 6. Choose **End Planning** when planning is complete.
 
@@ -29,15 +29,17 @@ The game rejects orders from one player that would make friendly formations occu
 
 **Withdraw** is available during planning. It immediately concedes the scenario while preserving every surviving formation at its current Strength. It does not revive destroyed units. There is no automatic material-collapse rule yet.
 
+**Export Replay** is available between rounds and after battle. It writes a timestamped JSON file under the game's `user://replays/` folder and updates the **Replay Last** slot. The versioned file records scenario setup, seed, orders from both order phases, the exact dice stream, and verification digests. **Replay Last** rebuilds the match through the authoritative engine, rejects any divergence, and then lets you click through every recorded battle, retreat, and bounce before showing the reproduced final battlefield.
+
 ## Round sequence
 
-1. Main movement resolves simultaneously in up to three impulses: Light 3, Medium 2, Heavy 1.
+1. Main movement resolves simultaneously in three impulses: Light moves on 1, 2, and 3; Medium moves on 2 and 3; Heavy moves only on 3. Only movement steps actually attempted are spent, including an attempted entry that ends in a bounce.
 2. Every melee batch resolves, followed by all retreats from that batch simultaneously.
-3. Eligible Archer attacks resolve simultaneously. A shot costs one unused movement point.
+3. Eligible Archer attacks resolve simultaneously. A range-1 shot costs one unused movement point; a stationary range-2 shot consumes the Archer's full movement.
 4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one square.
 5. Victory is checked at the end of the round.
 
-Winning the main melee stops the unit's remaining main path, but it may still shoot or use its one-square leftover move if it has movement available. Losing or bouncing ends the unit's actions for the round. This permits at most one main-path melee and one intentional leftover melee.
+Winning the main melee stops the unit's remaining main path, but it may still shoot during the ranged phase or use its one-square leftover move if it has movement available. Losing or bouncing ends the unit's actions for the round. This permits at most one main-path melee and one intentional leftover melee.
 
 ## Combat
 
@@ -81,7 +83,7 @@ Run **Test New.bat**, or:
 godot --headless --path . --script res://tests/test_runner.gd
 ```
 
-The deterministic suite covers setup, fog, impulse paths, order rejection, allied and combat bounces, crossing attacks, doubled winner Armor, natural 10s, multiway battles, highest-opponent damage, focus fire, ranged eligibility, leftover melee, blocked retreats, retreat battles, transient sightings, bridge victory, withdrawal, the absence of automatic collapse, and four-bot round resolution.
+The deterministic suite covers setup, fog, delayed weight-based impulse timing, actual movement spending, order rejection, allied and combat bounces, crossing attacks, doubled winner Armor, natural 10s, multiway battles, highest-opponent damage, focus fire, range-1 and stationary range-2 Archer fire, leftover melee, blocked retreats, retreat battles, transient sightings, bridge victory, withdrawal, the absence of automatic collapse, replay JSON/file round trips, replay tamper rejection, and four-bot round resolution.
 
 ## Piece codes
 

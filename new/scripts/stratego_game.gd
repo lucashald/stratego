@@ -44,6 +44,8 @@ const BRIDGE_RIVER_Y := 9
 const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
+const REPLAY_FORMAT := "wego-formations-replay"
+const REPLAY_VERSION := 1
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const ARMOR_BY_WEIGHT := {WEIGHT_LIGHT: 0, WEIGHT_MEDIUM: 1, WEIGHT_HEAVY: 2}
@@ -112,6 +114,8 @@ var bridge_attacker := BLUE
 var bridge_defender := RED
 var bridge_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var bridge_strength_target := BRIDGE_STRENGTH_TARGET
+var setup_seed := 0
+var replay_rounds: Array[Dictionary] = []
 
 # Compatibility counters retained for the model/training shell.
 var current_player := BLUE
@@ -125,6 +129,8 @@ var _visibility_dirty := true
 var _cached_vision_range := -1
 var _rng := RandomNumberGenerator.new()
 var _forced_rolls: Array[int] = []
+var _roll_history: Array[int] = []
+var _active_replay_round: Dictionary = {}
 
 
 func _init() -> void:
@@ -166,10 +172,14 @@ func setup_empty() -> void:
 	bridge_defender = RED
 	bridge_turn_limit = DEFAULT_BRIDGE_TURN_LIMIT
 	bridge_strength_target = BRIDGE_STRENGTH_TARGET
+	setup_seed = 0
+	replay_rounds.clear()
 	current_player = BLUE
 	ply_count = 0
 	quiet_plies = 0
 	_forced_rolls.clear()
+	_roll_history.clear()
+	_active_replay_round.clear()
 	_visible_cells_by_player.clear()
 	_visibility_dirty = true
 	_cached_vision_range = -1
@@ -214,6 +224,7 @@ func _seed_rng(seed_value: int) -> void:
 		_rng.randomize()
 	else:
 		_rng.seed = seed_value
+	setup_seed = int(_rng.seed)
 
 
 static func players_for_count(player_count: int) -> Array[int]:
@@ -365,6 +376,19 @@ func movement_limit_for(piece: Dictionary) -> int:
 	return int(MOVEMENT_BY_WEIGHT.get(piece.get("weight", ""), 0))
 
 
+func first_movement_impulse_for(piece: Dictionary) -> int:
+	return 4 - movement_limit_for(piece)
+
+
+func movement_step_index_for_impulse(piece: Dictionary, impulse: int) -> int:
+	var step_index := impulse - first_movement_impulse_for(piece)
+	return step_index if step_index >= 0 and step_index < movement_limit_for(piece) else -1
+
+
+func impulse_for_movement_step(piece: Dictionary, step_index: int) -> int:
+	return first_movement_impulse_for(piece) + step_index
+
+
 func order_for_piece(piece_id: int) -> Dictionary:
 	if piece_id < 0 or piece_id >= pieces.size(): return {}
 	var player := int(pieces[piece_id].player)
@@ -381,7 +405,8 @@ func projected_order_position(piece_id: int, impulse: int) -> Vector2i:
 	var piece: Dictionary = pieces[piece_id]
 	var path: Array = order_for_piece(piece_id).get("path", [])
 	if impulse <= 0 or path.is_empty(): return piece.position
-	return path[mini(impulse, path.size()) - 1]
+	var completed_steps := clampi(impulse - first_movement_impulse_for(piece) + 1, 0, path.size())
+	return piece.position if completed_steps == 0 else path[completed_steps - 1]
 
 
 func projected_main_destination(piece_id: int) -> Vector2i:
@@ -407,9 +432,8 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 	var movement_cost := normalized_path.size()
 	if ranged_target.x >= 0:
 		if piece.role != ROLE_ARCHER: return {"ok": false, "message": "Only Archers can receive ranged orders."}
-		if previous.distance_to(ranged_target) != 1.0:
-			return {"ok": false, "message": "Archers can only target an adjacent square after their main path."}
-		movement_cost += 1
+		if not _ranged_order_can_resolve(piece, normalized_path, ranged_target):
+			return {"ok": false, "message": "Archers may target an adjacent square after moving, or a square up to range 2 if they remain stationary."}
 	if leftover.x >= 0:
 		if previous.distance_to(leftover) != 1.0 or not is_inside(leftover) or is_blocked_terrain(leftover):
 			return {"ok": false, "message": "Leftover movement is one adjacent passable square."}
@@ -468,7 +492,7 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 			orders[player] = original_orders
 			return {"ok": false, "message": "Every selected formation must be able to move."}
 		var current: Dictionary = original_orders.get(piece_id, {})
-		if not remove_last and _order_movement_spent(current) >= movement_limit_for(pieces[piece_id]):
+		if not remove_last and planned_movement_reserved(piece_id, current) >= movement_limit_for(pieces[piece_id]):
 			skipped_for_speed += 1
 			continue
 		var path: Array = current.get("path", []).duplicate()
@@ -505,13 +529,49 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped_for_speed, "message": message}
 
 
-func _order_movement_spent(order: Dictionary) -> int:
+func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -> int:
+	if piece_id < 0 or piece_id >= pieces.size():
+		return 0
+	var order := supplied_order if not supplied_order.is_empty() else order_for_piece(piece_id)
+	var piece: Dictionary = pieces[piece_id]
 	var spent := int(order.get("path", []).size())
-	if order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
-		spent += 1
+	var target: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+	if target.x >= 0:
+		var path: Array = order.get("path", [])
+		var projected: Vector2i = piece.position if path.is_empty() else path.back()
+		if _grid_distance(projected, target) == 1 and path.size() < movement_limit_for(piece):
+			spent += 1
+		elif path.is_empty() and _grid_distance(piece.position, target) == 2:
+			spent = movement_limit_for(piece)
 	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
 		spent += 1
 	return spent
+
+
+func _grid_distance(first: Vector2i, second: Vector2i) -> int:
+	return absi(first.x - second.x) + absi(first.y - second.y)
+
+
+func _ranged_order_can_resolve(piece: Dictionary, path: Array[Vector2i], target: Vector2i) -> bool:
+	if not is_inside(target):
+		return false
+	var projected: Vector2i = piece.position if path.is_empty() else path.back()
+	var short_after_path := _grid_distance(projected, target) == 1 and path.size() < movement_limit_for(piece)
+	var stationary_option := _grid_distance(piece.position, target) in [1, 2]
+	return short_after_path or stationary_option
+
+
+func ranged_order_is_available(player: int, piece_id: int, target: Vector2i) -> bool:
+	if phase != PHASE_PLANNING or piece_id < 0 or piece_id >= pieces.size():
+		return false
+	var piece: Dictionary = pieces[piece_id]
+	if int(piece.player) != player or piece.role != ROLE_ARCHER:
+		return false
+	var current := order_for_piece(piece_id)
+	var typed_path: Array[Vector2i] = []
+	for step in current.get("path", []):
+		typed_path.append(step)
+	return _ranged_order_can_resolve(piece, typed_path, target)
 
 
 func set_ranged_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
@@ -552,7 +612,7 @@ func set_group_leftover_step(player: int, piece_ids: Array[int], direction: Vect
 		var current: Dictionary = original_orders.get(piece_id, {})
 		var path: Array = current.get("path", []).duplicate()
 		var ranged_target: Vector2i = current.get("ranged_target", Vector2i(-1, -1))
-		var spent_before_leftover := path.size() + (1 if ranged_target.x >= 0 else 0)
+		var spent_before_leftover := planned_movement_reserved(piece_id, current)
 		if spent_before_leftover >= movement_limit_for(pieces[piece_id]):
 			skipped_for_speed += 1
 			continue
@@ -731,7 +791,13 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 			var position := projected_order_position(int(piece.id), impulse)
 			if position in occupied:
 				var defender := piece_at(position)
-				if defender.is_empty() or are_allied_players(player, int(defender.player)):
+				var other_id := int(occupied[position])
+				var simultaneous_enemy_convergence := false
+				for arrival_impulse in range(1, impulse + 1):
+					if projected_order_position(int(piece.id), arrival_impulse) == position and projected_order_position(other_id, arrival_impulse) == position and projected_order_position(int(piece.id), arrival_impulse - 1) != position and projected_order_position(other_id, arrival_impulse - 1) != position:
+						simultaneous_enemy_convergence = true
+						break
+				if defender.is_empty() or are_allied_players(player, int(defender.player)) or not simultaneous_enemy_convergence:
 					clear = false
 					break
 			occupied[position] = piece.id
@@ -791,6 +857,9 @@ func resolve_round() -> Array[Dictionary]:
 
 func resolve_main_and_ranged() -> Array[Dictionary]:
 	if phase != PHASE_PLANNING or game_over or not all_players_ready(): return []
+	var recorded_round := round_number
+	var recorded_orders := _encode_main_orders()
+	var roll_start := _roll_history.size()
 	phase = PHASE_RESOLVING
 	last_round_events.clear()
 	_begin_round_state()
@@ -800,19 +869,30 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 		for piece: Dictionary in pieces:
 			if not is_movable(piece) or bool(piece.main_done): continue
 			var path: Array = order_for_piece(int(piece.id)).get("path", [])
-			if path.size() >= impulse:
-				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[impulse - 1], "is_attacker": true, "impulse": impulse})
+			var step_index := movement_step_index_for_impulse(piece, impulse)
+			if step_index >= 0 and path.size() > step_index:
+				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[step_index], "is_attacker": true, "impulse": impulse})
 		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse))
 		_record_all_sightings()
 	last_round_events.append_array(_resolve_ranged_phase())
 	_record_all_sightings()
 	ready_players.clear()
 	phase = PHASE_LEFTOVER_PLANNING
+	_active_replay_round = {
+		"round": recorded_round,
+		"main_orders": recorded_orders,
+		"main_rolls": _roll_history.slice(roll_start),
+		"main_event_digest": _digest_value(last_round_events),
+		"main_state_digest": state_digest(),
+	}
 	return last_round_events.duplicate(true)
 
 
 func resolve_leftover_phase() -> Array[Dictionary]:
 	if phase != PHASE_LEFTOVER_PLANNING or game_over or not all_players_ready(): return []
+	var recorded_round := round_number
+	var recorded_orders := _encode_leftover_orders()
+	var roll_start := _roll_history.size()
 	phase = PHASE_RESOLVING
 	var leftover_events: Array[Dictionary] = []
 	var leftover_proposals: Array[Dictionary] = []
@@ -826,6 +906,14 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 		last_round_events.append_array(leftover_events)
 	_record_all_sightings()
 	_finish_round()
+	if _active_replay_round.is_empty():
+		_active_replay_round = {"round": recorded_round, "main_orders": [], "main_rolls": [], "main_event_digest": "", "main_state_digest": ""}
+	_active_replay_round.leftover_orders = recorded_orders
+	_active_replay_round.leftover_rolls = _roll_history.slice(roll_start)
+	_active_replay_round.leftover_event_digest = _digest_value(leftover_events)
+	_active_replay_round.final_state_digest = state_digest()
+	replay_rounds.append(_active_replay_round.duplicate(true))
+	_active_replay_round.clear()
 	return leftover_events.duplicate(true)
 
 
@@ -1129,12 +1217,14 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 	for piece: Dictionary in pieces:
 		if not _eligible_to_shoot(piece): continue
 		var target_position: Vector2i = order_for_piece(int(piece.id)).get("ranged_target", Vector2i(-1, -1))
-		if target_position.x < 0 or piece.position.distance_to(target_position) != 1.0: continue
+		var shot_range := _grid_distance(piece.position, target_position)
+		var shot_cost := _ranged_shot_cost(piece, target_position)
+		if shot_cost <= 0: continue
 		var target := piece_at(target_position)
 		if target.is_empty() or are_allied_players(int(piece.player), int(target.player)) or target.type == FLAG: continue
 		var resolution := calculate_ranged(piece, target)
-		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target_position, "resolution": resolution})
-		pieces[piece.id].movement_used = int(pieces[piece.id].movement_used) + 1
+		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target_position, "range": shot_range, "movement_cost": shot_cost, "resolution": resolution})
+		pieces[piece.id].movement_used = int(pieces[piece.id].movement_used) + shot_cost
 		pieces[piece.id].participated_in_combat = true
 	var total_damage: Dictionary = {}
 	for shot: Dictionary in shots:
@@ -1152,6 +1242,7 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		var event := {
 			"ok": true, "action": "ranged", "batch": "ranged", "combat": true, "ranged": true,
 			"from": shot.from, "to": shot.to, "shooter_id": shooter_id, "target_id": target_id,
+			"range": int(shot.range), "movement_cost": int(shot.movement_cost),
 			"attacker_score": int(shot.resolution.attacker_score), "attacker_raw_roll": int(shot.resolution.attacker_raw_roll),
 			"defender_damage": int(shot.resolution.defender_damage), "result": "ranged_destroyed" if not pieces[target_id].alive else "ranged_hit",
 			"known_to": _battle_viewers_for_ids([shooter_id, target_id]),
@@ -1162,7 +1253,19 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 
 
 func _eligible_to_shoot(piece: Dictionary) -> bool:
-	return is_movable(piece) and piece.role == ROLE_ARCHER and String(piece.round_status) in [STATUS_READY, STATUS_WON] and int(piece.movement_used) < movement_limit_for(piece) and order_for_piece(int(piece.id)).get("ranged_target", Vector2i(-1, -1)).x >= 0
+	if not is_movable(piece) or piece.role != ROLE_ARCHER or String(piece.round_status) not in [STATUS_READY, STATUS_WON]:
+		return false
+	var target: Vector2i = order_for_piece(int(piece.id)).get("ranged_target", Vector2i(-1, -1))
+	return target.x >= 0 and _ranged_shot_cost(piece, target) > 0
+
+
+func _ranged_shot_cost(piece: Dictionary, target: Vector2i) -> int:
+	var distance := _grid_distance(piece.position, target)
+	if distance == 1 and int(piece.movement_used) < movement_limit_for(piece):
+		return 1
+	if distance == 2 and int(piece.movement_used) == 0:
+		return movement_limit_for(piece)
+	return 0
 
 
 func _eligible_for_leftover(piece: Dictionary) -> bool:
@@ -1275,7 +1378,315 @@ func set_forced_rolls(raw_rolls: Array[int]) -> void:
 
 
 func _roll_d10() -> int:
-	return _forced_rolls.pop_front() if not _forced_rolls.is_empty() else _rng.randi_range(1, 10)
+	var result: int = _forced_rolls.pop_front() if not _forced_rolls.is_empty() else _rng.randi_range(1, 10)
+	_roll_history.append(result)
+	return result
+
+
+func _encode_main_orders() -> Array[Dictionary]:
+	var encoded: Array[Dictionary] = []
+	for player in PLAYER_ORDER:
+		var ids: Array = orders.get(player, {}).keys()
+		ids.sort()
+		for id_value in ids:
+			var piece_id := int(id_value)
+			var order: Dictionary = orders[player][piece_id]
+			var path: Array = []
+			for position: Vector2i in order.get("path", []):
+				path.append(_encode_position(position))
+			encoded.append({
+				"player": player,
+				"piece_id": piece_id,
+				"path": path,
+				"ranged_target": _encode_position(order.get("ranged_target", Vector2i(-1, -1))),
+				"leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
+			})
+	return encoded
+
+
+func _encode_leftover_orders() -> Array[Dictionary]:
+	var encoded: Array[Dictionary] = []
+	for player in PLAYER_ORDER:
+		var ids: Array = orders.get(player, {}).keys()
+		ids.sort()
+		for id_value in ids:
+			var piece_id := int(id_value)
+			var target: Vector2i = orders[player][piece_id].get("leftover", Vector2i(-1, -1))
+			if target.x >= 0:
+				encoded.append({"player": player, "piece_id": piece_id, "target": _encode_position(target)})
+	return encoded
+
+
+static func _encode_position(position: Vector2i) -> Array[int]:
+	return [position.x, position.y]
+
+
+static func _decode_position(value: Variant) -> Vector2i:
+	if value is Array and value.size() == 2:
+		return Vector2i(int(value[0]), int(value[1]))
+	return Vector2i(-1, -1)
+
+
+static func _json_safe(value: Variant) -> Variant:
+	if value is Vector2i:
+		return _encode_position(value)
+	if value is Dictionary:
+		var converted := {}
+		var keys: Array = value.keys()
+		keys.sort_custom(func(first: Variant, second: Variant) -> bool: return str(first) < str(second))
+		for key in keys:
+			converted[str(key)] = _json_safe(value[key])
+		return converted
+	if value is Array:
+		var converted: Array = []
+		for item in value:
+			converted.append(_json_safe(item))
+		return converted
+	return value
+
+
+static func _digest_value(value: Variant) -> String:
+	return JSON.stringify(_json_safe(value)).sha256_text()
+
+
+func state_digest() -> String:
+	var piece_state: Array = []
+	for piece: Dictionary in pieces:
+		var seen_by: Array = piece.get("seen_by", []).duplicate()
+		var revealed_to: Array = piece.get("revealed_to", []).duplicate()
+		seen_by.sort()
+		revealed_to.sort()
+		piece_state.append({
+			"id": int(piece.id), "type": String(piece.type), "player": int(piece.player),
+			"strength": int(piece.strength), "max_strength": int(piece.max_strength), "alive": bool(piece.alive),
+			"position": _encode_position(piece.position), "previous_position": _encode_position(piece.previous_position),
+			"round_status": String(piece.round_status), "movement_used": int(piece.movement_used),
+			"melee_count": int(piece.melee_count), "main_done": bool(piece.main_done),
+			"move_count": int(piece.move_count), "seen_by": seen_by, "revealed_to": revealed_to,
+		})
+	var teams: Array = []
+	for player in PLAYER_ORDER:
+		if player in player_teams:
+			teams.append([player, int(player_teams[player])])
+	return _digest_value({
+		"scenario": scenario, "round": round_number, "turn": turn_number, "phase": phase,
+		"game_over": game_over, "winner": winner, "winning_team": winning_team, "end_reason": end_reason,
+		"withdrawing_player": withdrawing_player, "active_players": active_players,
+		"eliminated_players": eliminated_players, "teams": teams, "pieces": piece_state,
+	})
+
+
+func build_replay_document() -> Dictionary:
+	if phase not in [PHASE_PLANNING, PHASE_GAME_OVER]:
+		return {}
+	var teams: Array = []
+	for player in PLAYER_ORDER:
+		if player in player_teams:
+			teams.append([player, int(player_teams[player])])
+	return {
+		"format": REPLAY_FORMAT,
+		"version": REPLAY_VERSION,
+		"setup": {
+			"scenario": scenario, "seed": setup_seed, "player_count": configured_player_count,
+			"private_battle_results": private_battle_results, "vision_range": vision_range,
+			"bridge_attacker": bridge_attacker, "bridge_defender": bridge_defender,
+			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
+			"teams": teams,
+		},
+		"rounds": replay_rounds.duplicate(true),
+		"terminal": {
+			"game_over": game_over, "winner": winner, "end_reason": end_reason,
+			"withdrawal_player": withdrawing_player,
+		},
+		"final_state_digest": state_digest(),
+	}
+
+
+func save_replay(path: String) -> Dictionary:
+	var document := build_replay_document()
+	if document.is_empty():
+		return {"ok": false, "message": "Replays can be exported between rounds or after the battle."}
+	var absolute_path := ProjectSettings.globalize_path(path)
+	var directory_error := DirAccess.make_dir_recursive_absolute(absolute_path.get_base_dir())
+	if directory_error != OK:
+		return {"ok": false, "message": "Could not create the replay folder."}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return {"ok": false, "message": "Could not open the replay file for writing."}
+	file.store_string(JSON.stringify(document, "  "))
+	file.close()
+	return {"ok": true, "path": absolute_path, "rounds": replay_rounds.size(), "digest": String(document.final_state_digest)}
+
+
+static func load_replay_document(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {"ok": false, "message": "No replay file exists at that location."}
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return {"ok": false, "message": "Could not open the replay file."}
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if parsed is not Dictionary:
+		return {"ok": false, "message": "The replay file is not valid JSON replay data."}
+	return {"ok": true, "document": parsed}
+
+
+func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
+	if phase != PHASE_PLANNING or not ready_players.is_empty():
+		return {"ok": false, "message": "Main replay orders require an open planning phase."}
+	orders.clear()
+	var candidates: Array[Dictionary] = []
+	var seen_ids: Dictionary = {}
+	for entry_value in encoded_orders:
+		if entry_value is not Dictionary:
+			return {"ok": false, "message": "A recorded main order is malformed."}
+		var entry: Dictionary = entry_value
+		var player := int(entry.get("player", DRAW))
+		var piece_id := int(entry.get("piece_id", EMPTY))
+		if piece_id in seen_ids or piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
+			return {"ok": false, "message": "A recorded main order references an invalid formation."}
+		seen_ids[piece_id] = true
+		var path: Array[Vector2i] = []
+		for position_value in entry.get("path", []):
+			path.append(_decode_position(position_value))
+		var candidate := {
+			"piece_id": piece_id, "player": player, "path": path,
+			"ranged_target": _decode_position(entry.get("ranged_target", [-1, -1])),
+			"leftover": _decode_position(entry.get("leftover", [-1, -1])),
+		}
+		if player not in orders:
+			orders[player] = {}
+		orders[player][piece_id] = candidate
+		candidates.append(candidate)
+	for candidate: Dictionary in candidates:
+		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover)
+		if not bool(result.get("ok", false)):
+			orders.clear()
+			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
+	return {"ok": true, "count": candidates.size()}
+
+
+func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
+	if phase != PHASE_LEFTOVER_PLANNING or not ready_players.is_empty():
+		return {"ok": false, "message": "Leftover replay orders require an open leftover phase."}
+	for player in active_players:
+		clear_player_orders(player)
+	var seen_ids: Dictionary = {}
+	var touched_players: Array[int] = []
+	for entry_value in encoded_orders:
+		if entry_value is not Dictionary:
+			return {"ok": false, "message": "A recorded leftover order is malformed."}
+		var entry: Dictionary = entry_value
+		var player := int(entry.get("player", DRAW))
+		var piece_id := int(entry.get("piece_id", EMPTY))
+		var target := _decode_position(entry.get("target", [-1, -1]))
+		if piece_id in seen_ids or not can_receive_leftover_order(player, piece_id):
+			return {"ok": false, "message": "A recorded leftover order references an ineligible formation."}
+		if pieces[piece_id].position.distance_to(target) != 1.0 or not is_inside(target) or is_blocked_terrain(target):
+			return {"ok": false, "message": "A recorded leftover destination is invalid."}
+		seen_ids[piece_id] = true
+		if player not in orders:
+			orders[player] = {}
+		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
+		if candidate.is_empty():
+			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
+		candidate.leftover = target
+		orders[player][piece_id] = candidate
+		if player not in touched_players:
+			touched_players.append(player)
+	for player in touched_players:
+		if not _same_player_leftover_orders_are_clear(player):
+			return {"ok": false, "message": "Recorded leftover orders contain a friendly collision."}
+	return {"ok": true, "count": seen_ids.size()}
+
+
+static func _decode_rolls(values: Array) -> Array[int]:
+	var rolls: Array[int] = []
+	for value in values:
+		var roll := int(value)
+		if roll < 1 or roll > 10:
+			return []
+		rolls.append(roll)
+	return rolls
+
+
+static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
+	if String(document.get("format", "")) != REPLAY_FORMAT or int(document.get("version", 0)) != REPLAY_VERSION:
+		return {"ok": false, "message": "Unsupported replay format or version."}
+	var setup: Dictionary = document.get("setup", {})
+	var replay_game := StrategoGame.new()
+	var replay_scenario := String(setup.get("scenario", ""))
+	var seed := int(setup.get("seed", 0))
+	var privacy := bool(setup.get("private_battle_results", true))
+	if replay_scenario == SCENARIO_BRIDGE:
+		replay_game.setup_bridge(seed, int(setup.get("bridge_attacker", BLUE)), int(setup.get("bridge_defender", RED)), int(setup.get("bridge_turn_limit", DEFAULT_BRIDGE_TURN_LIMIT)), privacy)
+		replay_game.bridge_strength_target = int(setup.get("bridge_strength_target", BRIDGE_STRENGTH_TARGET))
+	elif replay_scenario == SCENARIO_FOUR_PLAYER:
+		replay_game.setup_random(seed, int(setup.get("player_count", 4)), privacy)
+	else:
+		return {"ok": false, "message": "The replay uses an unsupported scenario."}
+	replay_game.vision_range = int(setup.get("vision_range", DEFAULT_VISION_RANGE))
+	for team_value in setup.get("teams", []):
+		if team_value is Array and team_value.size() == 2:
+			replay_game.set_player_team(int(team_value[0]), int(team_value[1]))
+	return {"ok": true, "game": replay_game}
+
+
+static func run_replay(document: Dictionary) -> Dictionary:
+	var setup_result := _game_from_replay_setup(document)
+	if not bool(setup_result.get("ok", false)):
+		return setup_result
+	var replay_game: StrategoGame = setup_result.game
+	var all_events: Array[Dictionary] = []
+	for round_value in document.get("rounds", []):
+		if round_value is not Dictionary:
+			return {"ok": false, "message": "A replay round is malformed."}
+		var round_record: Dictionary = round_value
+		if replay_game.round_number != int(round_record.get("round", -1)):
+			return {"ok": false, "message": "Replay round numbering does not match the simulation."}
+		var main_order_result := replay_game.apply_replay_main_orders(round_record.get("main_orders", []))
+		if not bool(main_order_result.get("ok", false)):
+			return main_order_result
+		var main_roll_values: Array = round_record.get("main_rolls", [])
+		var main_rolls := _decode_rolls(main_roll_values)
+		if main_rolls.size() != main_roll_values.size():
+			return {"ok": false, "message": "Replay contains an invalid main-phase die roll."}
+		replay_game.set_forced_rolls(main_rolls)
+		for player in replay_game.active_players:
+			replay_game.mark_player_ready(player)
+		var roll_start := replay_game._roll_history.size()
+		var main_events := replay_game.resolve_main_and_ranged()
+		if replay_game._roll_history.size() - roll_start != main_rolls.size():
+			return {"ok": false, "message": "Replay main-phase dice consumption diverged."}
+		if String(round_record.get("main_event_digest", "")) != _digest_value(main_events) or String(round_record.get("main_state_digest", "")) != replay_game.state_digest():
+			return {"ok": false, "message": "Replay diverged during the main or ranged phase of round %d." % replay_game.round_number}
+		all_events.append_array(main_events)
+		var leftover_order_result := replay_game.apply_replay_leftover_orders(round_record.get("leftover_orders", []))
+		if not bool(leftover_order_result.get("ok", false)):
+			return leftover_order_result
+		var leftover_roll_values: Array = round_record.get("leftover_rolls", [])
+		var leftover_rolls := _decode_rolls(leftover_roll_values)
+		if leftover_rolls.size() != leftover_roll_values.size():
+			return {"ok": false, "message": "Replay contains an invalid leftover-phase die roll."}
+		replay_game.set_forced_rolls(leftover_rolls)
+		for player in replay_game.active_players:
+			replay_game.mark_player_ready(player)
+		roll_start = replay_game._roll_history.size()
+		var leftover_events := replay_game.resolve_leftover_phase()
+		if replay_game._roll_history.size() - roll_start != leftover_rolls.size():
+			return {"ok": false, "message": "Replay leftover-phase dice consumption diverged."}
+		if String(round_record.get("leftover_event_digest", "")) != _digest_value(leftover_events) or String(round_record.get("final_state_digest", "")) != replay_game.state_digest():
+			return {"ok": false, "message": "Replay diverged during leftover movement in round %d." % int(round_record.get("round", -1))}
+		all_events.append_array(leftover_events)
+	var terminal: Dictionary = document.get("terminal", {})
+	var withdrawal := int(terminal.get("withdrawal_player", DRAW))
+	if withdrawal != DRAW and not replay_game.game_over:
+		var withdrawal_result := replay_game.withdraw_player(withdrawal)
+		if not bool(withdrawal_result.get("ok", false)):
+			return {"ok": false, "message": "Replay withdrawal could not be reproduced."}
+	if String(document.get("final_state_digest", "")) != replay_game.state_digest():
+		return {"ok": false, "message": "Replay final-state verification failed."}
+	return {"ok": true, "game": replay_game, "events": all_events, "rounds": document.get("rounds", []).size(), "digest": replay_game.state_digest()}
 
 
 func withdraw_player(player: int) -> Dictionary:

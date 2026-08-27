@@ -3,6 +3,7 @@ extends Control
 const HUD_BLUE := Color("#79b9ff")
 const HUD_GOLD := Color("#b79254")
 const PANEL_BG := Color(0.025, 0.055, 0.07, 0.93)
+const LAST_REPLAY_PATH := "user://replays/last_replay.json"
 
 var game := StrategoGame.new()
 var bot := StrategoBotPolicy.new()
@@ -26,6 +27,8 @@ var playback_controls: Control
 var settings_drawer: PanelContainer
 var clear_button: Button
 var withdraw_button: Button
+var export_replay_button: Button
+var replay_last_button: Button
 var ranged_toggle: CheckButton
 var leftover_toggle: CheckButton
 var privacy_toggle: CheckButton
@@ -48,6 +51,7 @@ var battle_body: RichTextLabel
 var event_panel: PanelContainer
 
 var spectator_mode := false
+var replay_view_mode := false
 var selected_scenario := StrategoGame.SCENARIO_BRIDGE
 var session_id := 0
 var resolution_mode := false
@@ -476,8 +480,17 @@ func _build_settings_drawer() -> void:
 	withdraw_button = _make_button("WITHDRAW", 145)
 	withdraw_button.pressed.connect(_on_withdraw)
 	game_buttons.add_child(withdraw_button)
+	export_replay_button = _make_button("EXPORT REPLAY", 145)
+	export_replay_button.tooltip_text = "Save completed rounds, exact dice, and verification data as JSON."
+	export_replay_button.pressed.connect(_on_export_replay)
+	game_buttons.add_child(export_replay_button)
+	replay_last_button = _make_button("REPLAY LAST", 145)
+	replay_last_button.tooltip_text = "Reload the last export, verify it, and click through its recorded battles."
+	replay_last_button.pressed.connect(_on_replay_last)
+	game_buttons.add_child(replay_last_button)
 	ranged_toggle = CheckButton.new()
 	ranged_toggle.text = "Archer target mode"
+	ranged_toggle.tooltip_text = "Target at range 1 with unused movement, or range 2 if the Archer makes no main move."
 	ranged_toggle.button_pressed = true
 	ranged_toggle.toggled.connect(_on_ranged_toggled)
 	box.add_child(ranged_toggle)
@@ -544,6 +557,7 @@ func start_bridge_game() -> void:
 	session_id += 1
 	resolution_mode = false
 	spectator_mode = false
+	replay_view_mode = false
 	selected_scenario = StrategoGame.SCENARIO_BRIDGE
 	game = StrategoGame.new()
 	game.setup_bridge(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, 20, privacy_toggle.button_pressed)
@@ -559,6 +573,7 @@ func start_four_player_game() -> void:
 	session_id += 1
 	resolution_mode = false
 	spectator_mode = false
+	replay_view_mode = false
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
@@ -574,6 +589,7 @@ func start_spectator_game() -> void:
 	session_id += 1
 	resolution_mode = false
 	spectator_mode = true
+	replay_view_mode = false
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
@@ -595,7 +611,7 @@ func _configure_board(show_all: bool) -> void:
 
 
 func _on_ready_pressed() -> void:
-	if spectator_mode or game.game_over or resolution_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+	if spectator_mode or replay_view_mode or game.game_over or resolution_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
 		return
 	board_view.clear_order_undo_history()
 	board_view.clear_selection()
@@ -649,7 +665,7 @@ func _resolve_ready_round() -> void:
 func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary]:
 	var visible: Array[Dictionary] = []
 	for event: Dictionary in events:
-		if not _event_is_known_to_viewer(event):
+		if not replay_view_mode and not _event_is_known_to_viewer(event):
 			continue
 		var action := String(event.get("action", ""))
 		var is_leftover_move := action == "move" and String(event.get("batch", "")) == "leftover"
@@ -686,7 +702,7 @@ func _finish_resolution_presentation(active_session: int = -1) -> void:
 	_update_interface()
 	if game.game_over:
 		_log_game_end()
-	elif spectator_mode:
+	elif spectator_mode and not replay_view_mode:
 		_run_spectator_round(session_id if active_session < 0 else active_session)
 
 
@@ -695,10 +711,10 @@ func _present_resolution_event() -> void:
 		return
 	resolution_index = clampi(resolution_index, 0, resolution_events.size() - 1)
 	var event: Dictionary = resolution_events[resolution_index]
-	var advance_hint := "Auto advancing" if spectator_mode else ("Click %s to continue" % _resolution_completion_label().capitalize() if resolution_index == resolution_events.size() - 1 else "Click Next to continue")
+	var advance_hint := "Auto advancing" if spectator_mode and not replay_view_mode else ("Click %s to continue" % _resolution_completion_label().capitalize() if resolution_index == resolution_events.size() - 1 else "Click Next to continue")
 	phase_subtitle.text = "Event %d of %d · %s · %s" % [resolution_index + 1, resolution_events.size(), _action_label(String(event.get("action", "event"))).capitalize(), advance_hint]
 	if bool(event.get("combat", false)):
-		board_view.combat_hold = not spectator_mode
+		board_view.combat_hold = not spectator_mode or replay_view_mode
 		board_view.combat_duration_msec = maxi(1400, int(_resolution_event_duration(event) * 1000.0 / presentation_speed))
 		board_view.show_combat(event)
 	else:
@@ -710,6 +726,8 @@ func _present_resolution_event() -> void:
 
 
 func _resolution_completion_label() -> String:
+	if replay_view_mode:
+		return "FINISH REPLAY"
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		return "ORDER LEFTOVER"
 	if not game.game_over and game.phase == StrategoGame.PHASE_PLANNING:
@@ -832,14 +850,14 @@ func _timeline_index_for_event(event: Dictionary) -> int:
 
 
 func _on_clear_orders() -> void:
-	if spectator_mode or resolution_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+	if spectator_mode or replay_view_mode or resolution_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
 		return
 	board_view.clear_all_orders()
 	_update_interface(false)
 
 
 func _on_withdraw() -> void:
-	if spectator_mode or resolution_mode or game.game_over:
+	if spectator_mode or replay_view_mode or resolution_mode or game.game_over:
 		return
 	var result: Dictionary = game.withdraw_player(StrategoGame.BLUE)
 	if bool(result.get("ok", false)):
@@ -847,6 +865,61 @@ func _on_withdraw() -> void:
 		_log_game_end()
 	settings_drawer.visible = false
 	_update_interface()
+
+
+func _on_export_replay() -> void:
+	var stamp := Time.get_datetime_string_from_system(false, false).replace(":", "-").replace("T", "_")
+	var timestamped_path := "user://replays/wego-replay-%s.json" % stamp
+	var result: Dictionary = game.save_replay(timestamped_path)
+	if not bool(result.get("ok", false)):
+		detail_label.text = String(result.get("message", "Replay export failed."))
+		_log_line(detail_label.text, true)
+		return
+	var last_result: Dictionary = game.save_replay(LAST_REPLAY_PATH)
+	if not bool(last_result.get("ok", false)):
+		detail_label.text = "Replay exported, but the Replay Last copy could not be updated."
+		_log_line(detail_label.text, true)
+		return
+	detail_label.text = "Replay exported and verified data saved: %s" % String(result.path)
+	_log_line("Replay exported: %d completed round%s · %s" % [int(result.rounds), "" if int(result.rounds) == 1 else "s", String(result.path)], true)
+	_update_interface(false)
+
+
+func _on_replay_last() -> void:
+	var load_result := StrategoGame.load_replay_document(LAST_REPLAY_PATH)
+	if not bool(load_result.get("ok", false)):
+		detail_label.text = String(load_result.get("message", "The replay could not be loaded."))
+		_log_line(detail_label.text, true)
+		return
+	var replay_result := StrategoGame.run_replay(load_result.document)
+	if not bool(replay_result.get("ok", false)):
+		detail_label.text = "Replay rejected: %s" % String(replay_result.get("message", "verification failed"))
+		_log_line(detail_label.text, true)
+		return
+	session_id += 1
+	resolution_mode = false
+	spectator_mode = false
+	replay_view_mode = true
+	game = replay_result.game
+	selected_scenario = game.scenario
+	_configure_board(true)
+	_clear_logs()
+	_log_line("Replay verified: %d completed round%s reproduced exactly." % [int(replay_result.rounds), "" if int(replay_result.rounds) == 1 else "s"], true)
+	_log_line("Digest %s" % String(replay_result.digest))
+	resolution_events.clear()
+	for event_value in replay_result.get("events", []):
+		if event_value is Dictionary:
+			resolution_events.append(event_value)
+	resolution_events = _visible_presentation_events(resolution_events)
+	resolution_index = 0
+	settings_drawer.visible = false
+	if not resolution_events.is_empty():
+		resolution_mode = true
+		presentation_paused = true
+		presentation_speed = 1.0
+		playback_pause_button.text = _resolution_completion_label() if resolution_events.size() == 1 else "NEXT"
+	detail_label.text = "Replay verification passed. Use the battle controls to inspect every recorded contact."
+	_update_interface(false)
 
 
 func _on_ranged_toggled(enabled: bool) -> void:
@@ -884,7 +957,7 @@ func _on_zoom_changed(percent: int) -> void:
 
 func _on_undo_availability_changed(_available: bool) -> void:
 	if undo_button != null:
-		undo_button.disabled = spectator_mode or resolution_mode or not board_view.can_undo_order()
+		undo_button.disabled = spectator_mode or replay_view_mode or resolution_mode or not board_view.can_undo_order()
 
 
 func _toggle_settings() -> void:
@@ -928,6 +1001,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	var main_planning := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_PLANNING
 	var leftover_planning := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
 	var planning := main_planning or leftover_planning
+	var read_only := spectator_mode or replay_view_mode
 	planning_controls.visible = not resolution_mode
 	playback_controls.visible = resolution_mode
 	inspector_panel.visible = not resolution_mode and not detail_help_hidden
@@ -936,8 +1010,11 @@ func _update_interface(update_detail: bool = true) -> void:
 	detail_toast.visible = not resolution_mode and not detail_help_hidden
 	if resolution_mode:
 		phase_title.text = "PHASE: BATTLE RESOLUTION"
-		phase_subtitle.text = "Resolving movement collisions and combat"
+		phase_subtitle.text = "Verified replay events" if replay_view_mode else "Resolving movement collisions and combat"
 		_present_resolution_event()
+	elif replay_view_mode:
+		phase_title.text = "REPLAY VERIFIED"
+		phase_subtitle.text = "%d completed round%s reproduced exactly" % [game.replay_rounds.size(), "" if game.replay_rounds.size() == 1 else "s"]
 	elif game.game_over:
 		phase_title.text = "BATTLE COMPLETE"
 		phase_subtitle.text = "%s · %s" % [game.player_name(game.winner), game.end_reason.replace("_", " ")]
@@ -961,18 +1038,20 @@ func _update_interface(update_detail: bool = true) -> void:
 		label.visible = player in game.active_players or player in game.eliminated_players
 		label.text = "%s · %d units · %d Strength" % [game.player_name(player), game.count_alive(player), game.total_strength(player)]
 	ready_button.text = "END LEFTOVER" if leftover_planning else "END PLANNING"
-	ready_button.disabled = not planning or spectator_mode
-	undo_button.disabled = not planning or spectator_mode or not board_view.can_undo_order()
-	cancel_all_button.disabled = not planning or spectator_mode or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
-	clear_button.disabled = not planning or spectator_mode
-	withdraw_button.disabled = not main_planning or spectator_mode
-	ranged_toggle.disabled = not main_planning or spectator_mode
+	ready_button.disabled = not planning or read_only
+	undo_button.disabled = not planning or read_only or not board_view.can_undo_order()
+	cancel_all_button.disabled = not planning or read_only or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
+	clear_button.disabled = not planning or read_only
+	withdraw_button.disabled = not main_planning or read_only
+	export_replay_button.disabled = resolution_mode or replay_view_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_GAME_OVER]
+	replay_last_button.disabled = not FileAccess.file_exists(LAST_REPLAY_PATH)
+	ranged_toggle.disabled = not main_planning or read_only
 	leftover_toggle.set_pressed_no_signal(leftover_planning)
 	leftover_toggle.disabled = true
 	leftover_toggle.tooltip_text = "Leftover movement becomes available after battles and ranged attacks resolve."
 	board_view.leftover_mode = leftover_planning
 	board_view.prefer_ranged = main_planning and ranged_toggle.button_pressed
-	board_view.interaction_enabled = planning and not spectator_mode
+	board_view.interaction_enabled = planning and not read_only
 	if not resolution_mode:
 		_update_timeline(6 if leftover_planning or game.game_over else -1 if main_planning else 0)
 	group_move_title.text = "SET LEFTOVER MOVE" if leftover_planning else "MOVE SELECTION"

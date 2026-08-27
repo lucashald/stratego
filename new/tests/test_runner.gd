@@ -16,6 +16,7 @@ func _run() -> void:
 	_test_group_orders_are_atomic()
 	_test_planning_order_undo()
 	_test_impulse_movement()
+	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_crossing_battle_both_attack()
 	_test_tie_is_a_bounce()
@@ -34,6 +35,7 @@ func _run() -> void:
 	_test_combat_reveal_requires_current_sight()
 	_test_bridge_end_of_round_victory()
 	_test_withdrawal_preserves_survivors_and_no_collapse()
+	_test_deterministic_replay_export()
 	_test_bot_round_smoke()
 	print("\n%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -133,8 +135,10 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(collision.ok), "same-player orders that meet on one impulse are rejected at order time")
 	_expect(game.projected_order_position(light_id, 1) == Vector2i(2, 1), "planned paths expose their impulse occupancy for ghost UI")
 	var archer_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(6, 6))
-	var distant_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(8, 6))
-	_expect(not bool(distant_shot.ok), "Archer orders reject non-adjacent ranged targets")
+	var long_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(8, 6))
+	_expect(bool(long_shot.ok), "stationary Archers accept ranged targets up to two squares away")
+	var too_distant_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(9, 6))
+	_expect(not bool(too_distant_shot.ok), "Archer orders reject ranged targets beyond two squares")
 
 
 func _test_group_orders_are_atomic() -> void:
@@ -192,6 +196,47 @@ func _test_impulse_movement() -> void:
 	var events := _ready_and_resolve(game)
 	_expect(game.pieces[mover_id].position == Vector2i(3, 2), "planned movement resolves one square per impulse")
 	_expect(_events_with_action(events, "move").size() == 3, "a Light unit's three path squares produce three movement events")
+
+
+func _test_weighted_impulse_timing_and_actual_spend() -> void:
+	var timing_game := _test_game()
+	var light_id := timing_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(1, 1))
+	var medium_id := timing_game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.RED, Vector2i(1, 5))
+	var heavy_id := timing_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.RED, Vector2i(1, 9))
+	timing_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(18, 18))
+	timing_game.set_unit_order(StrategoGame.RED, light_id, [Vector2i(2, 1), Vector2i(3, 1), Vector2i(4, 1)])
+	timing_game.set_unit_order(StrategoGame.RED, medium_id, [Vector2i(2, 5), Vector2i(3, 5)])
+	timing_game.set_unit_order(StrategoGame.RED, heavy_id, [Vector2i(2, 9)])
+	_expect(timing_game.projected_order_position(medium_id, 1) == Vector2i(1, 5) and timing_game.projected_order_position(heavy_id, 2) == Vector2i(1, 9), "order ghosts keep Medium and Heavy formations stationary until their scheduled impulses")
+	var timing_events := _ready_and_resolve(timing_game)
+	var batches_by_piece := {light_id: [], medium_id: [], heavy_id: []}
+	for event: Dictionary in _events_with_action(timing_events, "move"):
+		var piece_id := int(event.piece_id)
+		if piece_id in batches_by_piece:
+			batches_by_piece[piece_id].append(String(event.batch))
+	_expect(batches_by_piece[light_id] == ["impulse_1", "impulse_2", "impulse_3"], "Light formations move on impulses 1, 2, and 3")
+	_expect(batches_by_piece[medium_id] == ["impulse_2", "impulse_3"], "Medium formations move on impulses 2 and 3")
+	_expect(batches_by_piece[heavy_id] == ["impulse_3"], "Heavy formations move only on impulse 3")
+
+	var win_game := _test_game()
+	var winner := win_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
+	win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	win_game.set_unit_order(StrategoGame.RED, winner, [Vector2i(2, 1), Vector2i(3, 1), Vector2i(4, 1)])
+	win_game.set_forced_rolls([5, 1])
+	for player in win_game.active_players:
+		win_game.mark_player_ready(player)
+	win_game.resolve_main_and_ranged()
+	_expect(int(win_game.pieces[winner].movement_used) == 1 and win_game.can_receive_leftover_order(StrategoGame.RED, winner), "a main-phase winner spends only the movement it actually attempted before combat ended its path")
+
+	var bounce_game := _test_game()
+	var bouncer := bounce_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
+	bounce_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	bounce_game.set_unit_order(StrategoGame.RED, bouncer, [Vector2i(2, 1), Vector2i(3, 1), Vector2i(4, 1)])
+	bounce_game.set_forced_rolls([2, 2])
+	for player in bounce_game.active_players:
+		bounce_game.mark_player_ready(player)
+	bounce_game.resolve_main_and_ranged()
+	_expect(int(bounce_game.pieces[bouncer].movement_used) == 1 and bounce_game.pieces[bouncer].round_status == StrategoGame.STATUS_BOUNCED, "entering a contested square spends movement even when the formation bounces")
 
 
 func _test_allied_collision_bounces_without_combat() -> void:
@@ -321,6 +366,20 @@ func _test_ranged_focus_fire_is_simultaneous() -> void:
 	_expect(_events_with_action(events, "ranged").size() == 2, "all scheduled focus-fire shots resolve even when the target is overkilled")
 	_expect(not game.pieces[target_id].alive, "simultaneous ranged damage destroys an overkilled target")
 	_expect(game.pieces[first_id].strength == 5 and game.pieces[second_id].strength == 5, "ranged targets deal no return damage")
+	var long_game := _test_game()
+	var long_archer := long_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	var long_target := long_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
+	long_game.set_unit_order(StrategoGame.RED, long_archer, [], Vector2i(3, 1))
+	var long_events := _ready_and_resolve(long_game, [4])
+	var long_shots := _events_with_action(long_events, "ranged")
+	_expect(long_shots.size() == 1 and int(long_shots[0].range) == 2 and int(long_shots[0].movement_cost) == 3, "a stationary Light Archer can fire at range 2 by consuming its full movement")
+	_expect(long_game.pieces[long_target].strength == 2 and int(long_game.pieces[long_archer].movement_used) == 3, "range-2 fire deals normal ranged damage and leaves no leftover movement")
+	var conditional_game := _test_game()
+	var conditional_archer := conditional_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
+	conditional_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
+	var conditional_order := conditional_game.set_unit_order(StrategoGame.RED, conditional_archer, [Vector2i(1, 2)], Vector2i(3, 1))
+	var conditional_events := _ready_and_resolve(conditional_game)
+	_expect(bool(conditional_order.ok) and _events_with_action(conditional_events, "ranged").is_empty(), "range-2 eligibility uses actual movement: a contingent long shot is skipped if the Archer moved")
 
 
 func _test_archer_loss_blocks_shot_and_win_allows_it() -> void:
@@ -507,6 +566,44 @@ func _test_withdrawal_preserves_survivors_and_no_collapse() -> void:
 	lopsided.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 0), 100)
 	_ready_and_resolve(lopsided)
 	_expect(not lopsided.game_over, "no automatic material-collapse threshold is implemented yet")
+
+
+func _test_deterministic_replay_export() -> void:
+	var game := StrategoGame.new()
+	game.setup_bridge(730241)
+	var policy := StrategoBotPolicy.new()
+	var planning_rng := RandomNumberGenerator.new()
+	planning_rng.seed = 88991
+	for round_index in range(6):
+		if game.game_over:
+			break
+		for player in game.active_players.duplicate():
+			policy.plan_round(game, player, planning_rng)
+			game.mark_player_ready(player)
+		game.resolve_round()
+	var document := game.build_replay_document()
+	_expect(String(document.get("format", "")) == StrategoGame.REPLAY_FORMAT and int(document.get("version", 0)) == StrategoGame.REPLAY_VERSION, "replay export identifies its versioned deterministic format")
+	_expect(document.get("rounds", []).size() == game.replay_rounds.size() and game.replay_rounds.size() > 0, "replay export includes every completed round")
+	var recorded_rolls := 0
+	for round_value in document.get("rounds", []):
+		if round_value is Dictionary:
+			recorded_rolls += round_value.get("main_rolls", []).size() + round_value.get("leftover_rolls", []).size()
+	_expect(recorded_rolls > 0, "replay export records the exact combat dice stream")
+	var parsed_value: Variant = JSON.parse_string(JSON.stringify(document))
+	var json_result: Dictionary = StrategoGame.run_replay(parsed_value as Dictionary) if parsed_value is Dictionary else {"ok": false}
+	_expect(bool(json_result.get("ok", false)), "a JSON round trip replays without deterministic divergence")
+	_expect(String(json_result.get("digest", "")) == game.state_digest(), "replay reconstructs the exact final authoritative state")
+	var replay_path := "user://replays/automated-round-trip.json"
+	var save_result := game.save_replay(replay_path)
+	var load_result := StrategoGame.load_replay_document(replay_path)
+	var file_result: Dictionary = StrategoGame.run_replay(load_result.get("document", {})) if bool(load_result.get("ok", false)) else {"ok": false}
+	_expect(bool(save_result.get("ok", false)) and bool(load_result.get("ok", false)) and bool(file_result.get("ok", false)), "replay files save, load, and verify end to end")
+	var tampered: Dictionary = document.duplicate(true)
+	var tampered_setup: Dictionary = tampered.get("setup", {}).duplicate(true)
+	tampered_setup.seed = int(tampered_setup.get("seed", 0)) + 1
+	tampered.setup = tampered_setup
+	var tampered_result := StrategoGame.run_replay(tampered)
+	_expect(not bool(tampered_result.get("ok", false)), "replay verification rejects altered deterministic input")
 
 
 func _test_bot_round_smoke() -> void:
