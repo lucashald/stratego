@@ -1,7 +1,7 @@
 class_name StrategoBotPolicy
 extends RefCounted
 
-const MODEL_VERSION := 4
+const MODEL_VERSION := 5
 const DEFAULT_USER_PATH := "user://stratego_bot.json"
 const PREVIOUS_CHAMPION_PATH := "user://stratego_bot_previous_champion.json"
 const CHALLENGER_PATH := "user://stratego_bot_challenger.json"
@@ -29,6 +29,23 @@ const VERSION_4_WEIGHT_KEYS := [
 	"concealment_hold",
 ]
 
+const VERSION_5_WEIGHT_DEFAULTS := {
+	"known_loss": -100.0,
+	"known_threat_after_move": -4.0,
+	"stronger_enemy_escape": 1.8,
+	"concealment_hold": 1.2,
+	"flag_cover_change": 2.4,
+	"home_intruder_intercept": 1.4,
+	"unknown_contact_risk": -1.8,
+	"leader_pressure": 1.0,
+	"weak_player_finish": 0.7,
+	"counter_target_approach": 0.9,
+	"bomb_defusal": 2.5,
+	"spy_strike": 3.0,
+}
+
+const LOCKED_TACTICAL_WEIGHTS := ["known_loss"]
+
 const PIECE_VALUES := {
 	StrategoGame.FLAG: 100.0,
 	StrategoGame.BOMB: 4.0,
@@ -52,7 +69,7 @@ var weights := {
 	"attack": 0.4,
 	"unknown_attack": -0.15,
 	"known_win": 5.0,
-	"known_loss": -7.0,
+	"known_loss": -100.0,
 	"equal_trade": -0.2,
 	"capture_flag": 18.0,
 	"adjacent_enemy": 0.18,
@@ -65,15 +82,23 @@ var weights := {
 	"unknown_piece_risk": -2.0,
 	"target_has_moved": 1.0,
 	"post_move_mobility": 0.7,
-	"known_threat_after_move": -2.0,
+	"known_threat_after_move": -4.0,
 	"friendly_support": 0.3,
 	"repeat_position": -1.5,
 	"backline_probe": 0.8,
 	"flag_defense_change": 0.8,
 	"miner_preservation": 1.2,
 	"no_progress_urgency": 0.8,
-	"stronger_enemy_escape": 0.0,
-	"concealment_hold": 0.0,
+	"stronger_enemy_escape": 1.8,
+	"concealment_hold": 1.2,
+	"flag_cover_change": 2.4,
+	"home_intruder_intercept": 1.4,
+	"unknown_contact_risk": -1.8,
+	"leader_pressure": 1.0,
+	"weak_player_finish": 0.7,
+	"counter_target_approach": 0.9,
+	"bomb_defusal": 2.5,
+	"spy_strike": 3.0,
 }
 
 
@@ -97,14 +122,13 @@ func score_move(game: StrategoGame, move: Dictionary, player: int) -> float:
 	var from: Vector2i = move.from
 	var to: Vector2i = move.to
 	var piece := game.piece_at(from)
-	var target := game.piece_at(to)
-	var enemy := game.other_player(player)
+	var target := game.observed_piece_at(to, player)
 	var score: float = weights.bias
 
-	var forward := -1.0 if player == StrategoGame.BLUE else 1.0
-	score += weights.advance * float(to.y - from.y) * forward
-	var center_before := absf(float(from.x) - 4.5)
-	var center_after := absf(float(to.x) - 4.5)
+	var progress := game.advancement_delta(player, from, to)
+	score += weights.advance * progress
+	var center_before := game.center_lane_distance(player, from)
+	var center_after := game.center_lane_distance(player, to)
 	score += weights.center * (center_before - center_after)
 	if piece.type == StrategoGame.SCOUT:
 		score += weights.scout_stride * float(from.distance_to(to) - 1.0)
@@ -112,18 +136,20 @@ func score_move(game: StrategoGame, move: Dictionary, player: int) -> float:
 		score += weights.backtrack
 
 	if not target.is_empty():
+		var target_player: int = target.player
 		score += weights.attack
-		if not target.revealed:
+		score += weights.leader_pressure * _leader_pressure(game, target_player)
+		score += weights.weak_player_finish * _weak_player_finish(game, target_player)
+		if not game.is_piece_revealed_to(target, player):
 			score += weights.unknown_attack
 			score += weights.unknown_piece_risk * piece_value(piece.type) / 10.0
 			if bool(target.has_moved):
 				score += weights.target_has_moved
-			var enemy_home_edge := 0 if player == StrategoGame.BLUE else 9
-			if not bool(target.has_moved) and abs(to.y - enemy_home_edge) <= 1:
+			if not bool(target.has_moved) and game.home_edge_distance(target_player, to) <= 1:
 				var probe_suitability := clampf(1.0 - piece_value(piece.type) / 10.0, 0.0, 1.0)
 				score += weights.backline_probe * probe_suitability
 			if piece.type == StrategoGame.MINER:
-				var bombs_remaining := game.count_alive_type(enemy, StrategoGame.BOMB)
+				var bombs_remaining := game.count_alive_type(target_player, StrategoGame.BOMB)
 				score -= weights.miner_preservation * float(bombs_remaining) / 6.0
 		else:
 			var outcome := game.resolve_combat(piece.type, target.type)
@@ -136,22 +162,27 @@ func score_move(game: StrategoGame, move: Dictionary, player: int) -> float:
 			else:
 				score += weights.equal_trade
 			score += weights.trade_value * _trade_delta(piece.type, target.type, outcome) / 10.0
+			if piece.type == StrategoGame.MINER and target.type == StrategoGame.BOMB:
+				score += weights.bomb_defusal
+			if piece.type == StrategoGame.SPY and target.type == StrategoGame.MARSHAL:
+				score += weights.spy_strike
 
 	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
-		var nearby := game.piece_at(to + direction)
-		if not nearby.is_empty() and nearby.player == enemy:
+		var nearby := game.observed_piece_at(to + direction, player)
+		if not nearby.is_empty() and nearby.player != player:
 			score += weights.adjacent_enemy
 		elif not nearby.is_empty() and nearby.player == player and nearby.position != from:
 			score += weights.friendly_support
 
-	var home_edge := 9 if player == StrategoGame.BLUE else 0
-	if abs(to.y - home_edge) <= 2:
+	if game.home_edge_distance(player, to) <= 2:
 		score += weights.protect_home
 	score += weights.mobility * float(game.get_moves_for(from).size()) / 10.0
 	score += weights.post_move_mobility * float(_estimate_post_move_mobility(game, move, piece)) / 10.0
-	score += weights.known_threat_after_move * float(_count_known_threats(game, move, piece, enemy))
-	score += weights.stronger_enemy_escape * _stronger_enemy_escape_delta(game, move, piece, enemy)
-	score -= weights.concealment_hold * _concealment_hold_pressure(game, piece, enemy)
+	score += weights.known_threat_after_move * float(_count_known_threats(game, move, piece))
+	score += weights.stronger_enemy_escape * _stronger_enemy_escape_delta(game, move, piece)
+	score -= weights.concealment_hold * _concealment_hold_pressure(game, piece)
+	score += weights.unknown_contact_risk * _unknown_contact_pressure(game, move, piece)
+	score += weights.counter_target_approach * _counter_target_approach(game, move, piece)
 	var repeat_count := 0
 	for visited_position: Vector2i in piece.recent_positions:
 		if visited_position == to:
@@ -163,9 +194,11 @@ func score_move(game: StrategoGame, move: Dictionary, player: int) -> float:
 		var before_guard := maxf(0.0, 4.0 - float(from.distance_to(own_flag.position)))
 		var after_guard := maxf(0.0, 4.0 - float(to.distance_to(own_flag.position)))
 		score += weights.flag_defense_change * (after_guard - before_guard)
+		score += weights.flag_cover_change * _flag_cover_change(game, move, player, own_flag)
+		score += weights.home_intruder_intercept * _home_intruder_intercept(game, move, player, own_flag)
 
 	var urgency := float(game.quiet_plies) / float(game.max_quiet_plies)
-	var makes_progress := 1.0 if not target.is_empty() or float(to.y - from.y) * forward > 0.0 else 0.0
+	var makes_progress := 1.0 if not target.is_empty() or progress > 0.0 else 0.0
 	score += weights.no_progress_urgency * urgency * makes_progress
 	return score
 
@@ -186,13 +219,13 @@ func _estimate_post_move_mobility(game: StrategoGame, move: Dictionary, piece: D
 	var count := 0
 	var from: Vector2i = move.from
 	var to: Vector2i = move.to
-	var distance_limit := StrategoGame.BOARD_SIZE if piece.type == StrategoGame.SCOUT else 1
+	var distance_limit := game.movement_limit_for(piece)
 	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
 		for distance in range(1, distance_limit + 1):
 			var destination: Vector2i = to + direction * distance
 			if not game.is_inside(destination) or game.is_lake(destination):
 				break
-			var occupant: Dictionary = {} if destination == from else game.piece_at(destination)
+			var occupant: Dictionary = {} if destination == from else game.observed_piece_at(destination, int(piece.player))
 			if occupant.is_empty():
 				count += 1
 				continue
@@ -202,24 +235,28 @@ func _estimate_post_move_mobility(game: StrategoGame, move: Dictionary, piece: D
 	return count
 
 
-func _count_known_threats(game: StrategoGame, move: Dictionary, piece: Dictionary, enemy: int) -> int:
+func _count_known_threats(game: StrategoGame, move: Dictionary, piece: Dictionary) -> int:
 	var threats := 0
 	for enemy_piece: Dictionary in game.pieces:
-		if not enemy_piece.alive or enemy_piece.player != enemy or not bool(enemy_piece.revealed):
+		if not enemy_piece.alive or enemy_piece.player == piece.player or not game.is_piece_visible_to(enemy_piece, int(piece.player)):
+			continue
+		if not game.is_piece_revealed_to(enemy_piece, piece.player):
 			continue
 		if not game.is_movable(enemy_piece) or enemy_piece.position == move.to:
 			continue
-		if _can_reach_after_move(game, enemy_piece, move.from, move.to):
+		if _can_reach_after_move(game, enemy_piece, move.from, move.to, int(piece.player)):
 			if game.resolve_combat(enemy_piece.type, piece.type) == "attacker":
 				threats += 1
 	return threats
 
 
-func _stronger_enemy_escape_delta(game: StrategoGame, move: Dictionary, piece: Dictionary, enemy: int) -> float:
+func _stronger_enemy_escape_delta(game: StrategoGame, move: Dictionary, piece: Dictionary) -> float:
 	var escape_delta := 0.0
 	var awareness_radius := 4.0
 	for enemy_piece: Dictionary in game.pieces:
-		if not enemy_piece.alive or enemy_piece.player != enemy or not bool(enemy_piece.revealed):
+		if not enemy_piece.alive or enemy_piece.player == piece.player or not game.is_piece_visible_to(enemy_piece, int(piece.player)):
+			continue
+		if not game.is_piece_revealed_to(enemy_piece, piece.player):
 			continue
 		if not game.is_movable(enemy_piece) or enemy_piece.position == move.to:
 			continue
@@ -233,15 +270,18 @@ func _stronger_enemy_escape_delta(game: StrategoGame, move: Dictionary, piece: D
 	return escape_delta
 
 
-func _concealment_hold_pressure(game: StrategoGame, piece: Dictionary, enemy: int) -> float:
+func _concealment_hold_pressure(game: StrategoGame, piece: Dictionary) -> float:
 	# Once a piece moves, the opponent knows it cannot be a Bomb or Flag.
-	# Moving an already revealed or previously moved piece gives up no new cover.
-	if bool(piece.has_moved) or bool(piece.revealed):
+	# Moving a piece already revealed to an opponent, or one that has moved,
+	# gives up no new Bomb/Flag cover.
+	if bool(piece.has_moved) or game.is_piece_revealed_to_any_opponent(piece, piece.player):
 		return 0.0
 	var pressure := 0.0
 	var awareness_radius := 4.0
 	for enemy_piece: Dictionary in game.pieces:
-		if not enemy_piece.alive or enemy_piece.player != enemy or not bool(enemy_piece.revealed):
+		if not enemy_piece.alive or enemy_piece.player == piece.player or not game.is_piece_visible_to(enemy_piece, int(piece.player)):
+			continue
+		if not game.is_piece_revealed_to(enemy_piece, piece.player):
 			continue
 		if not game.is_movable(enemy_piece):
 			continue
@@ -253,12 +293,99 @@ func _concealment_hold_pressure(game: StrategoGame, piece: Dictionary, enemy: in
 	return pressure
 
 
-func _can_reach_after_move(game: StrategoGame, enemy_piece: Dictionary, vacated: Vector2i, destination: Vector2i) -> bool:
+func _leader_pressure(game: StrategoGame, target_player: int) -> float:
+	if game.active_players.is_empty():
+		return 0.0
+	var total_alive := 0.0
+	for player in game.active_players:
+		total_alive += float(game.count_alive(player))
+	var average_alive := total_alive / float(game.active_players.size())
+	return clampf((float(game.count_alive(target_player)) - average_alive) / 10.0, -1.0, 1.0)
+
+
+func _weak_player_finish(game: StrategoGame, target_player: int) -> float:
+	return clampf(1.0 - float(game.count_alive(target_player)) / 40.0, 0.0, 1.0)
+
+
+func _unknown_contact_pressure(game: StrategoGame, move: Dictionary, piece: Dictionary) -> float:
+	var pressure := 0.0
+	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
+		var nearby := game.observed_piece_at(move.to + direction, int(piece.player))
+		if not nearby.is_empty() and nearby.player != piece.player and not game.is_piece_revealed_to(nearby, piece.player):
+			pressure += piece_value(piece.type) / 10.0
+	return pressure
+
+
+func _counter_target_approach(game: StrategoGame, move: Dictionary, piece: Dictionary) -> float:
+	var countered_type := ""
+	if piece.type == StrategoGame.MINER:
+		countered_type = StrategoGame.BOMB
+	elif piece.type == StrategoGame.SPY:
+		countered_type = StrategoGame.MARSHAL
+	else:
+		return 0.0
+	var best_before := INF
+	var best_after := INF
+	for enemy_piece: Dictionary in game.pieces:
+		if not enemy_piece.alive or enemy_piece.player == piece.player:
+			continue
+		if not game.is_piece_visible_to(enemy_piece, int(piece.player)):
+			continue
+		if not game.is_piece_revealed_to(enemy_piece, piece.player) or enemy_piece.type != countered_type:
+			continue
+		best_before = minf(best_before, float(move.from.distance_to(enemy_piece.position)))
+		best_after = minf(best_after, float(move.to.distance_to(enemy_piece.position)))
+	return 0.0 if is_inf(best_before) else best_before - best_after
+
+
+func _flag_cover_change(game: StrategoGame, move: Dictionary, player: int, flag: Dictionary) -> float:
+	var before_cover := 0.0
+	var after_cover := 0.0
+	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
+		var cover_position: Vector2i = flag.position + direction
+		var occupant := game.piece_at(cover_position)
+		if not occupant.is_empty() and occupant.player == player:
+			before_cover += 1.0
+		if cover_position == move.from:
+			continue
+		if cover_position == move.to:
+			var target := game.observed_piece_at(move.to, player)
+			if target.is_empty():
+				after_cover += 1.0
+			elif game.is_piece_revealed_to(target, player) and game.resolve_combat(game.piece_at(move.from).type, target.type) == "attacker":
+				after_cover += 1.0
+			continue
+		if not occupant.is_empty() and occupant.player == player:
+			after_cover += 1.0
+	return after_cover - before_cover
+
+
+func _home_intruder_intercept(game: StrategoGame, move: Dictionary, player: int, flag: Dictionary) -> float:
+	var intercept_delta := 0.0
+	var threat_radius := 6.0
+	for enemy_piece: Dictionary in game.pieces:
+		if not enemy_piece.alive or enemy_piece.player == player:
+			continue
+		if not game.is_piece_visible_to(enemy_piece, player):
+			continue
+		var flag_distance := float(flag.position.distance_to(enemy_piece.position))
+		if flag_distance > threat_radius:
+			continue
+		var urgency := (threat_radius + 1.0 - flag_distance) / threat_radius
+		var before_distance := float(move.from.distance_to(enemy_piece.position))
+		var after_distance := float(move.to.distance_to(enemy_piece.position))
+		intercept_delta += (before_distance - after_distance) * urgency
+	return intercept_delta
+
+
+func _can_reach_after_move(game: StrategoGame, enemy_piece: Dictionary, vacated: Vector2i, destination: Vector2i, viewing_player: int) -> bool:
 	var origin: Vector2i = enemy_piece.position
 	var delta: Vector2i = destination - origin
 	if enemy_piece.type != StrategoGame.SCOUT:
 		return absi(delta.x) + absi(delta.y) == 1
 	if delta.x != 0 and delta.y != 0:
+		return false
+	if absi(delta.x) + absi(delta.y) > game.movement_limit_for(enemy_piece):
 		return false
 	var direction := Vector2i.ZERO
 	if delta.x != 0:
@@ -269,7 +396,7 @@ func _can_reach_after_move(game: StrategoGame, enemy_piece: Dictionary, vacated:
 		return false
 	var cursor := origin + direction
 	while cursor != destination:
-		if cursor != vacated and not game.piece_at(cursor).is_empty():
+		if cursor != vacated and not game.observed_piece_at(cursor, viewing_player).is_empty():
 			return false
 		cursor += direction
 	return true
@@ -281,6 +408,8 @@ func mutated(rng: RandomNumberGenerator, strength: float = 0.35) -> StrategoBotP
 	child.generation = generation + 1
 	child.games_trained = games_trained
 	for key: String in child.weights:
+		if key in LOCKED_TACTICAL_WEIGHTS:
+			continue
 		child.weights[key] = clampf(float(child.weights[key]) + rng.randfn(0.0, strength), -20.0, 20.0)
 	return child
 
@@ -293,6 +422,8 @@ func mutated_sparse(rng: RandomNumberGenerator, strength: float = 0.35, changed_
 	var keys: Array = weights.keys()
 	keys.erase("bias")
 	keys.erase("capture_flag")
+	for key in LOCKED_TACTICAL_WEIGHTS:
+		keys.erase(key)
 	for i in range(keys.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var temporary = keys[i]
@@ -409,6 +540,11 @@ static func load_from_path(path: String = DEFAULT_USER_PATH) -> StrategoBotPolic
 	if saved_version < 4:
 		for key: String in VERSION_4_WEIGHT_KEYS:
 			policy.weights[key] = 0.0
+	if saved_version < 5:
+		for key: String in VERSION_5_WEIGHT_DEFAULTS:
+			policy.weights[key] = float(VERSION_5_WEIGHT_DEFAULTS[key])
+	# Model files cannot weaken the non-negotiable tactical loss floor.
+	policy.weights.known_loss = minf(float(policy.weights.known_loss), -100.0)
 	policy.generation = int(parsed.get("generation", 0))
 	policy.games_trained = int(parsed.get("games_trained", 0))
 	return policy

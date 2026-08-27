@@ -11,9 +11,11 @@ var status_label: Label
 var detail_label: Label
 var combat_notice_label: Label
 var bot_label: Label
-var blue_count_label: Label
-var red_count_label: Label
+var count_labels: Dictionary = {}
 var history: RichTextLabel
+var player_count_selector: OptionButton
+var scout_range_selector: OptionButton
+var battle_privacy_toggle: CheckButton
 var model_selector: OptionButton
 var refresh_models_button: Button
 var train_button: Button
@@ -24,6 +26,9 @@ var spectator_mode := false
 var session_id := 0
 var active_model_path := MODEL_PATH
 var active_model_label := "Current champion"
+var selected_player_count := 4
+var selected_private_battles := true
+var selected_scout_move_limit := 0
 
 
 func _ready() -> void:
@@ -62,7 +67,7 @@ func _build_interface() -> void:
 	top.add_theme_constant_override("separation", 14)
 	root.add_child(top)
 	var title := Label.new()
-	title.text = "STRATEGO"
+	title.text = "MULTIPLAYER STRATEGO"
 	title.add_theme_font_size_override("font_size", 30)
 	title.add_theme_color_override("font_color", Color("#f8df9a"))
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -101,6 +106,52 @@ func _build_interface() -> void:
 	side_panel.add_theme_constant_override("separation", 8)
 	side_scroll.add_child(side_panel)
 
+	var player_count_row := HBoxContainer.new()
+	player_count_row.add_theme_constant_override("separation", 10)
+	side_panel.add_child(player_count_row)
+	var player_count_title := Label.new()
+	player_count_title.text = "PLAYERS"
+	player_count_title.add_theme_color_override("font_color", Color("#f8df9a"))
+	player_count_title.add_theme_font_size_override("font_size", 16)
+	player_count_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_count_row.add_child(player_count_title)
+	player_count_selector = OptionButton.new()
+	player_count_selector.custom_minimum_size = Vector2(120, 38)
+	for player_count in range(2, 5):
+		player_count_selector.add_item("%d players" % player_count)
+		player_count_selector.set_item_metadata(player_count_selector.item_count - 1, player_count)
+	player_count_selector.select(2)
+	player_count_selector.item_selected.connect(_on_player_count_selected)
+	player_count_row.add_child(player_count_selector)
+
+	var scout_range_row := HBoxContainer.new()
+	scout_range_row.add_theme_constant_override("separation", 10)
+	side_panel.add_child(scout_range_row)
+	var scout_range_title := Label.new()
+	scout_range_title.text = "SCOUT RANGE"
+	scout_range_title.add_theme_color_override("font_color", Color("#f8df9a"))
+	scout_range_title.add_theme_font_size_override("font_size", 16)
+	scout_range_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scout_range_row.add_child(scout_range_title)
+	scout_range_selector = OptionButton.new()
+	scout_range_selector.custom_minimum_size = Vector2(120, 38)
+	scout_range_selector.add_item("Unlimited")
+	scout_range_selector.set_item_metadata(0, 0)
+	for scout_range in range(1, 11):
+		scout_range_selector.add_item("%d square%s" % [scout_range, "" if scout_range == 1 else "s"])
+		scout_range_selector.set_item_metadata(scout_range_selector.item_count - 1, scout_range)
+	scout_range_selector.select(0)
+	scout_range_selector.tooltip_text = "Maximum number of squares a Scout may move in one turn."
+	scout_range_selector.item_selected.connect(_on_scout_range_selected)
+	scout_range_row.add_child(scout_range_selector)
+
+	battle_privacy_toggle = CheckButton.new()
+	battle_privacy_toggle.text = "Private battle results"
+	battle_privacy_toggle.button_pressed = true
+	battle_privacy_toggle.tooltip_text = "Only the two players in a battle learn the pieces' ranks."
+	battle_privacy_toggle.toggled.connect(_on_battle_privacy_toggled)
+	side_panel.add_child(battle_privacy_toggle)
+
 	status_label = Label.new()
 	status_label.add_theme_font_size_override("font_size", 22)
 	status_label.add_theme_color_override("font_color", Color("#f8df9a"))
@@ -120,15 +171,23 @@ func _build_interface() -> void:
 	combat_notice_label.add_theme_color_override("font_color", Color("#f8df9a"))
 	side_panel.add_child(combat_notice_label)
 
-	var counts := HBoxContainer.new()
-	counts.add_theme_constant_override("separation", 20)
+	var counts := GridContainer.new()
+	counts.columns = 2
+	counts.add_theme_constant_override("h_separation", 20)
+	counts.add_theme_constant_override("v_separation", 4)
 	side_panel.add_child(counts)
-	blue_count_label = Label.new()
-	blue_count_label.add_theme_color_override("font_color", Color("#78a7ff"))
-	counts.add_child(blue_count_label)
-	red_count_label = Label.new()
-	red_count_label.add_theme_color_override("font_color", Color("#ff8990"))
-	counts.add_child(red_count_label)
+	var count_colors := {
+		StrategoGame.BLUE: Color("#78a7ff"),
+		StrategoGame.RED: Color("#ff8990"),
+		StrategoGame.GREEN: Color("#72e3a7"),
+		StrategoGame.YELLOW: Color("#ffe27a"),
+	}
+	for player in [StrategoGame.BLUE, StrategoGame.RED, StrategoGame.GREEN, StrategoGame.YELLOW]:
+		var count_label := Label.new()
+		count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		count_label.add_theme_color_override("font_color", count_colors[player])
+		counts.add_child(count_label)
+		count_labels[player] = count_label
 
 	var model_title := Label.new()
 	model_title.text = "OPPONENT MODEL"
@@ -162,7 +221,7 @@ func _build_interface() -> void:
 	rule_title.add_theme_font_size_override("font_size", 16)
 	side_panel.add_child(rule_title)
 	var rules := Label.new()
-	rules.text = "WIN — Capture the enemy Flag\nWIN — Opponent has no legal moves\nDRAW — 120 moves without combat\nDRAW — 500 total moves\n\nHigher rank wins · Miner (3) defuses Bomb\nSpy (1) beats Marshal (10) when attacking\nScout (2) moves any clear distance"
+	rules.text = "WIN — Be the last army standing\nELIMINATION — Lose your Flag or all legal moves\nDRAW — 240 moves without combat\nDRAW — 1,200 total moves\n\nFOG — Enemies appear within 4 squares\nTurns follow the active colors clockwise\nHigher rank wins · Miner (3) defuses Bomb\nSpy (1) beats Marshal (10) when attacking\nScout (2) range uses the match setting"
 	rules.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rules.add_theme_font_size_override("font_size", 13)
 	rules.add_theme_color_override("font_color", Color("#b9c7dc"))
@@ -188,6 +247,36 @@ func _make_button(text_value: String) -> Button:
 	button.text = text_value
 	button.custom_minimum_size = Vector2(145, 42)
 	return button
+
+
+func _on_player_count_selected(index: int) -> void:
+	if training or index < 0 or index >= player_count_selector.item_count:
+		return
+	selected_player_count = int(player_count_selector.get_item_metadata(index))
+	trainer.player_count = selected_player_count
+	start_human_game()
+
+
+func _on_scout_range_selected(index: int) -> void:
+	if training or index < 0 or index >= scout_range_selector.item_count:
+		return
+	selected_scout_move_limit = int(scout_range_selector.get_item_metadata(index))
+	trainer.scout_move_limit = selected_scout_move_limit
+	start_human_game()
+
+
+func _scout_range_description() -> String:
+	if selected_scout_move_limit == 0:
+		return "unlimited"
+	return "limited to %d square%s" % [selected_scout_move_limit, "" if selected_scout_move_limit == 1 else "s"]
+
+
+func _on_battle_privacy_toggled(enabled: bool) -> void:
+	if training:
+		return
+	selected_private_battles = enabled
+	trainer.private_battle_results = selected_private_battles
+	start_human_game()
 
 
 func _archive_existing_models() -> void:
@@ -246,16 +335,23 @@ func start_human_game() -> void:
 	session_id += 1
 	spectator_mode = false
 	game = StrategoGame.new()
-	game.setup_random(rng.randi())
+	game.setup_random(rng.randi(), selected_player_count, selected_private_battles, selected_scout_move_limit)
 	board_view.viewing_player = StrategoGame.BLUE
 	board_view.reveal_all = false
 	board_view.interaction_enabled = not training
 	board_view.set_game(game)
 	history.clear()
 	combat_notice_label.text = "LAST COMBAT — None yet"
-	_log_line("A new battle begins. You command Blue.")
+	var opponent_names: Array[String] = []
+	for player in game.active_players:
+		if player != StrategoGame.BLUE:
+			opponent_names.append(game.player_name(player))
+	_log_line("A %d-player battle begins. You command Blue against %s." % [selected_player_count, ", ".join(opponent_names)])
+	_log_line("Battle ranks are %s." % ("private to the two participants" if selected_private_battles else "public to every player"))
+	_log_line("Scout movement is %s." % _scout_range_description())
+	_log_line("Fog of war hides enemies more than %d squares from your army." % game.vision_range)
 	_update_interface()
-	if game.current_player == StrategoGame.RED:
+	if game.current_player != StrategoGame.BLUE:
 		_run_computer_turn(session_id)
 
 
@@ -263,13 +359,13 @@ func start_spectator_game() -> void:
 	session_id += 1
 	spectator_mode = true
 	game = StrategoGame.new()
-	game.setup_random(rng.randi())
+	game.setup_random(rng.randi(), selected_player_count, selected_private_battles, selected_scout_move_limit)
 	board_view.reveal_all = true
 	board_view.interaction_enabled = false
 	board_view.set_game(game)
 	history.clear()
 	combat_notice_label.text = "LAST COMBAT — None yet"
-	_log_line("Self-play exhibition started. Both armies use the trained policy.")
+	_log_line("%d-player self-play exhibition started. Every army uses the selected policy." % selected_player_count)
 	_update_interface()
 	_run_computer_turn(session_id)
 
@@ -296,9 +392,8 @@ func _run_computer_turn(active_session: int, delay_seconds: float = -1.0) -> voi
 		return
 	var move := bot.choose_move(game, game.current_player, rng)
 	if move.is_empty():
-		game.game_over = true
-		game.winner = game.other_player(game.current_player)
-		game.end_reason = "no_legal_moves"
+		var event := game.eliminate_immobilized_current_player()
+		_log_event(event)
 	else:
 		var event := game.apply_move(move.from, move.to)
 		board_view.show_combat(event)
@@ -307,7 +402,7 @@ func _run_computer_turn(active_session: int, delay_seconds: float = -1.0) -> voi
 		_update_interface()
 		if spectator_mode and not game.game_over:
 			_run_computer_turn(active_session, next_delay)
-		elif not spectator_mode and not game.game_over and game.current_player == StrategoGame.RED:
+		elif not spectator_mode and not game.game_over and game.current_player != StrategoGame.BLUE:
 			_run_computer_turn(active_session, next_delay)
 		return
 	_update_interface()
@@ -318,11 +413,14 @@ func train_bot(number_of_games: int) -> void:
 		return
 	session_id += 1
 	training = true
+	trainer.player_count = selected_player_count
+	trainer.private_battle_results = selected_private_battles
+	trainer.scout_move_limit = selected_scout_move_limit
 	var reigning_champion := bot.duplicate_policy()
 	reigning_champion.save_archive()
 	_set_buttons_disabled(true)
 	board_view.interaction_enabled = false
-	_log_line("Training started: %d headless self-play matches." % number_of_games)
+	_log_line("Training started: %d headless %d-player matches with %s battle results and %s Scout movement." % [number_of_games, selected_player_count, "private" if selected_private_battles else "public", _scout_range_description()])
 	for i in number_of_games:
 		var result := trainer.train_iteration(bot, rng, trainer.total_matches)
 		status_label.text = "Training… %d / %d" % [i + 1, number_of_games]
@@ -331,17 +429,18 @@ func train_bot(number_of_games: int) -> void:
 			bot.save_archive()
 			_log_line("Match %d: candidate upgraded the bot (%d plies)." % [i + 1, result.plies])
 		await get_tree().process_frame
-	_log_line("Training complete. The contender is entering a 40-game title match.")
+	_log_line("Training complete. The contender is entering a seat-balanced title match.")
 	var title_result: Dictionary = await _evaluate_title_match(bot, reigning_champion, 40)
 	var title_message := ""
-	if int(title_result.score_margin) > 0:
+	var title_won := int(title_result.score_margin) > 0 or (int(title_result.score_margin) == 0 and float(title_result.average_material) > 2.0)
+	if title_won:
 		reigning_champion.save_to_path(StrategoBotPolicy.PREVIOUS_CHAMPION_PATH)
 		bot.save_to_path(MODEL_PATH)
 		bot.save_archive()
-		title_message = "New champion! Contender won %d–%d with %d draws." % [title_result.challenger_wins, title_result.incumbent_wins, title_result.draws]
+		title_message = "New champion! Contender earned %d seat wins against %d incumbent seat wins, with %d draws and %+.1f average material." % [title_result.challenger_wins, title_result.incumbent_wins, title_result.draws, title_result.average_material]
 	else:
 		bot.copy_from(reigning_champion)
-		title_message = "Champion defended %d–%d with %d draws. The playable bot was not replaced." % [title_result.incumbent_wins, title_result.challenger_wins, title_result.draws]
+		title_message = "Champion defended: %d incumbent seat wins to %d contender seat wins, with %d draws. The playable bot was not replaced." % [title_result.incumbent_wins, title_result.challenger_wins, title_result.draws]
 	trainer.reset_pending()
 	training = false
 	active_model_path = MODEL_PATH
@@ -353,15 +452,20 @@ func train_bot(number_of_games: int) -> void:
 
 
 func _evaluate_title_match(contender: StrategoBotPolicy, champion: StrategoBotPolicy, matches: int) -> Dictionary:
+	var roster := StrategoGame.players_for_count(selected_player_count)
+	var match_count := maxi(roster.size(), matches)
+	var remainder := match_count % roster.size()
+	if remainder != 0:
+		match_count += roster.size() - remainder
 	var contender_wins := 0
 	var champion_wins := 0
 	var draws := 0
 	var material_total := 0.0
 	var pair_seed := 0
-	for i in matches:
-		if i % 2 == 0:
+	for i in match_count:
+		if i % roster.size() == 0:
 			pair_seed = rng.randi()
-		var contender_side := StrategoGame.BLUE if i % 2 == 0 else StrategoGame.RED
+		var contender_side: int = roster[i % roster.size()]
 		var result := trainer.play_match(contender, champion, contender_side, pair_seed)
 		material_total += float(result.material_delta)
 		if int(result.candidate_result) > 0:
@@ -370,14 +474,14 @@ func _evaluate_title_match(contender: StrategoBotPolicy, champion: StrategoBotPo
 			champion_wins += 1
 		else:
 			draws += 1
-		status_label.text = "Title match… %d / %d" % [i + 1, matches]
+		status_label.text = "Title match… %d / %d" % [i + 1, match_count]
 		await get_tree().process_frame
 	return {
 		"challenger_wins": contender_wins,
 		"incumbent_wins": champion_wins,
 		"draws": draws,
-		"score_margin": contender_wins - champion_wins,
-		"average_material": material_total / float(matches),
+		"score_margin": contender_wins * (roster.size() - 1) - champion_wins,
+		"average_material": material_total / float(match_count),
 	}
 
 
@@ -387,6 +491,9 @@ func _set_buttons_disabled(value: bool) -> void:
 	watch_button.disabled = value
 	model_selector.disabled = value
 	refresh_models_button.disabled = value
+	player_count_selector.disabled = value
+	scout_range_selector.disabled = value
+	battle_privacy_toggle.disabled = value
 
 
 func _on_selection_changed(description: String) -> void:
@@ -395,15 +502,16 @@ func _on_selection_changed(description: String) -> void:
 
 func _update_interface() -> void:
 	board_view.queue_redraw()
-	blue_count_label.text = "Blue: %d" % game.count_alive(StrategoGame.BLUE)
-	red_count_label.text = "Red: %d" % game.count_alive(StrategoGame.RED)
+	for player in [StrategoGame.BLUE, StrategoGame.RED, StrategoGame.GREEN, StrategoGame.YELLOW]:
+		count_labels[player].visible = player in game.active_players or player in game.eliminated_players
+		var state := "eliminated" if player in game.eliminated_players else "%d pieces" % game.count_alive(player)
+		count_labels[player].text = "%s: %s" % [game.player_name(player), state]
 	bot_label.text = "%s • Gen %d • %d games\nSession: %d matches • %d upgrades" % [active_model_label, bot.generation, bot.games_trained, trainer.total_matches, trainer.accepted_candidates]
 	if game.game_over:
 		board_view.interaction_enabled = false
 		match game.end_reason:
 			"no_legal_moves":
-				var losing_player := game.other_player(game.winner)
-				status_label.text = "%s wins • %s has no legal moves" % [game.player_name(game.winner), game.player_name(losing_player)]
+				status_label.text = "%s wins • %s has no legal moves" % [game.player_name(game.winner), game.player_name(game.last_eliminated_player)]
 				detail_label.text = "A player with no legal move loses by immobilization."
 			"no_combat_limit":
 				status_label.text = "Draw • %d moves without combat" % game.max_quiet_plies
@@ -412,8 +520,11 @@ func _update_interface() -> void:
 				status_label.text = "Draw • %d-move limit" % game.max_plies
 				detail_label.text = "The total move limit was reached."
 			"flag_captured":
-				status_label.text = "%s wins • Flag captured" % game.player_name(game.winner)
-				detail_label.text = "Capturing the enemy Flag ends the game immediately."
+				status_label.text = "%s wins • Last army standing" % game.player_name(game.winner)
+				detail_label.text = "%s was the final army eliminated by Flag capture." % game.player_name(game.last_eliminated_player)
+			"last_player_standing":
+				status_label.text = "%s wins • Last army standing" % game.player_name(game.winner)
+				detail_label.text = "Every rival army has been eliminated."
 			_:
 				status_label.text = "Draw" if game.winner == StrategoGame.DRAW else "%s wins!" % game.player_name(game.winner)
 		return
@@ -432,19 +543,42 @@ func _log_event(event: Dictionary) -> void:
 	if not event.get("ok", false):
 		return
 	var player_name := game.player_name(event.player)
-	var coordinate := "%s%d" % [String.chr(65 + event.to.x), event.to.y + 1]
-	if not event.combat:
+	# Battles remain global reports under the separate private/public result rule.
+	# Fog suppresses only ordinary movement that happened outside the viewer's sight.
+	var can_observe_event: bool = spectator_mode or bool(event.get("combat", false)) or StrategoGame.BLUE in event.get("visible_to", [])
+	var coordinate := ""
+	if event.to.x >= 0:
+		coordinate = "%s%d" % [String.chr(65 + event.to.x), event.to.y + 1]
+	if event.result == "immobilized":
+		pass
+	elif not can_observe_event:
+		pass
+	elif not event.combat:
 		_log_line("%s moves to %s." % [player_name, coordinate])
 	else:
-		var attacker_name: String = StrategoGame.PIECE_NAMES[event.attacker_type]
-		var defender_name: String = StrategoGame.PIECE_NAMES[event.defender_type]
-		var outcome := "both pieces are destroyed"
-		if event.result == "attacker":
-			outcome = "%s survives; %s is destroyed" % [attacker_name, defender_name]
-		elif event.result == "defender":
-			outcome = "%s is destroyed; %s survives" % [attacker_name, defender_name]
-		combat_notice_label.text = "LAST COMBAT — %s %s vs %s: %s." % [player_name, attacker_name, defender_name, outcome]
-		_log_line("COMBAT — %s %s attacks %s at %s: %s." % [player_name, attacker_name, defender_name, coordinate, outcome], true)
+		var knows_ranks: bool = spectator_mode or (StrategoGame.BLUE in event.get("known_to", []))
+		if knows_ranks:
+			var attacker_name: String = StrategoGame.PIECE_NAMES[event.attacker_type]
+			var defender_name: String = StrategoGame.PIECE_NAMES[event.defender_type]
+			var outcome := "both pieces are destroyed"
+			if event.result == "attacker":
+				outcome = "%s survives; %s is destroyed" % [attacker_name, defender_name]
+			elif event.result == "defender":
+				outcome = "%s is destroyed; %s survives" % [attacker_name, defender_name]
+			combat_notice_label.text = "LAST COMBAT — %s %s vs %s: %s." % [player_name, attacker_name, defender_name, outcome]
+			_log_line("COMBAT — %s %s attacks %s at %s: %s." % [player_name, attacker_name, defender_name, coordinate, outcome], true)
+		else:
+			var defender_player_name := game.player_name(event.defender_player)
+			var public_outcome := "both armies lose a piece"
+			if event.result == "attacker":
+				public_outcome = "%s's piece survives" % player_name
+			elif event.result == "defender":
+				public_outcome = "%s's piece survives" % defender_player_name
+			combat_notice_label.text = "LAST COMBAT — %s attacks %s at %s: %s • ranks private." % [player_name, defender_player_name, coordinate, public_outcome]
+			_log_line("COMBAT — %s attacks %s at %s: %s; ranks private." % [player_name, defender_player_name, coordinate, public_outcome], true)
+	for elimination: Dictionary in event.get("eliminations", []):
+		var reason := "Flag captured" if elimination.reason == "flag_captured" else "No legal moves"
+		_log_line("ELIMINATED — %s • %s." % [game.player_name(elimination.player), reason], true)
 	if bool(event.get("game_over", false)):
 		_log_game_end()
 
@@ -452,13 +586,15 @@ func _log_event(event: Dictionary) -> void:
 func _log_game_end() -> void:
 	match game.end_reason:
 		"no_legal_moves":
-			_log_line("GAME OVER — %s has no legal moves and loses." % game.player_name(game.other_player(game.winner)), true)
+			_log_line("GAME OVER — %s wins after %s is immobilized." % [game.player_name(game.winner), game.player_name(game.last_eliminated_player)], true)
 		"no_combat_limit":
 			_log_line("DRAW — %d consecutive moves without combat." % game.max_quiet_plies, true)
 		"move_limit":
 			_log_line("DRAW — %d-move limit reached." % game.max_plies, true)
 		"flag_captured":
-			_log_line("GAME OVER — %s captured the Flag." % game.player_name(game.winner), true)
+			_log_line("GAME OVER — %s is the last army standing." % game.player_name(game.winner), true)
+		"last_player_standing":
+			_log_line("GAME OVER — %s is the last army standing." % game.player_name(game.winner), true)
 
 
 func _log_line(text_value: String, important: bool = false) -> void:

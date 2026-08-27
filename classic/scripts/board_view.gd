@@ -11,6 +11,11 @@ const BLUE_COLOR := Color("#2764c8")
 const BLUE_EDGE := Color("#78a7ff")
 const RED_COLOR := Color("#ba3c45")
 const RED_EDGE := Color("#ff8990")
+const GREEN_COLOR := Color("#287a55")
+const GREEN_EDGE := Color("#72e3a7")
+const YELLOW_COLOR := Color("#b78a19")
+const YELLOW_EDGE := Color("#ffe27a")
+const FOG_COLOR := Color(0.025, 0.045, 0.075, 0.72)
 
 var game: StrategoGame
 var viewing_player := StrategoGame.BLUE
@@ -47,7 +52,7 @@ func clear_selection() -> void:
 func _board_geometry() -> Dictionary:
 	var side := minf(size.x, size.y) - 12.0
 	var origin := (size - Vector2(side, side)) * 0.5
-	return {"origin": origin, "side": side, "cell": side / 10.0}
+	return {"origin": origin, "side": side, "cell": side / float(StrategoGame.BOARD_SIZE)}
 
 
 func _draw() -> void:
@@ -67,8 +72,12 @@ func _draw() -> void:
 				square_color = LAKE_COLOR
 			draw_rect(rect, square_color, true)
 			draw_rect(rect, Color(0.07, 0.09, 0.12, 0.22), false, 1.0)
+			if not reveal_all and not game.game_over and not game.is_position_visible_to(position, viewing_player):
+				draw_rect(rect, FOG_COLOR, true)
+				draw_rect(rect, Color(0.14, 0.2, 0.3, 0.28), false, 1.0)
 
-	if game.last_move.from.x >= 0:
+	var can_see_last_move: bool = reveal_all or game.game_over or viewing_player in game.last_move.get("visible_to", [])
+	if game.last_move.from.x >= 0 and can_see_last_move:
 		for position: Vector2i in [game.last_move.from, game.last_move.to]:
 			var rect := Rect2(origin + Vector2(position.x, position.y) * cell, Vector2(cell, cell))
 			draw_rect(rect.grow(-3.0), Color("#f4d35e"), false, 3.0)
@@ -82,6 +91,8 @@ func _draw() -> void:
 
 	for piece: Dictionary in game.pieces:
 		if not piece.alive:
+			continue
+		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
 			continue
 		_draw_piece(piece, origin, cell)
 
@@ -131,9 +142,11 @@ func _draw_game_over_overlay(origin: Vector2, cell: float, side: float) -> void:
 	var reason := ""
 	match game.end_reason:
 		"flag_captured":
-			reason = "THE FLAG WAS CAPTURED"
+			reason = "%s'S FLAG WAS CAPTURED" % game.player_name(game.last_eliminated_player).to_upper()
 		"no_legal_moves":
-			reason = "%s HAS NO LEGAL MOVES" % game.player_name(game.other_player(game.winner)).to_upper()
+			reason = "%s HAS NO LEGAL MOVES" % game.player_name(game.last_eliminated_player).to_upper()
+		"last_player_standing":
+			reason = "LAST ARMY STANDING"
 		"no_combat_limit":
 			reason = "%d MOVES WITHOUT COMBAT" % game.max_quiet_plies
 		"move_limit":
@@ -154,15 +167,16 @@ func _draw_centered_text(font: Font, text: String, rect: Rect2, font_size: int, 
 func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 	var position: Vector2i = piece.position
 	var rect := Rect2(origin + Vector2(position.x, position.y) * cell, Vector2(cell, cell)).grow(-cell * 0.12)
-	var fill := BLUE_COLOR if piece.player == StrategoGame.BLUE else RED_COLOR
-	var edge := BLUE_EDGE if piece.player == StrategoGame.BLUE else RED_EDGE
+	var colors := _player_colors(int(piece.player))
+	var fill: Color = colors.fill
+	var edge: Color = colors.edge
 	draw_rect(rect, Color(0, 0, 0, 0.25), true)
 	var face := rect.grow(-2.0)
 	draw_rect(face, fill, true)
 	draw_rect(face, edge, false, maxf(2.0, cell * 0.035))
 
-	var can_see: bool = reveal_all or game.game_over or int(piece.player) == viewing_player or bool(piece.revealed)
-	var text: String = piece.type if can_see else "?"
+	var can_see_rank: bool = reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
+	var text: String = piece.type if can_see_rank else "?"
 	var font := ThemeDB.fallback_font
 	var font_size := int(cell * 0.34)
 	if text == "10":
@@ -170,6 +184,19 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 	var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
 	var text_position := face.position + (face.size - text_size) * 0.5 + Vector2(0, text_size.y * 0.78)
 	draw_string(font, text_position, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+
+
+func _player_colors(player: int) -> Dictionary:
+	match player:
+		StrategoGame.BLUE:
+			return {"fill": BLUE_COLOR, "edge": BLUE_EDGE}
+		StrategoGame.RED:
+			return {"fill": RED_COLOR, "edge": RED_EDGE}
+		StrategoGame.GREEN:
+			return {"fill": GREEN_COLOR, "edge": GREEN_EDGE}
+		StrategoGame.YELLOW:
+			return {"fill": YELLOW_COLOR, "edge": YELLOW_EDGE}
+	return {"fill": Color.GRAY, "edge": Color.WHITE}
 
 
 func _gui_input(event: InputEvent) -> void:
