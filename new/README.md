@@ -8,16 +8,22 @@ The stable classic game remains in `../classic/`.
 
 Run **Play New.bat** from the repository root, or open this directory in Godot 4.3 or newer.
 
-The default game is the two-player bridge scenario. You command the Blue attacker; Red is controlled by the bot. The screen can also start a four-player fog battle or a four-bot exhibition.
+The default game is the two-player bridge scenario. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, or withdraw.
 
 During planning:
 
-1. Select one of your formations.
-2. Click adjacent squares to draw its main path. Ghosts numbered 1–3 show the square it intends to occupy on each impulse.
-3. For an Archer, enable **Archer target** and click an adjacent visible enemy to schedule a shot.
-4. Enable **Set leftover move** and click one adjacent square to schedule the unit's post-ranged move.
-5. Right-click to remove the selected unit's last main-path impulse. **Clear My Orders** removes every Blue order.
-6. Choose **Ready & Resolve** when planning is complete.
+1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
+2. Click one of the large on-map direction arrows, use the inspector's **Move Selection** buttons, or press an arrow/WASD key to draw the main path. With several formations selected, that direction is applied to every member that still has unused movement. Exhausted Heavy or Medium formations are skipped while faster formations continue. Terrain, off-board, or friendly-collision failures still reject the resulting group step.
+3. Ghosts numbered 1–3 show the square each formation intends to occupy on each impulse.
+4. In **Settings**, enable **Archer target mode** and click an adjacent visible enemy to schedule a shot.
+5. Right-click to remove the selected formation or group's last main-path impulse. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
+6. Choose **End Planning** when planning is complete.
+
+Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
+
+The contextual movement-help panel can be dismissed with its **X** button. Dismissing it also hides the selected-formations inspector and Move Selection pad. Use **Help** beside the zoom controls to restore the contextual panels together.
+
+Resolution is presented event-by-event on the battlefield. In a human game, every combat, retreat, and bounce remains on screen until **Next** is clicked. **Order Leftover** on the final main-resolution event opens a dedicated **Leftover Movement** order phase after ranged attacks. Select one or more eligible formations, choose one direction, and then click **End Leftover**. Exhausted selections are skipped. The simultaneous leftover moves and any resulting battles then receive their own click-through review; **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card shows the revealed formations, rolls, final scores, damage, remaining Strength, and result. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, ranged attacks, and leftover movement.
 
 The game rejects orders from one player that would make friendly formations occupy or swap through the same square on the same impulse. Multiple friendly attackers may still converge on a known enemy for a multiway battle. Hidden orders from a separately controlled ally can collide during resolution; those formations bounce without combat and are done for the round.
 
@@ -28,7 +34,7 @@ The game rejects orders from one player that would make friendly formations occu
 1. Main movement resolves simultaneously in up to three impulses: Light 3, Medium 2, Heavy 1.
 2. Every melee batch resolves, followed by all retreats from that batch simultaneously.
 3. Eligible Archer attacks resolve simultaneously. A shot costs one unused movement point.
-4. Eligible units may make a simultaneous leftover move of at most one square.
+4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one square.
 5. Victory is checked at the end of the round.
 
 Winning the main melee stops the unit's remaining main path, but it may still shoot or use its one-square leftover move if it has movement available. Losing or bouncing ends the unit's actions for the round. This permits at most one main-path melee and one intentional leftover melee.

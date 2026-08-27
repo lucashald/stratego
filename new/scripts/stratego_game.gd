@@ -30,6 +30,7 @@ const WEIGHT_HEAVY := "heavy"
 const ROLE_BONUS := 3
 
 const PHASE_PLANNING := "planning"
+const PHASE_LEFTOVER_PLANNING := "leftover_planning"
 const PHASE_RESOLVING := "resolving"
 const PHASE_GAME_OVER := "game_over"
 const SCENARIO_FOUR_PLAYER := "four_player"
@@ -430,11 +431,87 @@ func append_order_step(player: int, piece_id: int, step: Vector2i) -> Dictionary
 	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)))
 
 
+func append_group_order_step(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
+	if absi(direction.x) + absi(direction.y) != 1:
+		return {"ok": false, "message": "Group movement must use one cardinal direction."}
+	return _change_group_paths(player, piece_ids, direction, false)
+
+
 func pop_order_step(player: int, piece_id: int) -> Dictionary:
 	var current := order_for_piece(piece_id)
 	var path: Array = current.get("path", []).duplicate()
 	if not path.is_empty(): path.pop_back()
 	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)))
+
+
+func pop_group_order_step(player: int, piece_ids: Array[int]) -> Dictionary:
+	return _change_group_paths(player, piece_ids, Vector2i.ZERO, true)
+
+
+func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i, remove_last: bool) -> Dictionary:
+	if phase != PHASE_PLANNING or game_over or player in ready_players:
+		return {"ok": false, "message": "Orders can only be changed during planning."}
+	var unique_ids: Array[int] = []
+	for piece_id in piece_ids:
+		if piece_id not in unique_ids:
+			unique_ids.append(piece_id)
+	if unique_ids.is_empty():
+		return {"ok": false, "message": "No formations are selected."}
+	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
+	if player not in orders:
+		orders[player] = {}
+	var candidates: Dictionary = {}
+	var eligible_ids: Array[int] = []
+	var skipped_for_speed := 0
+	for piece_id in unique_ids:
+		if piece_id < 0 or piece_id >= pieces.size() or not is_movable(pieces[piece_id]) or int(pieces[piece_id].player) != player:
+			orders[player] = original_orders
+			return {"ok": false, "message": "Every selected formation must be able to move."}
+		var current: Dictionary = original_orders.get(piece_id, {})
+		if not remove_last and _order_movement_spent(current) >= movement_limit_for(pieces[piece_id]):
+			skipped_for_speed += 1
+			continue
+		var path: Array = current.get("path", []).duplicate()
+		if remove_last:
+			if not path.is_empty():
+				path.pop_back()
+		else:
+			var previous: Vector2i = pieces[piece_id].position if path.is_empty() else path.back()
+			path.append(previous + direction)
+		var candidate := {
+			"piece_id": piece_id,
+			"player": player,
+			"path": path,
+			"ranged_target": current.get("ranged_target", Vector2i(-1, -1)),
+			"leftover": current.get("leftover", Vector2i(-1, -1)),
+		}
+		candidates[piece_id] = candidate
+		orders[player][piece_id] = candidate
+		eligible_ids.append(piece_id)
+	if eligible_ids.is_empty():
+		orders[player] = original_orders
+		return {"ok": false, "count": 0, "skipped": skipped_for_speed, "message": "No selected formations have unused movement."}
+	# All candidates are installed before validation so a formation line can
+	# advance into squares vacated by other members of the same selection.
+	for piece_id in eligible_ids:
+		var candidate: Dictionary = candidates[piece_id]
+		var result := set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover)
+		if not bool(result.get("ok", false)):
+			orders[player] = original_orders
+			return {"ok": false, "message": String(result.get("message", "The group order is invalid."))}
+	var message := "Order applied to %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
+	if skipped_for_speed > 0:
+		message += " %d without enough movement skipped." % skipped_for_speed
+	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped_for_speed, "message": message}
+
+
+func _order_movement_spent(order: Dictionary) -> int:
+	var spent := int(order.get("path", []).size())
+	if order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
+		spent += 1
+	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
+		spent += 1
+	return spent
 
 
 func set_ranged_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
@@ -443,16 +520,201 @@ func set_ranged_order(player: int, piece_id: int, target: Vector2i) -> Dictionar
 
 
 func set_leftover_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	if phase == PHASE_LEFTOVER_PLANNING:
+		return _set_leftover_phase_order(player, piece_id, target)
 	var current := order_for_piece(piece_id)
 	return set_unit_order(player, piece_id, current.get("path", []), current.get("ranged_target", Vector2i(-1, -1)), target)
 
 
+func set_group_leftover_step(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
+	if phase == PHASE_LEFTOVER_PLANNING:
+		return _set_leftover_phase_group_order(player, piece_ids, direction)
+	if phase != PHASE_PLANNING or game_over or player in ready_players:
+		return {"ok": false, "message": "Orders can only be changed during planning."}
+	if absi(direction.x) + absi(direction.y) != 1:
+		return {"ok": false, "message": "Leftover movement must use one cardinal direction."}
+	var unique_ids: Array[int] = []
+	for piece_id in piece_ids:
+		if piece_id not in unique_ids:
+			unique_ids.append(piece_id)
+	if unique_ids.is_empty():
+		return {"ok": false, "message": "No formations are selected."}
+	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
+	if player not in orders:
+		orders[player] = {}
+	var candidates: Dictionary = {}
+	var eligible_ids: Array[int] = []
+	var skipped_for_speed := 0
+	for piece_id in unique_ids:
+		if piece_id < 0 or piece_id >= pieces.size() or not is_movable(pieces[piece_id]) or int(pieces[piece_id].player) != player:
+			orders[player] = original_orders
+			return {"ok": false, "message": "Every selected formation must be able to move."}
+		var current: Dictionary = original_orders.get(piece_id, {})
+		var path: Array = current.get("path", []).duplicate()
+		var ranged_target: Vector2i = current.get("ranged_target", Vector2i(-1, -1))
+		var spent_before_leftover := path.size() + (1 if ranged_target.x >= 0 else 0)
+		if spent_before_leftover >= movement_limit_for(pieces[piece_id]):
+			skipped_for_speed += 1
+			continue
+		var previous: Vector2i = pieces[piece_id].position if path.is_empty() else path.back()
+		var candidate := {
+			"piece_id": piece_id,
+			"player": player,
+			"path": path,
+			"ranged_target": ranged_target,
+			"leftover": previous + direction,
+		}
+		candidates[piece_id] = candidate
+		orders[player][piece_id] = candidate
+		eligible_ids.append(piece_id)
+	if eligible_ids.is_empty():
+		orders[player] = original_orders
+		return {"ok": false, "count": 0, "skipped": skipped_for_speed, "message": "No selected formations have movement left for the leftover phase."}
+	for piece_id in eligible_ids:
+		var candidate: Dictionary = candidates[piece_id]
+		var result := set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover)
+		if not bool(result.get("ok", false)):
+			orders[player] = original_orders
+			return {"ok": false, "message": String(result.get("message", "The group leftover order is invalid."))}
+	var message := "Leftover move set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
+	if skipped_for_speed > 0:
+		message += " %d without enough movement skipped." % skipped_for_speed
+	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped_for_speed, "message": message}
+
+
+func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	if game_over or player in ready_players:
+		return {"ok": false, "message": "Leftover orders can only be changed before ending the leftover phase."}
+	if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
+		return {"ok": false, "message": "That formation cannot receive this leftover order."}
+	if not can_receive_leftover_order(player, piece_id):
+		return {"ok": false, "message": "That formation has no leftover movement available."}
+	var piece: Dictionary = pieces[piece_id]
+	if piece.position.distance_to(target) != 1.0 or not is_inside(target) or is_blocked_terrain(target):
+		return {"ok": false, "message": "Leftover movement is one adjacent passable square."}
+	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
+	if player not in orders:
+		orders[player] = {}
+	var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
+	if candidate.is_empty():
+		candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
+	candidate.leftover = target
+	orders[player][piece_id] = candidate
+	if not _same_player_leftover_orders_are_clear(player):
+		orders[player] = original_orders
+		return {"ok": false, "message": "Friendly formations would collide during leftover movement."}
+	return {"ok": true, "order": candidate.duplicate(true), "message": "Leftover move set."}
+
+
+func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
+	if game_over or player in ready_players:
+		return {"ok": false, "message": "Leftover orders can only be changed before ending the leftover phase."}
+	if absi(direction.x) + absi(direction.y) != 1:
+		return {"ok": false, "message": "Leftover movement must use one cardinal direction."}
+	var unique_ids: Array[int] = []
+	for piece_id in piece_ids:
+		if piece_id not in unique_ids:
+			unique_ids.append(piece_id)
+	if unique_ids.is_empty():
+		return {"ok": false, "message": "No formations are selected."}
+	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
+	if player not in orders:
+		orders[player] = {}
+	var eligible_ids: Array[int] = []
+	var skipped := 0
+	for piece_id in unique_ids:
+		if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
+			orders[player] = original_orders
+			return {"ok": false, "message": "Every selected formation must belong to this player."}
+		if not can_receive_leftover_order(player, piece_id):
+			skipped += 1
+			continue
+		var target: Vector2i = pieces[piece_id].position + direction
+		if not is_inside(target) or is_blocked_terrain(target):
+			orders[player] = original_orders
+			return {"ok": false, "message": "A selected formation would leave the board or enter blocked terrain."}
+		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
+		if candidate.is_empty():
+			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
+		candidate.leftover = target
+		orders[player][piece_id] = candidate
+		eligible_ids.append(piece_id)
+	if eligible_ids.is_empty():
+		orders[player] = original_orders
+		return {"ok": false, "count": 0, "skipped": skipped, "message": "No selected formations have leftover movement available."}
+	if not _same_player_leftover_orders_are_clear(player):
+		orders[player] = original_orders
+		return {"ok": false, "message": "Friendly formations would collide during leftover movement."}
+	var message := "Leftover move set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
+	if skipped > 0:
+		message += " %d exhausted formation%s skipped." % [skipped, "" if skipped == 1 else "s"]
+	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped, "message": message}
+
+
+func can_receive_leftover_order(player: int, piece_id: int) -> bool:
+	if phase != PHASE_LEFTOVER_PLANNING or piece_id < 0 or piece_id >= pieces.size():
+		return false
+	var piece: Dictionary = pieces[piece_id]
+	return int(piece.player) == player and _eligible_for_leftover(piece)
+
+
+func _same_player_leftover_orders_are_clear(player: int) -> bool:
+	var own_pieces: Array[Dictionary] = []
+	for piece: Dictionary in pieces:
+		if piece.alive and int(piece.player) == player and piece.type != FLAG:
+			own_pieces.append(piece)
+	var destinations: Dictionary = {}
+	for piece: Dictionary in own_pieces:
+		var target: Vector2i = piece.position
+		var planned: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
+		if _eligible_for_leftover(piece) and planned.x >= 0 and piece.position.distance_to(planned) == 1.0:
+			target = planned
+		if target in destinations:
+			return false
+		destinations[target] = piece.id
+	for first_index in own_pieces.size():
+		for second_index in range(first_index + 1, own_pieces.size()):
+			var first: Dictionary = own_pieces[first_index]
+			var second: Dictionary = own_pieces[second_index]
+			var first_target: Vector2i = order_for_piece(int(first.id)).get("leftover", first.position)
+			var second_target: Vector2i = order_for_piece(int(second.id)).get("leftover", second.position)
+			if not _eligible_for_leftover(first) or first.position.distance_to(first_target) != 1.0:
+				first_target = first.position
+			if not _eligible_for_leftover(second) or second.position.distance_to(second_target) != 1.0:
+				second_target = second.position
+			if first_target == second.position and second_target == first.position and first.position != second.position:
+				return false
+	return true
+
+
 func clear_unit_order(player: int, piece_id: int) -> void:
-	if phase == PHASE_PLANNING and player not in ready_players and player in orders: orders[player].erase(piece_id)
+	if player in ready_players or player not in orders:
+		return
+	if phase == PHASE_PLANNING:
+		orders[player].erase(piece_id)
+	elif phase == PHASE_LEFTOVER_PLANNING and piece_id in orders[player]:
+		var order: Dictionary = orders[player][piece_id]
+		order.leftover = Vector2i(-1, -1)
+		orders[player][piece_id] = order
 
 
 func clear_player_orders(player: int) -> void:
-	if phase == PHASE_PLANNING and player not in ready_players: orders[player] = {}
+	if player in ready_players:
+		return
+	if phase == PHASE_PLANNING:
+		orders[player] = {}
+	elif phase == PHASE_LEFTOVER_PLANNING and player in orders:
+		for piece_id in orders[player].keys():
+			var order: Dictionary = orders[player][piece_id]
+			order.leftover = Vector2i(-1, -1)
+			orders[player][piece_id] = order
+
+
+func has_leftover_orders(player: int) -> bool:
+	for order: Dictionary in orders.get(player, {}).values():
+		if order.get("leftover", Vector2i(-1, -1)).x >= 0:
+			return true
+	return false
 
 
 func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary) -> bool:
@@ -504,7 +766,7 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 
 
 func mark_player_ready(player: int) -> Dictionary:
-	if phase != PHASE_PLANNING or player not in active_players:
+	if phase not in [PHASE_PLANNING, PHASE_LEFTOVER_PLANNING] or player not in active_players:
 		return {"ok": false, "message": "This player cannot become ready now."}
 	if player not in ready_players: ready_players.append(player)
 	return {"ok": true, "all_ready": all_players_ready()}
@@ -517,6 +779,17 @@ func all_players_ready() -> bool:
 
 
 func resolve_round() -> Array[Dictionary]:
+	if phase == PHASE_LEFTOVER_PLANNING:
+		return resolve_leftover_phase()
+	if phase != PHASE_PLANNING or game_over or not all_players_ready(): return []
+	var events := resolve_main_and_ranged()
+	for player in active_players:
+		mark_player_ready(player)
+	events.append_array(resolve_leftover_phase())
+	return events
+
+
+func resolve_main_and_ranged() -> Array[Dictionary]:
 	if phase != PHASE_PLANNING or game_over or not all_players_ready(): return []
 	phase = PHASE_RESOLVING
 	last_round_events.clear()
@@ -533,16 +806,27 @@ func resolve_round() -> Array[Dictionary]:
 		_record_all_sightings()
 	last_round_events.append_array(_resolve_ranged_phase())
 	_record_all_sightings()
+	ready_players.clear()
+	phase = PHASE_LEFTOVER_PLANNING
+	return last_round_events.duplicate(true)
+
+
+func resolve_leftover_phase() -> Array[Dictionary]:
+	if phase != PHASE_LEFTOVER_PLANNING or game_over or not all_players_ready(): return []
+	phase = PHASE_RESOLVING
+	var leftover_events: Array[Dictionary] = []
 	var leftover_proposals: Array[Dictionary] = []
 	for piece: Dictionary in pieces:
 		if not _eligible_for_leftover(piece): continue
 		var target: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
 		if target.x >= 0 and piece.position.distance_to(target) == 1.0:
 			leftover_proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": target, "is_attacker": true, "impulse": 4})
-	if not leftover_proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(leftover_proposals, "leftover"))
+	if not leftover_proposals.is_empty():
+		leftover_events.append_array(_resolve_movement_batch(leftover_proposals, "leftover"))
+		last_round_events.append_array(leftover_events)
 	_record_all_sightings()
 	_finish_round()
-	return last_round_events.duplicate(true)
+	return leftover_events.duplicate(true)
 
 
 func _begin_round_state() -> void:

@@ -13,6 +13,8 @@ func _run() -> void:
 	_test_four_player_fog_framework()
 	_test_private_battle_results()
 	_test_order_paths_and_friendly_rejection()
+	_test_group_orders_are_atomic()
+	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_allied_collision_bounces_without_combat()
 	_test_crossing_battle_both_attack()
@@ -24,6 +26,7 @@ func _run() -> void:
 	_test_multiway_damage_uses_highest_opponent()
 	_test_ranged_focus_fire_is_simultaneous()
 	_test_archer_loss_blocks_shot_and_win_allows_it()
+	_test_leftover_is_a_separate_order_phase()
 	_test_leftover_allows_second_melee_only_after_win()
 	_test_blocked_retreat_destroys_loser()
 	_test_enemy_retreat_collision_battle()
@@ -132,6 +135,53 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	var archer_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(6, 6))
 	var distant_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(8, 6))
 	_expect(not bool(distant_shot.ok), "Archer orders reject non-adjacent ranged targets")
+
+
+func _test_group_orders_are_atomic() -> void:
+	var game := _test_game()
+	var rear_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
+	var front_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var advance := game.append_group_order_step(StrategoGame.BLUE, [rear_id, front_id], Vector2i.UP)
+	_expect(bool(advance.ok), "a selected formation line can receive one atomic shared movement order")
+	_expect(game.projected_order_position(rear_id, 1) == Vector2i(5, 5) and game.projected_order_position(front_id, 1) == Vector2i(5, 4), "group movement preserves formation spacing while advancing")
+	var mixed_game := _test_game()
+	var heavy_id := mixed_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6))
+	var light_id := mixed_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
+	mixed_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	mixed_game.append_group_order_step(StrategoGame.BLUE, [heavy_id, light_id], Vector2i.UP)
+	var second_advance := mixed_game.append_group_order_step(StrategoGame.BLUE, [heavy_id, light_id], Vector2i.UP)
+	_expect(bool(second_advance.ok) and int(second_advance.count) == 1 and int(second_advance.skipped) == 1, "group movement skips formations whose movement allowance is exhausted")
+	_expect(mixed_game.order_for_piece(heavy_id).path.size() == 1 and mixed_game.order_for_piece(light_id).path.size() == 2, "faster selected formations continue after slower formations stop")
+	var edge_game := _test_game()
+	var edge_id := edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 0))
+	var safe_id := edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 2))
+	edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var rejected := edge_game.append_group_order_step(StrategoGame.BLUE, [edge_id, safe_id], Vector2i.UP)
+	_expect(not bool(rejected.ok), "a shared order is rejected when any selected formation cannot execute it")
+	_expect(edge_game.order_for_piece(edge_id).is_empty() and edge_game.order_for_piece(safe_id).is_empty(), "a rejected group order leaves every selected formation unchanged")
+
+
+func _test_planning_order_undo() -> void:
+	var game := _test_game()
+	var mover_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var board_view := StrategoBoardView.new()
+	root.add_child(board_view)
+	board_view.set_game(game)
+	board_view.selected_piece_ids.assign([mover_id])
+	board_view.selected_piece_id = mover_id
+	board_view.issue_selected_direction(Vector2i.UP)
+	_expect(board_view.can_undo_order(), "issuing an order enables planning-phase undo")
+	board_view.undo_last_order()
+	_expect(game.order_for_piece(mover_id).is_empty(), "undo restores the formation's previous order state")
+	board_view.issue_selected_direction(Vector2i.UP)
+	board_view.clear_all_orders()
+	board_view.undo_last_order()
+	_expect(game.order_for_piece(mover_id).path == [Vector2i(5, 4)], "clear orders can be undone before planning ends")
+	board_view.clear_order_undo_history()
+	_expect(not board_view.can_undo_order(), "ending planning clears order history before the next round")
+	board_view.queue_free()
 
 
 func _test_impulse_movement() -> void:
@@ -290,7 +340,52 @@ func _test_archer_loss_blocks_shot_and_win_allows_it() -> void:
 	_expect(_events_with_action(winning_events, "ranged").size() == 1 and winning_game.pieces[shot_target].strength == 6, "an Archer that wins melee may shoot with unused movement")
 
 
+func _test_leftover_is_a_separate_order_phase() -> void:
+	var game := _test_game()
+	var mover := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 4), 8)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(18, 18), 8)
+	game.set_unit_order(StrategoGame.RED, mover, [Vector2i(4, 3)])
+	for player in game.active_players:
+		game.mark_player_ready(player)
+	game.resolve_main_and_ranged()
+	_expect(game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING and game.round_number == 1, "the round pauses for leftover orders after ranged attacks")
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	_expect(presenter._resolution_completion_label() == "ORDER LEFTOVER", "the final main-resolution button clearly opens leftover ordering")
+	presenter.free()
+	var order_result := game.set_leftover_order(StrategoGame.RED, mover, Vector2i(4, 2))
+	_expect(bool(order_result.get("ok", false)) and game.pieces[mover].position == Vector2i(4, 3), "leftover orders are issued from the formation's resolved position")
+	for player in game.active_players:
+		game.mark_player_ready(player)
+	var events := game.resolve_leftover_phase()
+	_expect(_events_with_action(events, "move").size() == 1 and game.pieces[mover].position == Vector2i(4, 2), "ending the leftover phase resolves its simultaneous movement")
+	_expect(game.phase == StrategoGame.PHASE_PLANNING and game.round_number == 2, "the next planning round starts only after leftover movement finishes")
+
+
 func _test_leftover_allows_second_melee_only_after_win() -> void:
+	var move_game := _test_game()
+	var leftover_mover := move_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 4), 8)
+	move_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(18, 18), 8)
+	move_game.set_leftover_order(StrategoGame.RED, leftover_mover, Vector2i(4, 3))
+	var move_events := _ready_and_resolve(move_game)
+	var leftover_moves: Array[Dictionary] = []
+	for event: Dictionary in _events_with_action(move_events, "move"):
+		if String(event.get("batch", "")) == "leftover": leftover_moves.append(event)
+	_expect(leftover_moves.size() == 1 and move_game.pieces[leftover_mover].position == Vector2i(4, 3), "an uncontested leftover order executes in the leftover movement phase")
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = move_game
+	var presentation_input: Array[Dictionary] = [{"action": "move", "batch": "leftover", "piece_id": leftover_mover, "visible_to": [StrategoGame.BLUE], "combat": false}]
+	var presented_leftovers: Array[Dictionary] = presenter._visible_presentation_events(presentation_input)
+	_expect(presented_leftovers.size() == 1 and presented_leftovers[0].action == "leftover_move", "ordinary leftover movement appears in the click-through resolution review")
+	presenter.free()
+	var group_game := _test_game()
+	var exhausted_heavy := group_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6))
+	var eligible_light := group_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
+	group_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	group_game.append_group_order_step(StrategoGame.BLUE, [exhausted_heavy, eligible_light], Vector2i.UP)
+	var group_leftover := group_game.set_group_leftover_step(StrategoGame.BLUE, [exhausted_heavy, eligible_light], Vector2i.LEFT)
+	_expect(bool(group_leftover.ok) and int(group_leftover.count) == 1 and int(group_leftover.skipped) == 1, "group leftover orders skip formations with no movement remaining")
+	_expect(group_game.order_for_piece(exhausted_heavy).leftover.x < 0 and group_game.order_for_piece(eligible_light).leftover == Vector2i(9, 5), "eligible group members receive the shared leftover direction")
 	var win_game := _test_game()
 	var cavalry_id := win_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
 	win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)

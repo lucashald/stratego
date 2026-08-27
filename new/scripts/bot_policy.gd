@@ -19,6 +19,27 @@ func plan_round(game: StrategoGame, player: int, rng: RandomNumberGenerator) -> 
 		_plan_formation(game, piece, player, rng)
 
 
+func plan_leftover(game: StrategoGame, player: int, _rng: RandomNumberGenerator) -> void:
+	game.clear_player_orders(player)
+	var formations: Array[Dictionary] = []
+	for piece: Dictionary in game.pieces:
+		if game.can_receive_leftover_order(player, int(piece.id)):
+			formations.append(piece)
+	formations.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		return _target_distance(game, first, player) < _target_distance(game, second, player)
+	)
+	for piece: Dictionary in formations:
+		var target := _choose_target(game, piece, player)
+		var directions := [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]
+		directions.sort_custom(func(first: Vector2i, second: Vector2i) -> bool:
+			return (piece.position + first).distance_squared_to(target) < (piece.position + second).distance_squared_to(target)
+		)
+		for direction: Vector2i in directions:
+			var result := game.set_leftover_order(player, int(piece.id), piece.position + direction)
+			if bool(result.get("ok", false)):
+				break
+
+
 func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, _rng: RandomNumberGenerator) -> void:
 	var adjacent_enemy := _adjacent_enemy(game, piece.position, player)
 	if piece.role == StrategoGame.ROLE_ARCHER and not adjacent_enemy.is_empty():
