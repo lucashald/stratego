@@ -525,11 +525,16 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		var role_text := "FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).substr(0, 1).to_upper()
 		# The frame already states the Weight, so the label only carries the Role:
 		# a full word once there is room for it, a single letter when there is not.
-		var label := role_text if cell < 52.0 else ("FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).to_upper())
-		_draw_centered_text(ThemeDB.fallback_font, label, Rect2(top + Vector2(0, height * 0.06), Vector2(width, height * 0.24)), maxi(11, int(cell * 0.24 if cell < 52.0 else cell * 0.15)), Color("#f6eee0"))
+		var word := "FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).to_upper()
+		var word_size := int(width * 0.19)
+		var spelled := word_size >= 11
+		var label := word if spelled else role_text
+		var label_size := word_size if spelled else maxi(11, int(cell * 0.24))
+		_draw_centered_text(ThemeDB.fallback_font, label, Rect2(top + Vector2(0, height * 0.07), Vector2(width, height * 0.22)), label_size, Color("#f6eee0"))
 		# The role icon only earns its space once a cell is big enough to render
-		# it as something other than a smudge.
-		if cell >= 46.0:
+		# it as something other than a smudge, and never behind the strength
+		# numeral, where the two read as one doubled glyph.
+		if cell >= 46.0 and cell < 52.0:
 			_draw_role_icon(piece, center + Vector2(0, cell * 0.06), cell * 0.2, Color("#e8e1d5"))
 		_draw_strength_tab(piece, top, width, height, cell)
 	else:
@@ -544,6 +549,26 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		draw_arc(badge, cell * 0.13, 0.0, TAU, 24, Color("#91d33f"), 1.5)
 		draw_line(badge + Vector2(-cell * 0.055, 0), badge + Vector2(-cell * 0.01, cell * 0.05), Color("#a8df4c"), 2.0)
 		draw_line(badge + Vector2(-cell * 0.01, cell * 0.05), badge + Vector2(cell * 0.07, -cell * 0.06), Color("#a8df4c"), 2.0)
+
+
+## Weight frames as art. One image serves both armies: the coloured field is
+## drawn underneath and the keyed frame ring sits over it. Missing files fall
+## back to the procedural frames below, so the game runs with none, some or all
+## of the art present.
+const FRAME_TEXTURE_PATHS := {
+	StrategoGame.WEIGHT_LIGHT: "res://assets/frame_light.png",
+	StrategoGame.WEIGHT_MEDIUM: "res://assets/frame_medium.png",
+	StrategoGame.WEIGHT_HEAVY: "res://assets/frame_heavy.png",
+}
+static var _frame_textures: Dictionary = {}
+
+
+static func _frame_texture(weight: String) -> Texture2D:
+	if weight in _frame_textures: return _frame_textures[weight]
+	var path := String(FRAME_TEXTURE_PATHS.get(weight, ""))
+	var texture: Texture2D = load(path) if path != "" and ResourceLoader.exists(path) else null
+	_frame_textures[weight] = texture
+	return texture
 
 
 const WOOD_FRAME := Color("#8a6233")
@@ -562,6 +587,17 @@ func _draw_weight_frame(piece: Dictionary, banner: PackedVector2Array, top: Vect
 	outline.append(banner[0])
 	if piece.type == StrategoGame.FLAG:
 		draw_polyline(outline, colors.edge, maxf(1.5, cell * 0.035), true)
+		return
+	# Below this size the frame art is smaller than its own grain and reads as
+	# mud, where a flat coloured rim still says wood, mail or plate clearly.
+	var art := _frame_texture(String(piece.weight)) if cell >= 52.0 else null
+	if art != null:
+		# The art already carries the material, so no procedural rim is drawn.
+		# The art's own pentagon fills its bounding box, so it maps onto the
+		# banner rect directly. A small bleed hides the seam at the edges.
+		var bleed := Vector2(width * 0.03, height * 0.02)
+		draw_texture_rect(art, Rect2(top - bleed, Vector2(width, height) + bleed * 2.0), false)
+		draw_polyline(outline, Color(colors.edge, 0.28), maxf(1.0, cell * 0.012), true)
 		return
 	match String(piece.weight):
 		StrategoGame.WEIGHT_LIGHT:
@@ -625,14 +661,23 @@ func _draw_role_icon(piece: Dictionary, center: Vector2, radius: float, color: C
 ## the numeral is drawn straight onto the banner.
 func _draw_strength_tab(piece: Dictionary, top: Vector2, width: float, height: float, cell: float) -> void:
 	if piece.type == StrategoGame.FLAG: return
-	var band := Rect2(top + Vector2(0, height * 0.34), Vector2(width, height * 0.46))
-	if cell >= 34.0:
+	var band := Rect2(top + Vector2(0, height * 0.32), Vector2(width, height * 0.42))
+	# With frame art the banner already has a border; a second plate competes
+	# with it and hides the pentagon's point.
+	var framed := cell >= 52.0 and _frame_texture(String(piece.weight)) != null
+	if cell >= 34.0 and not framed:
 		var plate := Rect2(top + Vector2(width * 0.12, height * 0.36), Vector2(width * 0.76, height * 0.42))
 		draw_rect(plate, Color(0.03, 0.06, 0.06, 0.82), true)
 		draw_rect(plate, GOLD, false, maxf(1.0, cell * 0.02))
 	var hurt := int(piece.strength) < int(piece.max_strength)
 	var tint := Color("#ffd9a8") if hurt else Color.WHITE
-	_draw_centered_text(ThemeDB.fallback_font, str(int(piece.strength)), band, maxi(14, int(cell * 0.42)), tint)
+	var numeral := str(int(piece.strength))
+	var glyph := maxi(14, int(cell * 0.42))
+	if framed:
+		# A soft dark backing rather than an outline: an outline at this size
+		# ghosts the glyph, a wash simply lifts it off the field.
+		draw_circle(band.position + band.size * 0.5, glyph * 0.62, Color(0.02, 0.05, 0.09, 0.5))
+	_draw_centered_text(ThemeDB.fallback_font, numeral, band, glyph, tint)
 
 
 func _draw_dashed_line(from: Vector2, to: Vector2, color: Color, width: float, dash: float) -> void:

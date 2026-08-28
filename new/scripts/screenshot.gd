@@ -14,6 +14,8 @@ var _main: Node = null
 var _started := false
 var _reveal := false
 var _resolve := false
+var _zoom := 0.0
+var _pan := Vector2.ZERO
 
 
 func _initialize() -> void:
@@ -25,6 +27,8 @@ func _initialize() -> void:
 	_reveal = String(arguments.get("reveal", "0")) == "1"
 	# Play a round so the resolution-phase panels can be checked too.
 	_resolve = String(arguments.get("resolve", "0")) == "1"
+	_zoom = float(arguments.get("zoom", "0"))
+	_pan = Vector2(float(arguments.get("panx", "0")), float(arguments.get("pany", "0")))
 	# In a SceneTree script `root` is the Window itself.
 	root.size = Vector2i(int(arguments.get("width", 1600)), int(arguments.get("height", 900)))
 	var packed: PackedScene = load("res://scenes/main.tscn")
@@ -41,6 +45,10 @@ func _process(_delta: float) -> bool:
 			_main.start_bridge_game()
 		elif _main.has_method("start_meeting_game"):
 			_main.start_meeting_game()
+		if _zoom > 0.0 and _main.get("board_view") != null:
+			_main.board_view.zoom_level = _zoom
+			_main.board_view.pan_offset = _pan
+			_main.board_view.queue_redraw()
 		if _resolve:
 			_main.call_deferred("_on_ready_pressed")
 	if _started and _reveal and _main.get("board_view") != null:
