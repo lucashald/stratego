@@ -1013,7 +1013,7 @@ func _resolution_completion_label() -> String:
 	if replay_view_mode:
 		return "FINISH REPLAY"
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
-		return "ORDER LEFTOVER"
+		return "ORDER REPOSITION"
 	if not game.game_over and game.phase == StrategoGame.PHASE_PLANNING:
 		return "NEXT ROUND"
 	return "FINISH"
@@ -1040,7 +1040,7 @@ func _update_battle_card(event: Dictionary) -> void:
 		if piece_id >= 0 and piece_id < game.pieces.size():
 			var piece: Dictionary = game.pieces[piece_id]
 			piece_text = "%s\n%s" % [game.player_name(int(piece.player)).to_upper(), game.piece_description(piece)]
-		battle_body.text = "[center][color=#f2b15b][font_size=19]LEFTOVER MOVEMENT[/font_size][/color]\n\n%s\n\n%s  ->  %s\n\n[color=#efc77c][b]MOVE COMPLETED[/b][/color][/center]" % [piece_text, str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
+		battle_body.text = "[center][color=#f2b15b][font_size=19]REPOSITION[/font_size][/color]\n\n%s\n\n%s  ->  %s\n\n[color=#efc77c][b]MOVE COMPLETED[/b][/color][/center]" % [piece_text, str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
 		return
 	var content := "[center][color=#8fc4ff][font_size=18]%s[/font_size][/color][/center]\n\n" % _action_label(action)
 	var ids: Array = event.get("participants", [])
@@ -1181,7 +1181,7 @@ func _action_label(action: String) -> String:
 		"ranged": return "RANGED ATTACK"
 		"bounce": return "COLLISION BOUNCE"
 		"retreat": return "RETREAT"
-		"leftover_move": return "LEFTOVER MOVEMENT"
+		"leftover_move": return "REPOSITION"
 		"no_contact": return "NO VISIBLE CONTACT"
 	return "MELEE COMBAT"
 
@@ -1292,7 +1292,7 @@ func _on_leftover_toggled(enabled: bool) -> void:
 	board_view.leftover_mode = enabled
 	if enabled and ranged_toggle.button_pressed:
 		ranged_toggle.button_pressed = false
-	group_move_title.text = "SET LEFTOVER MOVE" if enabled else "MOVE SELECTION"
+	group_move_title.text = "SET REPOSITION MOVE" if enabled else "MOVE SELECTION"
 	group_move_title.add_theme_color_override("font_color", Color("#f2b15b") if enabled else HUD_BLUE)
 	detail_label.text = "Leftover mode: choose one direction for every selected formation with unused movement." if enabled else "Main movement mode restored."
 	_update_inspector()
@@ -1435,7 +1435,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	event_panel.visible = true
 	detail_toast.visible = false
 	if resolution_mode:
-		phase_title.text = "PHASE: BATTLE RESOLUTION"
+		phase_title.text = "PHASE: RESOLUTION"
 		phase_subtitle.text = "Verified replay events" if replay_view_mode else "Resolving movement collisions and combat"
 		_present_resolution_event()
 	elif replay_view_mode:
@@ -1445,10 +1445,10 @@ func _update_interface(update_detail: bool = true) -> void:
 		phase_title.text = "BATTLE COMPLETE"
 		phase_subtitle.text = "%s · %s" % [game.player_name(game.winner), game.end_reason.replace("_", " ")]
 	elif leftover_planning:
-		phase_title.text = "PHASE: LEFTOVER MOVEMENT"
+		phase_title.text = "PHASE: REPOSITION"
 		phase_subtitle.text = "Round %d · Issue one optional move to formations with movement remaining" % game.round_number
 	else:
-		phase_title.text = "PHASE: PLANNING"
+		phase_title.text = "PHASE: ORDERS"
 		phase_subtitle.text = "Round %d · Issue orders to all formations" % game.round_number
 	units_label.text = "Units  %d" % game.count_alive(StrategoGame.BLUE)
 	if game.scenario == StrategoGame.SCENARIO_BRIDGE:
@@ -1489,7 +1489,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	board_view.interaction_enabled = planning and not read_only
 	if not resolution_mode:
 		_update_timeline(6 if leftover_planning or game.game_over else -1 if main_planning else 0)
-	group_move_title.text = "SET LEFTOVER MOVE" if leftover_planning else "MOVE SELECTION"
+	group_move_title.text = "SET REPOSITION MOVE" if leftover_planning else "MOVE SELECTION"
 	group_move_title.add_theme_color_override("font_color", Color("#f2b15b") if leftover_planning else HUD_BLUE)
 	_update_inspector()
 	if update_detail and game.game_over:

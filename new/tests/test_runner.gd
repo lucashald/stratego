@@ -469,7 +469,7 @@ func _test_leftover_is_a_separate_order_phase() -> void:
 	_expect(game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING and game.round_number == 1, "the round pauses for leftover orders after ranged attacks")
 	var presenter: Control = load("res://scripts/main.gd").new()
 	presenter.game = game
-	_expect(presenter._resolution_completion_label() == "ORDER LEFTOVER", "the final main-resolution button clearly opens leftover ordering")
+	_expect(presenter._resolution_completion_label() == "ORDER REPOSITION", "the final main-resolution button names the reposition phase it opens")
 	presenter.free()
 	var order_result := game.set_leftover_order(StrategoGame.RED, mover, Vector2i(4, 2))
 	_expect(bool(order_result.get("ok", false)) and game.pieces[mover].position == Vector2i(4, 3), "leftover orders are issued from the formation's resolved position")
