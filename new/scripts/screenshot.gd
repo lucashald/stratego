@@ -21,6 +21,7 @@ var _rounds := 0
 var _spectate := false
 var _deploy_from := Vector2i(-1, -1)
 var _deploy_to := Vector2i(-1, -1)
+var _open_settings := false
 var _select := 0
 var _played := 0
 
@@ -41,6 +42,7 @@ func _initialize() -> void:
 	_rounds = int(arguments.get("rounds", "0"))
 	# Exercises the actual click handler end to end, not just the engine call it
 	# wraps: --deployfrom x,y --deployto x,y (engine cell coordinates).
+	_open_settings = String(arguments.get("settings", "0")) == "1"
 	if arguments.has("deployfrom") and arguments.has("deployto"):
 		var from_parts := String(arguments.deployfrom).split(",")
 		var to_parts := String(arguments.deployto).split(",")
@@ -78,6 +80,8 @@ func _process(_delta: float) -> bool:
 			var geometry: Dictionary = _main.board_view._board_geometry()
 			_main.board_view._handle_deployment_click(_main.board_view._cell_center(_deploy_from, geometry.origin, geometry.cell))
 			_main.board_view._handle_deployment_click(_main.board_view._cell_center(_deploy_to, geometry.origin, geometry.cell))
+		if _open_settings and _main.has_method("_toggle_settings"):
+			_main._toggle_settings()
 		if _resolve and _rounds <= 0:
 			_main.call_deferred("_on_ready_pressed")
 	if _started and _reveal and _main.get("board_view") != null:

@@ -303,8 +303,10 @@ func _build_minimap() -> void:
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	panel.offset_left = 10
 	panel.offset_right = REGION_LEFT - 12
-	panel.offset_top = -REGION_BOTTOM - 268
-	panel.offset_bottom = -REGION_BOTTOM - 58
+	# Bottom edge sits 6px above the view-controls panel, which grew a second
+	# row; see VIEW_CONTROLS_HEIGHT.
+	panel.offset_top = -REGION_BOTTOM - 6 - VIEW_CONTROLS_HEIGHT - 6 - 210
+	panel.offset_bottom = -REGION_BOTTOM - 6 - VIEW_CONTROLS_HEIGHT - 6
 	panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 6))
 	add_child(panel)
 	var box := VBoxContainer.new()
@@ -320,47 +322,67 @@ func _build_minimap() -> void:
 	box.add_child(minimap)
 
 
+## Two rows, not one: six controls plus a percentage label do not fit legibly
+## across this panel's ~260px of interior width on a single line, and cramming
+## them in had already let HELP creep past the panel's own border before
+## SETTINGS made it worse. VIEW_CONTROLS_HEIGHT grows to match, and the two
+## panels stacked above this one (see _build_minimap, _build_event_panel)
+## shift up by the same amount so the 6px gaps between them hold.
+const VIEW_CONTROLS_HEIGHT := 86.0
+
+
 func _build_view_controls() -> void:
 	var panel := PanelContainer.new()
 	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
 	panel.offset_left = 10
 	panel.offset_right = REGION_LEFT - 12
-	panel.offset_top = -REGION_BOTTOM - 52
+	panel.offset_top = -REGION_BOTTOM - 6 - VIEW_CONTROLS_HEIGHT
 	panel.offset_bottom = -REGION_BOTTOM - 6
 	panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, Color(0.55, 0.72, 0.82, 0.45), 1, 6))
 	add_child(panel)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 4)
-	panel.add_child(row)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 4)
+	panel.add_child(stack)
+	var zoom_row := HBoxContainer.new()
+	zoom_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	zoom_row.add_theme_constant_override("separation", 4)
+	stack.add_child(zoom_row)
 	var minus := _make_button("-", 44)
 	minus.custom_minimum_size.y = 34
 	minus.pressed.connect(board_view.zoom_out)
-	row.add_child(minus)
+	zoom_row.add_child(minus)
 	zoom_label = Label.new()
 	zoom_label.text = "100%"
 	zoom_label.custom_minimum_size.x = 60
 	zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	zoom_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(zoom_label)
+	zoom_row.add_child(zoom_label)
 	var plus := _make_button("+", 44)
 	plus.custom_minimum_size.y = 34
 	plus.pressed.connect(board_view.zoom_in)
-	row.add_child(plus)
+	zoom_row.add_child(plus)
 	var fit := _make_button("FIT", 58)
 	fit.custom_minimum_size.y = 34
 	fit.pressed.connect(board_view.reset_view)
-	row.add_child(fit)
+	zoom_row.add_child(fit)
+	var action_row := HBoxContainer.new()
+	action_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	action_row.add_theme_constant_override("separation", 4)
+	stack.add_child(action_row)
 	var select_all := _make_button("SELECT ALL", 122)
 	select_all.custom_minimum_size.y = 34
 	select_all.tooltip_text = "Select every movable formation. Shortcut: Ctrl+A."
 	select_all.pressed.connect(board_view.select_all_movable)
-	row.add_child(select_all)
+	action_row.add_child(select_all)
 	var help := _make_button("HELP", 54)
 	help.custom_minimum_size.y = 34
 	help.tooltip_text = "Show contextual movement help."
 	help.pressed.connect(_show_detail_help)
-	row.add_child(help)
+	action_row.add_child(help)
+	settings_button = _make_button("SETTINGS", 84)
+	settings_button.custom_minimum_size.y = 34
+	settings_button.pressed.connect(_toggle_settings)
+	action_row.add_child(settings_button)
 
 
 ## The round as six named steps. MARCH and MELEE each carry three dots because
@@ -709,7 +731,8 @@ func _build_event_panel() -> void:
 	event_panel.offset_left = 10
 	event_panel.offset_right = REGION_LEFT - 12
 	event_panel.offset_top = REGION_TOP + 4
-	event_panel.offset_bottom = -REGION_BOTTOM - 274
+	# Bottom edge sits 6px above the map overview panel above the view controls.
+	event_panel.offset_bottom = -REGION_BOTTOM - 6 - VIEW_CONTROLS_HEIGHT - 6 - 210 - 6
 	event_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(event_panel)
 	var margin := MarginContainer.new()
@@ -1019,9 +1042,6 @@ func _build_settings_drawer() -> void:
 	replay_last_button.tooltip_text = "Reload the last export, verify it, and click through its recorded battles."
 	replay_last_button.pressed.connect(_on_replay_last)
 	game_buttons.add_child(replay_last_button)
-	settings_button = _make_button("SETTINGS", 100)
-	settings_button.pressed.connect(_toggle_settings)
-	game_buttons.add_child(settings_button)
 	ranged_toggle = CheckButton.new()
 	ranged_toggle.text = "Archer target mode"
 	ranged_toggle.tooltip_text = "Target at range 1 with unused movement, or range 2 if the Archer makes no main move."
