@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_archer_loss_blocks_shot_and_win_allows_it()
 	_test_leftover_is_a_separate_order_phase()
 	_test_leftover_allows_second_melee_only_after_win()
+	_test_cavalry_always_leftover_toggle()
 	_test_blocked_retreat_destroys_loser()
 	_test_enemy_retreat_collision_battle()
 	_test_impulse_sighting_is_remembered()
@@ -40,6 +41,7 @@ func _run() -> void:
 	_test_deployment_zone_and_recommended_formation()
 	_test_deployment_fog_and_redeploy()
 	_test_crossroads_replay_round_trip()
+	_test_bot_omniscient_toggle()
 	_test_bot_round_smoke()
 	print("\n%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -523,6 +525,31 @@ func _test_leftover_allows_second_melee_only_after_win() -> void:
 	_expect(_events_with_action(bounce_events, "melee").size() == 1 and bounce_game.pieces[bounced_id].round_status == StrategoGame.STATUS_BOUNCED, "a bounce ends the unit's round and prevents leftover re-engagement")
 
 
+func _test_cavalry_always_leftover_toggle() -> void:
+	var off_game := _test_game()
+	var hc_off := off_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
+	off_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	off_game.set_unit_order(StrategoGame.BLUE, hc_off, [Vector2i(8, 5)])
+	for player in off_game.active_players: off_game.mark_player_ready(player)
+	off_game.resolve_main_and_ranged()
+	_expect(not off_game.can_receive_leftover_order(StrategoGame.BLUE, hc_off), "with the toggle off, a Heavy Cavalry that spent its one movement point is not leftover-eligible")
+
+	var on_game := _test_game()
+	on_game.cavalry_always_leftover = true
+	var hc_on := on_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
+	var hi_on := on_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
+	on_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	on_game.set_unit_order(StrategoGame.BLUE, hc_on, [Vector2i(8, 5)])
+	on_game.set_unit_order(StrategoGame.BLUE, hi_on, [Vector2i(10, 5)])
+	for player in on_game.active_players: on_game.mark_player_ready(player)
+	on_game.resolve_main_and_ranged()
+	_expect(on_game.can_receive_leftover_order(StrategoGame.BLUE, hc_on), "with the toggle on, that same Cavalry can still take a leftover move")
+	_expect(not on_game.can_receive_leftover_order(StrategoGame.BLUE, hi_on), "the toggle is Cavalry-specific: an equally exhausted Heavy Infantry stays excluded")
+
+	on_game.pieces[hc_on].round_status = StrategoGame.STATUS_LOST
+	_expect(not on_game.can_receive_leftover_order(StrategoGame.BLUE, hc_on), "losing a fight still blocks the leftover move even with the toggle on")
+
+
 func _test_blocked_retreat_destroys_loser() -> void:
 	var game := _test_game()
 	var attacker_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 0), 10)
@@ -851,6 +878,20 @@ func _test_crossroads_replay_round_trip() -> void:
 	var parsed_value: Variant = JSON.parse_string(JSON.stringify(document))
 	var json_result: Dictionary = StrategoGame.run_replay(parsed_value as Dictionary) if parsed_value is Dictionary else {"ok": false}
 	_expect(bool(json_result.get("ok", false)) and String(json_result.get("digest", "")) == game.state_digest(), "a crossroads replay reproduces the exact final state, redeployment included")
+
+
+func _test_bot_omniscient_toggle() -> void:
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 4), 8)
+	var defender := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 10)
+	_expect(not game.is_piece_revealed_to(game.pieces[defender], StrategoGame.RED), "the defender genuinely has not been revealed to Red")
+	var honest := StrategoBotPolicy.new()
+	var perceived_honest: Dictionary = honest._perceived_enemy(game, StrategoGame.RED, game.pieces[defender])
+	_expect(String(perceived_honest.role) == String(honest.assumptions.role) and int(perceived_honest.strength) == int(honest.assumptions.strength), "an honest bot substitutes its assumption for an unrevealed enemy")
+	var cheater := StrategoBotPolicy.new()
+	cheater.omniscient = true
+	var perceived_cheater: Dictionary = cheater._perceived_enemy(game, StrategoGame.RED, game.pieces[defender])
+	_expect(String(perceived_cheater.role) == StrategoGame.ROLE_INFANTRY and int(perceived_cheater.strength) == 10, "an omniscient bot reads the true stats even though the piece has not been revealed - the toggle changes the bot, not the fog state")
 
 
 func _test_bot_round_smoke() -> void:

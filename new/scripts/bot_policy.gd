@@ -15,7 +15,13 @@ extends RefCounted
 # the best few are actually offered to the engine.
 
 const WEIGHT_DEFAULTS := {
-	"objective_progress": 1.0,      # closing on the scenario's aim point
+	# 5.0, not 1.0: a direct Blue-vs-Red sweep on Meeting (Blue at each
+	# candidate value, Red held at the old default) found win rate climbing
+	# from 42.5% at 1.0 to a broad 68.5-69.5% plateau across 4-6, peaking at
+	# 5, then declining again by 10 (62.5%). At the old weight the bot was
+	# badly underrating how much a WEGO round's movement should be devoted to
+	# actually closing on the objective versus other considerations.
+	"objective_progress": 5.0,      # closing on the scenario's aim point
 	"objective_occupy": 6.0,        # standing on the square a scenario is won by
 	"fight_advantage": 2.2,         # expected melee edge when entering an enemy
 	"losing_fight": -7.0,           # scaled penalty for attacking at a disadvantage
@@ -34,14 +40,31 @@ const WEIGHT_DEFAULTS := {
 ## Deliberately a parameter rather than a constant: which assumption plays best
 ## is an empirical question, and two bots holding different assumptions can be
 ## matched against each other to settle it.
+## strength 3, not 5: a --cheater sweep over Skirmish found the bot playing
+## measurably better believing unidentified enemies are weaker than a plain
+## Medium Infantry (5) - 43.5% win rate against an omniscient opponent at 3
+## versus 51% at 5, and a direct head-to-head confirmed it beats 5 outright,
+## 91-75 across 200 games. The relationship is not "lower is always better,"
+## though: strength 2 and below cost ground again, and by -5/-10 the bot is
+## worse than the old default, because expected_battle_score has no floor and
+## an assumption that negative stops being "probably weak" and starts reading
+## as "impossible to lose," swamping every other signal in the bot's scoring.
 const ASSUMPTION_DEFAULTS := {
 	"role": StrategoGame.ROLE_INFANTRY,
 	"weight": StrategoGame.WEIGHT_MEDIUM,
-	"strength": 5,
+	"strength": 3,
 }
 
 var weights: Dictionary = WEIGHT_DEFAULTS.duplicate(true)
 var assumptions: Dictionary = ASSUMPTION_DEFAULTS.duplicate(true)
+## A deliberate cheat: this policy reads every enemy's true stats regardless
+## of whether they have been revealed, and never pays the unknown_risk
+## penalty. Not for play - for measuring what the assumption above costs an
+## honest bot. Matched against an identical opponent that only has that
+## difference, the cheater's margin of victory is a direct measurement of
+## that cost, and sweeping `assumptions` on the honest side to find where the
+## margin is smallest calibrates it empirically instead of by feel.
+var omniscient := false
 
 
 ## A stand-in for an enemy whose identity has not been earned. Keeps the real
@@ -63,7 +86,7 @@ func _assumed_enemy(actual: Dictionary) -> Dictionary:
 ## The enemy as this player is entitled to see it: the real formation once its
 ## identity has been earned, the assumed profile until then.
 func _perceived_enemy(game: StrategoGame, player: int, actual: Dictionary) -> Dictionary:
-	return actual if game.is_piece_revealed_to(actual, player) else _assumed_enemy(actual)
+	return actual if omniscient or game.is_piece_revealed_to(actual, player) else _assumed_enemy(actual)
 
 
 func plan_round(game: StrategoGame, player: int, rng: RandomNumberGenerator) -> void:
@@ -171,7 +194,7 @@ func _score_destination(game: StrategoGame, piece: Dictionary, player: int, dest
 		score += float(weights.fight_advantage) * advantage
 		if advantage < 0.0: score += float(weights.losing_fight) * absf(advantage)
 		if piece.role == StrategoGame.ROLE_CAVALRY: score += float(weights.cavalry_charges)
-		if not game.is_piece_revealed_to(occupant, player): score += float(weights.unknown_risk)
+		if not omniscient and not game.is_piece_revealed_to(occupant, player): score += float(weights.unknown_risk)
 	elif holding:
 		# Standing still is how a formation gets attacked rather than attacking,
 		# which is the only way the Infantry bonus is ever collected.

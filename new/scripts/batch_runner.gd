@@ -21,10 +21,20 @@ var separation := 3
 var blue_roster: Array = StrategoGame.MEETING_ROSTER
 var red_roster: Array = StrategoGame.MEETING_ROSTER
 var weight_overrides: Dictionary = {}
+var blue_weight_overrides: Dictionary = {}
+var red_weight_overrides: Dictionary = {}
 var assume_blue: Dictionary = {}
 var assume_red: Dictionary = {}
 var side_wins: Dictionary = {}
 var team_wins: Dictionary = {}
+var cavalry_always_leftover := false
+## -1 (StrategoGame.DRAW) means no cheater: an ordinary symmetric run. Set by
+## --cheater blue|red.
+var cheater_side := StrategoGame.DRAW
+var sweep_field := ""
+var sweep_values: Array = []
+var sweep_weight_field := ""
+var sweep_weight_values: Array = []
 
 
 func _initialize() -> void:
@@ -33,6 +43,11 @@ func _initialize() -> void:
 	scenario = String(arguments.get("scenario", scenario))
 	starting_seed = int(arguments.get("seed", starting_seed))
 	separation = int(arguments.get("sep", separation))
+	# --cavalryleftover 1 lets Cavalry always take the leftover move, even
+	# after fully spending its main-phase movement. A/B this against a plain
+	# run of the same seeds to see whether it closes Heavy Cavalry's arrival
+	# gap in Meeting.
+	cavalry_always_leftover = String(arguments.get("cavalryleftover", "0")) == "1"
 	# --w key=value,key=value overrides bot weights, for isolating one feature.
 	if arguments.has("w"):
 		for pair in String(arguments.w).split(",", false):
@@ -47,15 +62,123 @@ func _initialize() -> void:
 	if arguments.has("assumered"): assume_red = _parse_assumption(String(arguments.assumered))
 	if arguments.has("blue"): blue_roster = _parse_roster(String(arguments.blue))
 	if arguments.has("red"): red_roster = _parse_roster(String(arguments.red))
-	var totals: Dictionary = {}
-	var outcomes: Dictionary = {}
-	var round_total := 0
-	for index in games:
-		var result := _play_one(starting_seed + index, totals)
-		outcomes[result] = int(outcomes.get(result, 0)) + 1
-		round_total += _last_rounds
-	_report(totals, outcomes, round_total)
+	# --cheater blue|red makes that side's bot read every enemy's true stats
+	# instead of guessing. Pairs with --sweep to calibrate the guess: e.g.
+	#   --cheater blue --sweep strength=3,4,5,6,7,8
+	# runs the same cheater-vs-honest matchup once per assumed strength and
+	# reports where the cheater's win-rate edge over the honest bot is
+	# smallest - the assumption that costs the honest bot the least. Two
+	# players only; not meaningful against crossroads/four_player.
+	if arguments.has("cheater"):
+		var side := String(arguments.cheater).strip_edges().to_lower()
+		cheater_side = StrategoGame.BLUE if side == "blue" else (StrategoGame.RED if side == "red" else StrategoGame.DRAW)
+	if arguments.has("sweep"):
+		var spec := String(arguments.sweep)
+		var split_at := spec.find("=")
+		if split_at > 0:
+			sweep_field = spec.substr(0, split_at).strip_edges()
+			for raw in spec.substr(split_at + 1).split(",", false):
+				var value := String(raw).strip_edges()
+				sweep_values.append(int(value) if sweep_field == "strength" else value)
+	# --sweepweight field=v1,v2,... A direct head-to-head, not a cheater
+	# comparison: Blue plays each value of one scoring weight in turn, Red
+	# stays at the defaults throughout, both otherwise identical. For tuning
+	# a weight like objective_progress rather than the unknown-enemy guess.
+	if arguments.has("sweepweight"):
+		var spec := String(arguments.sweepweight)
+		var split_at := spec.find("=")
+		if split_at > 0:
+			sweep_weight_field = spec.substr(0, split_at).strip_edges()
+			for raw in spec.substr(split_at + 1).split(",", false):
+				sweep_weight_values.append(float(String(raw).strip_edges()))
+	if not sweep_field.is_empty() and cheater_side != StrategoGame.DRAW:
+		_run_sweep()
+	elif not sweep_weight_field.is_empty():
+		_run_weight_sweep()
+	else:
+		var totals: Dictionary = {}
+		var outcomes: Dictionary = {}
+		var round_total := 0
+		for index in games:
+			var result := _play_one(starting_seed + index, totals)
+			outcomes[result] = int(outcomes.get(result, 0)) + 1
+			round_total += _last_rounds
+		_report(totals, outcomes, round_total)
 	quit()
+
+
+func _side_name(player: int) -> String:
+	return "Blue" if player == StrategoGame.BLUE else "Red"
+
+
+## Runs `games` games once per swept value, applying each value to the honest
+## side's assumption while the cheater side stays omniscient throughout, and
+## prints the cheater's win rate at each - the value with the lowest rate is
+## the assumption that best approximates the truth.
+func _run_sweep() -> void:
+	var honest_side := StrategoGame.RED if cheater_side == StrategoGame.BLUE else StrategoGame.BLUE
+	print("\nsweeping %s over %s | cheater=%s honest=%s | %d games each" % [sweep_field, str(sweep_values), _side_name(cheater_side), _side_name(honest_side), games])
+	print("%-12s %10s %10s %8s %8s" % [sweep_field, "cheater%", "honest%", "draw%", "avg len"])
+	var best_value = null
+	var best_cheater_pct := 101.0
+	for value in sweep_values:
+		var profile := {sweep_field: value}
+		if honest_side == StrategoGame.BLUE: assume_blue = profile
+		else: assume_red = profile
+		side_wins.clear()
+		team_wins.clear()
+		var totals: Dictionary = {}
+		var outcomes: Dictionary = {}
+		var round_total := 0
+		for index in games:
+			var result := _play_one(starting_seed + index, totals)
+			outcomes[result] = int(outcomes.get(result, 0)) + 1
+			round_total += _last_rounds
+		var cheater_wins := int(side_wins.get(_side_name(cheater_side), 0))
+		var honest_wins := int(side_wins.get(_side_name(honest_side), 0))
+		var draws := int(side_wins.get("draw", 0))
+		var cheater_pct := 100.0 * float(cheater_wins) / float(games)
+		var honest_pct := 100.0 * float(honest_wins) / float(games)
+		var draw_pct := 100.0 * float(draws) / float(games)
+		print("%-12s %9.1f%% %9.1f%% %7.1f%% %8.1f" % [str(value), cheater_pct, honest_pct, draw_pct, float(round_total) / float(games)])
+		if cheater_pct < best_cheater_pct:
+			best_cheater_pct = cheater_pct
+			best_value = value
+	print("\nsmallest cheater edge at %s = %s (%.1f%% cheater win rate). The cheater strictly knows more, so 50/50 is the floor, not necessarily reachable." % [sweep_field, str(best_value), best_cheater_pct])
+
+
+## Runs `games` games once per swept value of one bot weight, applied to Blue
+## only; Red stays at the plain defaults throughout. Direct win rate, not a
+## cheater comparison - for tuning a scoring weight like objective_progress
+## against an unchanged opponent rather than calibrating the unknown-enemy
+## assumption.
+func _run_weight_sweep() -> void:
+	print("\nsweeping weights.%s over %s | Blue swept vs Red baseline | %d games each" % [sweep_weight_field, str(sweep_weight_values), games])
+	print("%-12s %10s %10s %8s %8s" % [sweep_weight_field, "blue%", "red%", "draw%", "avg len"])
+	var best_value = null
+	var best_blue_pct := -1.0
+	for value in sweep_weight_values:
+		blue_weight_overrides = {sweep_weight_field: value}
+		side_wins.clear()
+		team_wins.clear()
+		var totals: Dictionary = {}
+		var outcomes: Dictionary = {}
+		var round_total := 0
+		for index in games:
+			var result := _play_one(starting_seed + index, totals)
+			outcomes[result] = int(outcomes.get(result, 0)) + 1
+			round_total += _last_rounds
+		var blue_wins := int(side_wins.get("Blue", 0))
+		var red_wins := int(side_wins.get("Red", 0))
+		var draws := int(side_wins.get("draw", 0))
+		var blue_pct := 100.0 * float(blue_wins) / float(games)
+		var red_pct := 100.0 * float(red_wins) / float(games)
+		var draw_pct := 100.0 * float(draws) / float(games)
+		print("%-12s %9.1f%% %9.1f%% %7.1f%% %8.1f" % [str(value), blue_pct, red_pct, draw_pct, float(round_total) / float(games)])
+		if blue_pct > best_blue_pct:
+			best_blue_pct = blue_pct
+			best_value = value
+	print("\nbest %s = %s (%.1f%% win rate for Blue against the Red baseline)" % [sweep_weight_field, str(best_value), best_blue_pct])
 
 
 var _last_rounds := 0
@@ -65,9 +188,12 @@ var _melee_shapes: Dictionary = {}
 func _play_one(seed_value: int, totals: Dictionary) -> String:
 	var game := StrategoGame.new()
 	if scenario == StrategoGame.SCENARIO_MEETING: game.setup_meeting(seed_value)
+	elif scenario == "meeting_inverted": _setup_meeting_inverted(game)
+	elif scenario == "meeting_heavycav": _setup_meeting_heavy_cavalry(game)
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)
 	elif scenario == "crossroads": game.setup_crossroads(seed_value)
 	else: game.setup_bridge(seed_value)
+	game.cavalry_always_leftover = cavalry_always_leftover
 	# Bots accept the recommended formation as-is; nothing here optimizes a
 	# deployment. That is deliberate: it leaves deployment choice as a lever a
 	# human player can use against a bot that never bothers to.
@@ -80,8 +206,16 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	for player in game.active_players:
 		var policy := StrategoBotPolicy.new()
 		for key in weight_overrides: policy.weights[key] = float(weight_overrides[key])
+		# Per-side overrides layer on top of the symmetric ones above, so a
+		# weight sweep can change Blue alone and leave Red at the defaults -
+		# --w changes both sides uniformly, for asking "is this weight good in
+		# general"; these ask "does this side benefit against an unchanged
+		# opponent."
+		var side_overrides: Dictionary = blue_weight_overrides if player == StrategoGame.BLUE else (red_weight_overrides if player == StrategoGame.RED else {})
+		for key in side_overrides: policy.weights[key] = float(side_overrides[key])
 		var profile: Dictionary = assume_blue if (player == StrategoGame.BLUE or game.active_players.size() > 2) else assume_red
 		for key in profile: policy.assumptions[key] = profile[key]
+		if player == cheater_side: policy.omniscient = true
 		bots[player] = policy
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -124,6 +258,85 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 		team_wins[team_label] = int(team_wins.get(team_label, 0)) + 1
 	if game.winner == StrategoGame.DRAW: return "draw"
 	return game.end_reason
+
+
+## A stress test for the Cavalry-leftover toggle, not a shipped scenario: the
+## opposite of Meeting's battle line. Meeting deliberately puts Heavies at the
+## front rank to compensate for their low movement (see _place_battle_line);
+## this puts them at the back instead, and Lights at the front across two
+## ranks, so Light Cavalry starts as close to the objective as a formation can
+## get while also being the biggest beneficiary of the toggle. If LC is going
+## to look overpowered anywhere, it should be here.
+func _setup_meeting_inverted(game: StrategoGame) -> void:
+	game.setup_empty()
+	game.scenario = StrategoGame.SCENARIO_MEETING
+	game.configured_player_count = 2
+	game.apply_lake_terrain()
+	game.player_teams[StrategoGame.BLUE] = StrategoGame.BLUE
+	game.player_teams[StrategoGame.RED] = StrategoGame.RED
+	var objective := Vector2i(StrategoGame.BOARD_SIZE / 2, StrategoGame.BOARD_SIZE / 2)
+	# rank 0 (nearest the objective) through rank 3 (furthest back), matching
+	# "rank 1/2/3/4" counted from the front in ordinary speech.
+	var ranks := [
+		[[StrategoGame.LIGHT_CAVALRY, 3], [StrategoGame.LIGHT_ARCHER, 17]],
+		[[StrategoGame.LIGHT_INFANTRY, 4], [StrategoGame.LIGHT_INFANTRY, 16]],
+		[[StrategoGame.MEDIUM_INFANTRY, 8], [StrategoGame.MEDIUM_CAVALRY, 9], [StrategoGame.MEDIUM_ARCHER, 11], [StrategoGame.MEDIUM_INFANTRY, 12]],
+		[[StrategoGame.HEAVY_INFANTRY, 9], [StrategoGame.HEAVY_ARCHER, 10], [StrategoGame.HEAVY_INFANTRY, 11], [StrategoGame.HEAVY_CAVALRY, 12]],
+	]
+	# One row shallower than Meeting's own MEETING_FRONT_DISTANCE (7): four
+	# ranks at that distance would push the back rank to row 20, off a 20-row
+	# board, clamping it onto the same row as rank 2 and silently dropping
+	# every colliding piece. Six leaves headroom for all four ranks.
+	var reach := 6
+	for side in [[StrategoGame.BLUE, 1], [StrategoGame.RED, -1]]:
+		var player: int = side[0]
+		var step: int = side[1]
+		var front_row: int = objective.y + reach * step
+		for rank_index in ranks.size():
+			for entry in ranks[rank_index]:
+				var row: int = clampi(front_row + rank_index * step, 0, StrategoGame.BOARD_SIZE - 1)
+				var cell := Vector2i(int(entry[1]), row)
+				if game.is_blocked_terrain(cell) or not game.piece_at(cell).is_empty(): continue
+				game.add_piece(String(entry[0]), player, cell)
+	game.add_hold_square_objective(objective, StrategoGame.DEFAULT_HOLD_ROUNDS, StrategoGame.DEFAULT_BRIDGE_TURN_LIMIT)
+	game.active_players.assign([StrategoGame.RED, StrategoGame.BLUE])
+	game.current_player = StrategoGame.BLUE
+	game._record_all_sightings()
+
+
+## Meeting's real battle line (front rank nearest the objective, same columns
+## and MEETING_FRONT_DISTANCE), except the front rank is four Heavy Cavalry
+## instead of the usual 2 Heavy Infantry + Heavy Archer + Heavy Cavalry mix.
+## The traffic jam that stopped Heavy Cavalry from using its leftover move in
+## the standard formation came from sharing that rank with slower heavies
+## competing for the same lanes; this isolates whether the jam was really
+## about the mixed company, not Cavalry-with-the-toggle inherently.
+func _setup_meeting_heavy_cavalry(game: StrategoGame) -> void:
+	game.setup_empty()
+	game.scenario = StrategoGame.SCENARIO_MEETING
+	game.configured_player_count = 2
+	game.apply_lake_terrain()
+	game.player_teams[StrategoGame.BLUE] = StrategoGame.BLUE
+	game.player_teams[StrategoGame.RED] = StrategoGame.RED
+	var objective := Vector2i(StrategoGame.BOARD_SIZE / 2, StrategoGame.BOARD_SIZE / 2)
+	var deployment := [
+		[StrategoGame.HEAVY_CAVALRY, 9, 0], [StrategoGame.HEAVY_CAVALRY, 10, 0], [StrategoGame.HEAVY_CAVALRY, 11, 0], [StrategoGame.HEAVY_CAVALRY, 12, 0],
+		[StrategoGame.MEDIUM_INFANTRY, 8, 1], [StrategoGame.MEDIUM_CAVALRY, 9, 1], [StrategoGame.MEDIUM_ARCHER, 11, 1], [StrategoGame.MEDIUM_INFANTRY, 12, 1],
+		[StrategoGame.LIGHT_CAVALRY, 3, 2], [StrategoGame.LIGHT_INFANTRY, 4, 2], [StrategoGame.LIGHT_INFANTRY, 16, 2], [StrategoGame.LIGHT_ARCHER, 17, 2],
+	]
+	for side in [[StrategoGame.BLUE, 1], [StrategoGame.RED, -1]]:
+		var player: int = side[0]
+		var step: int = side[1]
+		var front_row: int = objective.y + StrategoGame.MEETING_FRONT_DISTANCE * step
+		for entry in deployment:
+			var row: int = clampi(front_row + int(entry[2]) * step, 0, StrategoGame.BOARD_SIZE - 1)
+			var cell := Vector2i(int(entry[1]), row)
+			if game.is_blocked_terrain(cell) or not game.piece_at(cell).is_empty(): continue
+			game.add_piece(String(entry[0]), player, cell)
+	game.add_hold_square_objective(objective, StrategoGame.DEFAULT_HOLD_ROUNDS, StrategoGame.DEFAULT_BRIDGE_TURN_LIMIT)
+	game.active_players.assign([StrategoGame.RED, StrategoGame.BLUE])
+	game.current_player = StrategoGame.BLUE
+	game._record_all_sightings()
 
 
 func _accumulate(game: StrategoGame, totals: Dictionary, occupancy: Dictionary, first_arrival: Dictionary) -> void:

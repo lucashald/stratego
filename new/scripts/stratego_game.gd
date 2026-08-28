@@ -176,6 +176,12 @@ var withdrawing_player := DRAW
 var last_eliminated_player := DRAW
 var last_elimination_reason := ""
 var private_battle_results := true
+## Off by default, so existing games and replays are unaffected. When on,
+## Cavalry ignores the "movement left in the bank" leftover-eligibility check
+## - a Heavy Cavalry formation that already spent its one point of main
+## movement can still take the leftover move, rather than being permanently
+## excluded from it the moment it moves at all.
+var cavalry_always_leftover := false
 var vision_range := DEFAULT_VISION_RANGE
 var bridge_attacker := BLUE
 var bridge_defender := RED
@@ -244,6 +250,7 @@ func setup_empty() -> void:
 	last_eliminated_player = DRAW
 	last_elimination_reason = ""
 	private_battle_results = true
+	cavalry_always_leftover = false
 	vision_range = DEFAULT_VISION_RANGE
 	bridge_attacker = BLUE
 	bridge_defender = RED
@@ -1866,7 +1873,15 @@ func movement_committed(piece: Dictionary) -> int:
 
 
 func _eligible_for_leftover(piece: Dictionary) -> bool:
-	return is_movable(piece) and String(piece.round_status) in [STATUS_READY, STATUS_WON] and movement_committed(piece) < movement_limit_for(piece) and int(piece.melee_count) < 2
+	# The fight-outcome gate (round_status) and the twice-fought cap apply
+	# regardless of the toggle below - a Cavalry formation that lost still
+	# doesn't get to reposition. Only the "movement left in the bank" check is
+	# what the toggle bypasses.
+	if not is_movable(piece) or String(piece.round_status) not in [STATUS_READY, STATUS_WON] or int(piece.melee_count) >= 2:
+		return false
+	if cavalry_always_leftover and piece.role == ROLE_CAVALRY:
+		return true
+	return movement_committed(piece) < movement_limit_for(piece)
 
 
 func _movement_event(piece_id: int, from: Vector2i, to: Vector2i, batch_name: String) -> Dictionary:
