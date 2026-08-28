@@ -7,6 +7,9 @@ const LAST_REPLAY_PATH := "user://replays/last_replay.json"
 
 var game := StrategoGame.new()
 var bot := StrategoBotPolicy.new()
+# When set, this army is driven over the MCP bridge instead of by the bot, so a
+# remote opponent can play the real app rather than a headless copy of it.
+var remote_bridge: StrategoMCPBridge = null
 var rng := RandomNumberGenerator.new()
 var board_view: StrategoBoardView
 
@@ -67,6 +70,34 @@ func _ready() -> void:
 	rng.randomize()
 	_build_interface()
 	start_bridge_game()
+	_start_remote_bridge()
+
+
+## Opens the command bridge when launched with --remote, so a second commander
+## can play one army over the network while this window plays the other.
+func _start_remote_bridge() -> void:
+	var arguments := OS.get_cmdline_user_args()
+	if "--remote" not in arguments: return
+	var port := StrategoMCPBridge.DEFAULT_PORT
+	var index := arguments.find("--port")
+	if index >= 0 and index + 1 < arguments.size(): port = int(arguments[index + 1])
+	remote_bridge = StrategoMCPBridge.new()
+	remote_bridge.game = game
+	remote_bridge.bot = bot
+	remote_bridge.controlled_player = StrategoGame.RED
+	remote_bridge.player_committed.connect(_on_remote_committed)
+	add_child(remote_bridge)
+	if remote_bridge.start(port) != OK:
+		remote_bridge.queue_free()
+		remote_bridge = null
+		_log_line("Could not open the command bridge on port %d: something else is already listening there. This window is playing against the bot." % port, true)
+		return
+	_log_line("Remote commander may connect on port %d and will play Red." % port, true)
+
+
+func _on_remote_committed(_player: int) -> void:
+	if resolution_mode or game.game_over: return
+	if game.all_players_ready(): _resolve_ready_round()
 
 
 func _build_interface() -> void:
@@ -625,6 +656,7 @@ func _configure_board(show_all: bool) -> void:
 	board_view.prefer_ranged = ranged_toggle.button_pressed
 	board_view.leftover_mode = game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
 	board_view.set_game(game)
+	if remote_bridge != null: remote_bridge.game = game
 
 
 func _on_ready_pressed() -> void:
@@ -634,12 +666,18 @@ func _on_ready_pressed() -> void:
 	board_view.clear_selection()
 	game.mark_player_ready(StrategoGame.BLUE)
 	_plan_unready_bots()
+	if remote_bridge != null and not game.all_players_ready():
+		detail_label.text = "Orders locked in. Waiting for the remote commander."
+		_update_interface()
+		return
 	_resolve_ready_round()
 
 
 func _plan_unready_bots() -> void:
 	for player in game.active_players:
 		if player == StrategoGame.BLUE and not spectator_mode:
+			continue
+		if remote_bridge != null and player == remote_bridge.controlled_player:
 			continue
 		if player in game.ready_players:
 			continue
@@ -788,7 +826,12 @@ func _update_battle_card(event: Dictionary) -> void:
 		var piece: Dictionary = game.pieces[valid_ids[index]]
 		var side_color := "#78b7ff" if int(piece.player) == StrategoGame.BLUE else "#ff8f78"
 		content += "[color=%s][b]%s[/b][/color]\n%s\n" % [side_color, game.player_name(int(piece.player)).to_upper(), game.piece_description(piece)]
-		content += "D10 roll   [b]%d[/b]\nFinal score   [b]%d[/b]\nDamage taken   [b]%d[/b]\nRemaining Strength   [b]%d[/b]\n" % [_event_roll(event, valid_ids[index], index), _event_score(event, valid_ids[index], index), _event_damage(event, valid_ids[index], index), int(piece.strength)]
+		var roll := _event_roll(event, valid_ids[index], index)
+		# A natural 10 adds a point of damage after Armor, and the score alone
+		# never reveals it: a weakened formation caps its score well below 10,
+		# so the damage otherwise looks like it does not follow from the numbers.
+		var roll_note := "  [color=#e7c47d](natural 10: +1 damage)[/color]" if roll == 10 else ""
+		content += "D10 roll   [b]%d[/b]%s\nFinal score   [b]%d[/b]\nDamage taken   [b]%d[/b]\nRemaining Strength   [b]%d[/b]\n" % [roll, roll_note, _event_score(event, valid_ids[index], index), _event_damage(event, valid_ids[index], index), int(piece.strength)]
 		if index < valid_ids.size() - 1:
 			content += "\n[center][color=#aaa39a]VERSUS[/color][/center]\n\n"
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))

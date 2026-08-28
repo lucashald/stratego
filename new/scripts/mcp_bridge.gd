@@ -14,6 +14,9 @@ extends Node
 const DEFAULT_PORT := 8791
 
 signal command_handled(command: String, ok: bool)
+## Emitted when a remotely controlled army locks in its orders, so a host that
+## owns the round loop (the real app) knows it can try to resolve.
+signal player_committed(player: int)
 
 var game: StrategoGame = null
 var controlled_player := StrategoGame.BLUE
@@ -95,6 +98,8 @@ func _dispatch(command: String, args: Dictionary) -> Dictionary:
 		"new_game": return _new_game(args)
 		"set_order": return _set_order(args)
 		"clear_orders": return _clear_orders(args)
+		"set_player": return _set_player(args)
+		"commit": return _commit()
 		"end_planning": return _end_planning()
 		"get_events": return {"ok": true, "events": _last_events}
 		"get_history": return _get_history(args)
@@ -172,6 +177,25 @@ func _set_order(args: Dictionary) -> Dictionary:
 		int(args.get("ranged_target_id", -1))
 	)
 	return {"ok": bool(result.get("ok", false)), "message": String(result.get("message", ""))}
+
+
+## Locks in the current side's orders without resolving, so the other army can
+## be given its orders before the round is worked out. Without this, ending the
+## round would hand any un-readied player to the bot.
+func _commit() -> Dictionary:
+	var result := game.mark_player_ready(controlled_player)
+	player_committed.emit(controlled_player)
+	return {"ok": bool(result.get("ok", true)), "ready": game.ready_players.duplicate()}
+
+
+## Switches which side subsequent orders belong to, so one connection can drive
+## both armies. Any player left without orders is still planned by the bot.
+func _set_player(args: Dictionary) -> Dictionary:
+	var player := int(args.get("player", controlled_player))
+	if player not in game.active_players:
+		return {"ok": false, "error": "That player is not in this game."}
+	controlled_player = player
+	return {"ok": true, "player": controlled_player, "state": game.observed_state(controlled_player)}
 
 
 func _clear_orders(args: Dictionary) -> Dictionary:
