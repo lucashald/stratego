@@ -25,7 +25,6 @@ var objective_label: Label
 var objective_progress: ProgressBar
 var detail_label: Label
 var detail_toast: PanelContainer
-var detail_help_hidden := false
 var ready_button: Button
 var undo_button: Button
 var cancel_all_button: Button
@@ -41,6 +40,7 @@ var replay_last_button: Button
 var ranged_toggle: CheckButton
 var leftover_toggle: CheckButton
 var privacy_toggle: CheckButton
+var cavalry_leftover_toggle: CheckButton
 var count_labels: Dictionary = {}
 var history: RichTextLabel
 var settings_history: RichTextLabel
@@ -374,11 +374,6 @@ func _build_view_controls() -> void:
 	select_all.tooltip_text = "Select every movable formation. Shortcut: Ctrl+A."
 	select_all.pressed.connect(board_view.select_all_movable)
 	action_row.add_child(select_all)
-	var help := _make_button("HELP", 54)
-	help.custom_minimum_size.y = 34
-	help.tooltip_text = "Show contextual movement help."
-	help.pressed.connect(_show_detail_help)
-	action_row.add_child(help)
 	settings_button = _make_button("SETTINGS", 84)
 	settings_button.custom_minimum_size.y = 34
 	settings_button.pressed.connect(_toggle_settings)
@@ -547,14 +542,7 @@ func _build_detail_toast() -> void:
 
 
 func _hide_detail_help() -> void:
-	detail_help_hidden = true
 	detail_toast.visible = false
-
-
-func _show_detail_help() -> void:
-	detail_help_hidden = false
-	detail_toast.visible = false
-	inspector_panel.visible = not resolution_mode
 
 
 func _build_inspector() -> void:
@@ -566,12 +554,16 @@ func _build_inspector() -> void:
 	inspector_panel.offset_bottom = -REGION_BOTTOM - 4
 	inspector_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(inspector_panel)
+	var inspector_scroll := ScrollContainer.new()
+	inspector_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inspector_panel.add_child(inspector_scroll)
 	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.add_theme_constant_override("margin_left", 17)
 	margin.add_theme_constant_override("margin_right", 17)
 	margin.add_theme_constant_override("margin_top", 13)
 	margin.add_theme_constant_override("margin_bottom", 13)
-	inspector_panel.add_child(margin)
+	inspector_scroll.add_child(margin)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
 	margin.add_child(box)
@@ -645,12 +637,16 @@ func _build_battle_panel() -> void:
 	battle_panel.offset_bottom = -REGION_BOTTOM - 4
 	battle_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(battle_panel)
+	var battle_scroll := ScrollContainer.new()
+	battle_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	battle_panel.add_child(battle_scroll)
 	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.add_theme_constant_override("margin_left", 16)
 	margin.add_theme_constant_override("margin_right", 20)
 	margin.add_theme_constant_override("margin_top", 15)
 	margin.add_theme_constant_override("margin_bottom", 15)
-	battle_panel.add_child(margin)
+	battle_scroll.add_child(margin)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
@@ -1007,10 +1003,14 @@ func _build_settings_drawer() -> void:
 	settings_drawer.add_theme_stylebox_override("panel", _panel_style(Color(0.02, 0.045, 0.06, 0.98), HUD_GOLD, 1, 7))
 	settings_drawer.visible = false
 	add_child(settings_drawer)
+	var drawer_scroll := ScrollContainer.new()
+	drawer_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	settings_drawer.add_child(drawer_scroll)
 	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		margin.add_theme_constant_override(side, 14)
-	settings_drawer.add_child(margin)
+	drawer_scroll.add_child(margin)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
@@ -1056,6 +1056,10 @@ func _build_settings_drawer() -> void:
 	privacy_toggle.text = "Private battle details"
 	privacy_toggle.button_pressed = true
 	box.add_child(privacy_toggle)
+	cavalry_leftover_toggle = CheckButton.new()
+	cavalry_leftover_toggle.text = "Cavalry always repositions"
+	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. Off by default; applies to the next game you start."
+	box.add_child(cavalry_leftover_toggle)
 	var counts := VBoxContainer.new()
 	counts.add_theme_constant_override("separation", 2)
 	box.add_child(counts)
@@ -1149,6 +1153,7 @@ func start_bridge_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_BRIDGE
 	game = StrategoGame.new()
 	game.setup_bridge(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, 20, privacy_toggle.button_pressed)
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Bridge battle started. You command the Blue attacker.", true)
@@ -1165,6 +1170,7 @@ func start_meeting_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_MEETING
 	game = StrategoGame.new()
 	game.setup_meeting(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, StrategoGame.DEFAULT_HOLD_ROUNDS, 20, privacy_toggle.button_pressed)
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Meeting engagement started. You command Blue.", true)
@@ -1181,6 +1187,7 @@ func start_crossroads_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_CROSSROADS
 	game = StrategoGame.new()
 	game.setup_crossroads(rng.randi(), StrategoGame.DEFAULT_HOLD_ROUNDS, 30, privacy_toggle.button_pressed)
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("The Crossroads started. You command Blue, allied with Yellow against Red and Green.", true)
@@ -1197,6 +1204,7 @@ func start_four_player_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Four-player WEGO battle started. You command Blue.", true)
@@ -1213,6 +1221,7 @@ func start_spectator_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(true)
 	_clear_logs()
 	_log_line("Four-bot simultaneous-order exhibition started.", true)
@@ -1568,17 +1577,22 @@ func _refresh_battle_stats(event: Dictionary, ids: Array[int]) -> void:
 	var right: Dictionary = game.pieces[ids[1]]
 	var bonuses: Dictionary = event.get("role_bonuses", {})
 	var capped: Dictionary = event.get("capped_rolls", {})
+	var is_ranged := String(event.get("action", "")) == "ranged"
 	var values := func(source: Dictionary, id: int) -> int:
 		return int(source.get(id, source.get(str(id), 0)))
 	var plain := Color("#e6e1d6")
 	var rows: Array = []
-	rows.append([str(_event_roll(event, ids[0], 0)), "D10 ROLL", str(_event_roll(event, ids[1], 1)), plain])
+	# A ranged target never rolls or scores - only the shooter does - so its
+	# side of these two rows is left blank rather than falling through to a
+	# "0" that reads as a rolled result, when a raw D10 roll of 0 is not even
+	# a legal outcome in this game.
+	rows.append([str(_event_roll(event, ids[0], 0)), "D10 ROLL", ("—" if is_ranged else str(_event_roll(event, ids[1], 1))), plain])
 	if not capped.is_empty():
 		rows.append([str(values.call(capped, ids[0])), "CAPPED", str(values.call(capped, ids[1])), plain])
 	if not bonuses.is_empty():
 		var render := func(value: int) -> String: return "+%d" % value if value > 0 else "0"
 		rows.append([render.call(values.call(bonuses, ids[0])), "ROLE", render.call(values.call(bonuses, ids[1])), Color("#9fdc8a")])
-	rows.append([str(_event_score(event, ids[0], 0)), "SCORE", str(_event_score(event, ids[1], 1)), Color("#f3eee5")])
+	rows.append([str(_event_score(event, ids[0], 0)), "SCORE", ("—" if is_ranged else str(_event_score(event, ids[1], 1))), Color("#f3eee5")])
 	var armour := func(piece: Dictionary) -> String:
 		return str(int(piece.armor) * 2) if int(piece.id) == winner_id else str(int(piece.armor))
 	rows.append([armour.call(left), "ARMOUR", armour.call(right), plain])

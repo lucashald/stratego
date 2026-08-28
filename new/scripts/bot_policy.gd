@@ -22,12 +22,29 @@ const WEIGHT_DEFAULTS := {
 	# badly underrating how much a WEGO round's movement should be devoted to
 	# actually closing on the objective versus other considerations.
 	"objective_progress": 5.0,      # closing on the scenario's aim point
-	"objective_occupy": 6.0,        # standing on the square a scenario is won by
-	"fight_advantage": 2.2,         # expected melee edge when entering an enemy
-	"losing_fight": -7.0,           # scaled penalty for attacking at a disadvantage
-	"defend_in_place": 1.2,         # standing firm once contact is already made
-	"infantry_receives": 1.8,       # extra for Infantry, whose bonus needs defending
-	"cavalry_charges": 1.5,         # extra for Cavalry, whose bonus needs attacking
+	# 20.0, not 6.0: two coarse 10-game-per-value sweeps (10-50) found win
+	# rate climbing from 50% at 10 to a plateau of roughly 80-100% from 20
+	# upward, with no clear peak inside it at this sample size - the exact
+	# top of the range is likely noise, not a genuinely better value than the
+	# rest of the plateau. Picked the round number at the start of the flat
+	# region rather than chase a specific-looking number that isn't
+	# confirmed. Worth a real-N pass later if this weight matters enough.
+	"objective_occupy": 20.0,       # standing on the square a scenario is won by
+	"fight_advantage": 2.2,         # expected melee edge when entering an enemy - a coarse sweep found the old default already inside the flat best-performing band (0.5-3), so left unchanged
+	# 0.0, not -7.0: two coarse sweeps (-20 to -1, then -1 to 3) found a broad
+	# tie across roughly -2 to 0.5, all around 80%, falling off past 1. Picked
+	# 0 within that tie as the most principled value - no separate penalty or
+	# reward for a losing fight beyond what fight_advantage already scores.
+	"losing_fight": 0.0,            # scaled penalty for attacking at a disadvantage
+	"defend_in_place": 1.2,         # standing firm once contact is already made - a coarse sweep (0-6) found the old default already inside a flat band with no signal, so left unchanged
+	# 0.0, not 1.8: flat at ~70% across the entire -5 to 6 range, only
+	# dropping at 20. No evidence the old default was doing anything useful
+	# within the range that matters; 0 is the plainest value in the tie.
+	"infantry_receives": 0.0,       # extra for Infantry, whose bonus needs defending
+	# 3.0, not 1.5: a coarse sweep climbed from 60% at -5 through 70% across
+	# 0-1.5, then plateaued at 80% for 3, 6, and 20 alike. Picked the low end
+	# of that flat region rather than an arbitrarily larger tied value.
+	"cavalry_charges": 3.0,         # extra for Cavalry, whose bonus needs attacking
 	"support": 0.5,                 # ending next to a friendly formation
 	"archer_exposure": -0.8,        # ending within shot of an enemy Archer
 	"ranged_damage": 1.6,           # expected damage from a declared shot

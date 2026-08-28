@@ -48,6 +48,7 @@ var drag_force_select := false
 const CONTEXT_EXAMINE := 0
 const CONTEXT_SHOOT := 1
 const CONTEXT_SUPPRESS := 2
+const CONTEXT_CANCEL := 3
 
 var _context_menu: PopupMenu = null
 var _context_menu_cell := Vector2i(-1, -1)
@@ -918,10 +919,20 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	var clicked := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
 	if not selected_piece_ids.is_empty() and selected_piece_id != StrategoGame.EMPTY:
 		var clicked_piece := game.piece_at(clicked)
-		var result := _issue_order_to_square(clicked, clicked_piece, true)
-		if bool(result.get("ok", false)):
-			queue_redraw()
-			return
+		# An enemy square with an archer selected is exactly what the context
+		# menu's Attack/Volley split exists for. Trying a direct order there
+		# first would succeed as an aimed shot at whatever ranged_order_is_
+		# available finds first, and a successful order returns before the
+		# menu ever opens - silently deciding Attack-vs-Volley for the player
+		# and hiding Inspect too. Skip straight to the menu in that one case;
+		# every other square (empty, friendly, an enemy under a non-archer)
+		# still gets the quick-order shortcut.
+		var enemy_for_archer := not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and _selected_archer_id() != StrategoGame.EMPTY
+		if not enemy_for_archer:
+			var result := _issue_order_to_square(clicked, clicked_piece, true)
+			if bool(result.get("ok", false)):
+				queue_redraw()
+				return
 	_open_context_menu(screen_position)
 
 
@@ -962,6 +973,11 @@ func _open_context_menu(screen_position: Vector2) -> void:
 	_context_menu_piece = int(occupant.id) if visible_occupant else StrategoGame.EMPTY
 	if visible_occupant:
 		_context_menu.add_item("Inspect", CONTEXT_EXAMINE)
+		# Targets the unit under the cursor, not the current selection - the
+		# whole point is cancelling one formation's orders without disturbing
+		# whatever else is currently selected.
+		if int(occupant.player) == viewing_player and interaction_enabled and _piece_has_a_pending_order(int(occupant.id)):
+			_context_menu.add_item("Cancel Order", CONTEXT_CANCEL)
 	var archer_id := _selected_archer_id()
 	if archer_id != StrategoGame.EMPTY:
 		var enemy_here := visible_occupant and not game.are_allied_players(viewing_player, int(occupant.player))
@@ -977,6 +993,15 @@ func _open_context_menu(screen_position: Vector2) -> void:
 	_context_menu.popup()
 
 
+## True when a formation has anything to cancel: a main-phase path, an aimed
+## shot, or (during the leftover phase) a leftover move.
+func _piece_has_a_pending_order(piece_id: int) -> bool:
+	var order := game.order_for_piece(piece_id)
+	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
+		return order.get("leftover", Vector2i(-1, -1)).x >= 0
+	return not order.is_empty()
+
+
 func _selected_archer_id() -> int:
 	if not interaction_enabled or game.phase != StrategoGame.PHASE_PLANNING: return StrategoGame.EMPTY
 	for piece_id in selected_piece_ids:
@@ -987,6 +1012,15 @@ func _selected_archer_id() -> int:
 func _on_context_menu_pressed(id: int) -> void:
 	if id == CONTEXT_EXAMINE:
 		if _context_menu_piece != StrategoGame.EMPTY: examine_requested.emit(_context_menu_piece)
+		return
+	if id == CONTEXT_CANCEL:
+		if _context_menu_piece != StrategoGame.EMPTY:
+			var before_cancel := _current_order_snapshot()
+			game.clear_unit_order(viewing_player, _context_menu_piece)
+			if before_cancel != _current_order_snapshot(): _record_order_undo(before_cancel)
+			order_changed.emit("Order cancelled.")
+			_emit_selected_description()
+			queue_redraw()
 		return
 	var archer_id := _selected_archer_id()
 	if archer_id == StrategoGame.EMPTY: return
@@ -1015,7 +1049,20 @@ func _click_continues_order(clicked: Vector2i) -> bool:
 	var anchor_id := _command_anchor_id()
 	if anchor_id == StrategoGame.EMPTY: return false
 	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
-	return StrategoGame.are_adjacent(projected, clicked)
+	if not StrategoGame.are_adjacent(projected, clicked): return false
+	# A friendly formation standing there with no plans to move can never
+	# actually vacate the square, so treating the click as "continue my order
+	# into it" would just fail the collision check every time - silently, as
+	# far as a player watching the board can tell, since nothing on the board
+	# visibly changes. That made it impossible to select a neighboring ally by
+	# clicking it at all. Only keep the continue-the-order reading when that
+	# ally is actually moving away this round.
+	var occupant := game.piece_at(clicked)
+	if not occupant.is_empty() and int(occupant.player) == viewing_player:
+		var occupant_id := int(occupant.id)
+		var occupant_projected: Vector2i = game.pieces[occupant_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(occupant_id)
+		if occupant_projected == clicked: return false
+	return true
 
 
 ## Click a formation of your own to select it, click a legal cell in your own
