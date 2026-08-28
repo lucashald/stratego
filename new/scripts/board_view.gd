@@ -327,6 +327,10 @@ func _is_objective_square(position: Vector2i) -> bool:
 
 func _draw_battlefield(origin: Vector2, cell: float, side: float) -> void:
 	draw_rect(Rect2(origin - Vector2(5, 5), Vector2(side + 10, side + 10)), Color("#332b1c"), true)
+	var deploying := game.phase == StrategoGame.PHASE_DEPLOYMENT
+	var zone: Dictionary = {}
+	if deploying:
+		for cell_position in game.deployment_zone_cells(viewing_player): zone[cell_position] = true
 	for y in StrategoGame.BOARD_SIZE:
 		for x in StrategoGame.BOARD_SIZE:
 			var position := Vector2i(x, y)
@@ -345,6 +349,11 @@ func _draw_battlefield(origin: Vector2, cell: float, side: float) -> void:
 			if _is_objective_square(position):
 				draw_rect(rect.grow(-cell * 0.12), GOLD, false, maxf(1.5, cell * 0.07))
 			_draw_cell_texture(position, rect, cell)
+			if deploying:
+				# The zone doubles as this player's fog: outside it is dimmed by
+				# the ordinary fog pass below, so only the zone itself needs a
+				# positive marker for where a placement is legal.
+				if position in zone: draw_rect(rect, Color("#8dccff"), false, maxf(1.0, cell * 0.03))
 			if not reveal_all and not game.game_over and not game.is_position_visible_to(position, viewing_player):
 				draw_rect(rect, FOG_COLOR, true)
 			draw_rect(rect, Color(0.84, 0.85, 0.68, 0.17), false, maxf(0.7, cell * 0.017))
@@ -438,6 +447,8 @@ func _draw_selection(origin: Vector2, cell: float) -> void:
 		var center := _cell_center(game.pieces[piece_id].position, origin, cell)
 		var primary := piece_id == selected_piece_id
 		_draw_hex(center, cell * (0.53 if primary else 0.48), Color(0.45, 0.75, 1.0, 0.15), Color("#d5efff") if primary else Color("#75bfff"), maxf(2.0, cell * (0.075 if primary else 0.045)))
+	# No order to project a destination from before the game has even started.
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT: return
 	var anchor_id := _command_anchor_id()
 	if anchor_id == StrategoGame.EMPTY:
 		return
@@ -839,7 +850,14 @@ func _gui_input(event: InputEvent) -> void:
 		mouse_default_cursor_shape = Control.CURSOR_DRAG if middle_panning else Control.CURSOR_POINTING_HAND
 		accept_event()
 		return
-	if not interaction_enabled or game.game_over or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+	if not interaction_enabled or game.game_over or game.phase not in [StrategoGame.PHASE_DEPLOYMENT, StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+		return
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		# A separate, deliberately small path: no drag-select, no order paths,
+		# no ranged targeting. Click a formation, then click where it goes.
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			_handle_deployment_click(event.position)
+		accept_event()
 		return
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 		_open_context_menu(event.position)
@@ -974,6 +992,30 @@ func _click_continues_order(clicked: Vector2i) -> bool:
 	return StrategoGame.are_adjacent(projected, clicked)
 
 
+## Click a formation of your own to select it, click a legal cell in your own
+## zone to send the selected formation there. Reuses selected_piece_id rather
+## than a parallel var, so the ordinary selection ring already draws for free.
+func _handle_deployment_click(screen_position: Vector2) -> void:
+	var geometry := _board_geometry()
+	var local: Vector2 = screen_position - Vector2(geometry.origin)
+	if local.x < 0 or local.y < 0 or local.x >= geometry.side or local.y >= geometry.side:
+		return
+	var clicked := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
+	var occupant := game.piece_at(clicked)
+	if not occupant.is_empty() and int(occupant.player) == viewing_player:
+		selected_piece_id = int(occupant.id)
+		selected_piece_ids.assign([selected_piece_id])
+		_emit_selected_description()
+		queue_redraw()
+		return
+	if selected_piece_id == StrategoGame.EMPTY:
+		return
+	var result := game.redeploy_piece(viewing_player, selected_piece_id, clicked)
+	order_changed.emit("Formation redeployed." if bool(result.get("ok", false)) else String(result.get("message", "Invalid placement.")))
+	_emit_selected_description()
+	queue_redraw()
+
+
 func _handle_left_click(screen_position: Vector2, additive: bool, force_select: bool = false) -> void:
 	var geometry := _board_geometry()
 	var local: Vector2 = screen_position - Vector2(geometry.origin)
@@ -1031,7 +1073,10 @@ func _handle_left_click(screen_position: Vector2, additive: bool, force_select: 
 
 func _emit_selected_description() -> void:
 	if selected_piece_ids.is_empty() or selected_piece_id == StrategoGame.EMPTY:
-		selection_changed.emit("No formations selected.")
+		selection_changed.emit("Click a formation, then click a highlighted square to place it." if game != null and game.phase == StrategoGame.PHASE_DEPLOYMENT else "No formations selected.")
+		return
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		selection_changed.emit("%s · click a highlighted square to move it there." % game.piece_description(game.pieces[selected_piece_id]))
 		return
 	if selected_piece_ids.size() > 1:
 		var ordered := 0

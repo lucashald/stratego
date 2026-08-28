@@ -798,7 +798,7 @@ func _test_deployment_fog_and_redeploy() -> void:
 	var red_flag := game.find_alive_piece(StrategoGame.RED, StrategoGame.FLAG)
 	_expect(not game.is_piece_visible_to(red_flag, StrategoGame.BLUE), "an opposing corner's formation is invisible during deployment, not just unidentified")
 	_expect(game.is_piece_visible_to(red_flag, StrategoGame.RED), "a player can always see their own deployment")
-	var red_cavalry := game.find_alive_piece(StrategoGame.RED, StrategoGame.HEAVY_CAVALRY)
+	var red_cavalry := game.find_alive_piece(StrategoGame.RED, StrategoGame.MEDIUM_CAVALRY)
 	var zone := game.deployment_zone_cells(StrategoGame.RED)
 	var empty_cell: Vector2i = Vector2i(-1, -1)
 	for cell in zone:

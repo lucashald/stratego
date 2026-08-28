@@ -19,6 +19,8 @@ var _pan := Vector2.ZERO
 var _tab := -1
 var _rounds := 0
 var _spectate := false
+var _deploy_from := Vector2i(-1, -1)
+var _deploy_to := Vector2i(-1, -1)
 var _select := 0
 var _played := 0
 
@@ -37,6 +39,13 @@ func _initialize() -> void:
 	_tab = int(arguments.get("tab", "-1"))
 	# Play whole rounds before shooting, so a real melee card can be checked.
 	_rounds = int(arguments.get("rounds", "0"))
+	# Exercises the actual click handler end to end, not just the engine call it
+	# wraps: --deployfrom x,y --deployto x,y (engine cell coordinates).
+	if arguments.has("deployfrom") and arguments.has("deployto"):
+		var from_parts := String(arguments.deployfrom).split(",")
+		var to_parts := String(arguments.deployto).split(",")
+		_deploy_from = Vector2i(int(from_parts[0]), int(from_parts[1]))
+		_deploy_to = Vector2i(int(to_parts[0]), int(to_parts[1]))
 	# Both sides driven by the bot, so battles actually happen unattended.
 	_spectate = String(arguments.get("spectate", "0")) == "1"
 	# Select a few of the viewer's formations so the detail panel has content.
@@ -57,12 +66,18 @@ func _process(_delta: float) -> bool:
 			_main.start_spectator_game()
 		elif _scenario == StrategoGame.SCENARIO_BRIDGE and _main.has_method("start_bridge_game"):
 			_main.start_bridge_game()
+		elif _scenario == StrategoGame.SCENARIO_CROSSROADS and _main.has_method("start_crossroads_game"):
+			_main.start_crossroads_game()
 		elif _main.has_method("start_meeting_game"):
 			_main.start_meeting_game()
 		if _zoom > 0.0 and _main.get("board_view") != null:
 			_main.board_view.zoom_level = _zoom
 			_main.board_view.pan_offset = _pan
 			_main.board_view.queue_redraw()
+		if _deploy_from.x >= 0 and _main.get("board_view") != null:
+			var geometry: Dictionary = _main.board_view._board_geometry()
+			_main.board_view._handle_deployment_click(_main.board_view._cell_center(_deploy_from, geometry.origin, geometry.cell))
+			_main.board_view._handle_deployment_click(_main.board_view._cell_center(_deploy_to, geometry.origin, geometry.cell))
 		if _resolve and _rounds <= 0:
 			_main.call_deferred("_on_ready_pressed")
 	if _started and _reveal and _main.get("board_view") != null:

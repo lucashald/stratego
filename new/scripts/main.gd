@@ -990,7 +990,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_theme_constant_override("h_separation", 6)
 	game_buttons.add_theme_constant_override("v_separation", 6)
 	box.add_child(game_buttons)
-	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")]]:
+	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["NEW CROSSROADS", Callable(self, "start_crossroads_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")]]:
 		var button := _make_button(String(definition[0]), 145)
 		button.pressed.connect(definition[1])
 		game_buttons.add_child(button)
@@ -1142,6 +1142,22 @@ func start_meeting_game() -> void:
 	_update_interface()
 
 
+func start_crossroads_game() -> void:
+	session_id += 1
+	resolution_mode = false
+	spectator_mode = false
+	replay_view_mode = false
+	selected_scenario = StrategoGame.SCENARIO_CROSSROADS
+	game = StrategoGame.new()
+	game.setup_crossroads(rng.randi(), StrategoGame.DEFAULT_HOLD_ROUNDS, 30, privacy_toggle.button_pressed)
+	_configure_board(false)
+	_clear_logs()
+	_log_line("The Crossroads started. You command Blue, allied with Yellow against Red and Green.", true)
+	_log_line("Every formation starts at its recommended position. Drag any of them to another square in your own zone, then press End Deployment.")
+	settings_drawer.visible = false
+	_update_interface()
+
+
 func start_four_player_game() -> void:
 	session_id += 1
 	resolution_mode = false
@@ -1189,7 +1205,14 @@ func _configure_board(show_all: bool) -> void:
 
 
 func _on_ready_pressed() -> void:
-	if spectator_mode or replay_view_mode or game.game_over or resolution_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+	if spectator_mode or replay_view_mode or game.game_over or resolution_mode or game.phase not in [StrategoGame.PHASE_DEPLOYMENT, StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
+		return
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		board_view.clear_selection()
+		game.mark_player_ready(StrategoGame.BLUE)
+		_plan_unready_bots()
+		game.resolve_deployment()
+		_update_interface()
 		return
 	board_view.clear_order_undo_history()
 	board_view.clear_selection()
@@ -1210,7 +1233,10 @@ func _plan_unready_bots() -> void:
 			continue
 		if player in game.ready_players:
 			continue
-		if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
+		# A bot never redeploys; it accepts the recommended formation as-is.
+		if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+			pass
+		elif game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 			bot.plan_leftover(game, player, rng)
 		else:
 			bot.plan_round(game, player, rng)
@@ -1827,6 +1853,7 @@ func _run_spectator_round(active_session: int) -> void:
 func _update_interface(update_detail: bool = true) -> void:
 	var main_planning := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_PLANNING
 	var leftover_planning := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
+	var deploying := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_DEPLOYMENT
 	var planning := main_planning or leftover_planning
 	var read_only := spectator_mode or replay_view_mode
 	# The top bar keeps its shape all round; only what you may press changes.
@@ -1848,6 +1875,9 @@ func _update_interface(update_detail: bool = true) -> void:
 	elif game.game_over:
 		phase_title.text = "BATTLE COMPLETE"
 		phase_subtitle.text = "%s · %s" % [game.player_name(game.winner), game.end_reason.replace("_", " ")]
+	elif deploying:
+		phase_title.text = _battle_title()
+		phase_subtitle.text = "Deployment · Drag formations within your own zone, then lock in"
 	elif leftover_planning:
 		phase_title.text = _battle_title()
 		phase_subtitle.text = "Round %d · Issue one optional move to formations with movement remaining" % game.round_number
@@ -1864,6 +1894,11 @@ func _update_interface(update_detail: bool = true) -> void:
 		var rival := game.objective_streak(0, StrategoGame.RED)
 		objective_label.text = "OBJECTIVE: Hold the centre" + ("    Red %d/%d" % [rival, required] if rival > 0 else "")
 		_refresh_objective_pips(held, required)
+	elif game.scenario == StrategoGame.SCENARIO_CROSSROADS and not game.objectives.is_empty():
+		# Both teammates' streaks tick together, so Blue's own count already is
+		# the team's: no separate team-vs-team figure to compute.
+		_refresh_objective_pips(game.objective_streak(0, StrategoGame.BLUE), int(game.objectives[0].rounds))
+		objective_label.text = "OBJECTIVE: Hold the centre" if deploying else "OBJECTIVE: Hold the centre  ·  Team %s" % game.player_name(int(game.player_teams.get(StrategoGame.BLUE, StrategoGame.BLUE)))
 	else:
 		# Destroy-the-army has no countable progress, so the slot carries the
 		# objective in words and the pips are cleared rather than left stale.
@@ -1875,8 +1910,8 @@ func _update_interface(update_detail: bool = true) -> void:
 		label.text = "%s · %d units · %d Strength" % [game.player_name(player), game.count_alive(player), game.total_strength(player)]
 	# The primary action names the phase it ends, so the button teaches the round
 	# structure rather than saying the same thing throughout.
-	ready_button.text = "END REPOSITION" if leftover_planning else "END PLANNING"
-	ready_button.disabled = not planning or read_only
+	ready_button.text = "END DEPLOYMENT" if deploying else ("END REPOSITION" if leftover_planning else "END PLANNING")
+	ready_button.disabled = not (planning or deploying) or read_only
 	undo_button.disabled = not planning or read_only or not board_view.can_undo_order()
 	cancel_all_button.disabled = not planning or read_only or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
 	clear_button.disabled = not planning or read_only
@@ -1889,8 +1924,12 @@ func _update_interface(update_detail: bool = true) -> void:
 	leftover_toggle.tooltip_text = "Leftover movement becomes available after battles and ranged attacks resolve."
 	board_view.leftover_mode = leftover_planning
 	board_view.prefer_ranged = main_planning and ranged_toggle.button_pressed
-	board_view.interaction_enabled = planning and not read_only
-	if not resolution_mode:
+	board_view.interaction_enabled = (planning or deploying) and not read_only
+	# Deployment is not a step of the round cycle the chevron bar shows; lighting
+	# one of its steps (ORDERS, by default) before the game has even started
+	# would claim a round is already underway.
+	timeline_panel.visible = not deploying
+	if not resolution_mode and not deploying:
 		_update_timeline(STEP_END_TURN if game.game_over else (STEP_REPOSITION if leftover_planning else STEP_ORDERS))
 	group_move_title.text = "SET REPOSITION MOVE" if leftover_planning else "MOVE SELECTION"
 	group_move_title.add_theme_color_override("font_color", Color("#f2b15b") if leftover_planning else HUD_BLUE)
@@ -1906,6 +1945,7 @@ func _battle_title() -> String:
 		StrategoGame.SCENARIO_BRIDGE: "Battle of the Ford",
 		StrategoGame.SCENARIO_MEETING: "Battle of Oakfield",
 		StrategoGame.SCENARIO_SKIRMISH: "Skirmish",
+		StrategoGame.SCENARIO_CROSSROADS: "The Crossroads",
 	}
 	return "%s  ·  Round %d" % [String(name_by_scenario.get(game.scenario, "Battle")), game.round_number]
 
@@ -2021,6 +2061,8 @@ func _refresh_inspector_cards() -> void:
 ## What a formation has been told to do, in the space the battle card gives to
 ## starting Strength.
 func _order_footer(piece_id: int) -> String:
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		return "AT %s" % str(game.pieces[piece_id].position)
 	var order := game.order_for_piece(piece_id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))
@@ -2040,10 +2082,13 @@ func _update_inspector() -> void:
 		_show_examined(game.pieces[examined_piece_id])
 		return
 	if group_move_controls != null:
-		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty()
+		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty() and game.phase != StrategoGame.PHASE_DEPLOYMENT
 	if board_view == null or game == null or board_view.selected_piece_ids.is_empty():
 		inspector_title.text = "NOTHING SELECTED"
-		inspector_stats.text = "Select one or more banners.\n\n[color=#9fc8e8]Shift-click or drag[/color] to build a group.\n\n[color=#9fc8e8]Alt-click[/color] selects a formation instead of stepping into its square.\n\nMouse wheel zooms; middle-drag pans."
+		if game != null and game.phase == StrategoGame.PHASE_DEPLOYMENT:
+			inspector_stats.text = "Click a formation to select it.\n\nClick a highlighted square in your own zone to move it there.\n\nEvery formation starts at a recommended position; move only the ones you want to change.\n\nMouse wheel zooms; middle-drag pans."
+		else:
+			inspector_stats.text = "Select one or more banners.\n\n[color=#9fc8e8]Shift-click or drag[/color] to build a group.\n\n[color=#9fc8e8]Alt-click[/color] selects a formation instead of stepping into its square.\n\nMouse wheel zooms; middle-drag pans."
 		inspector_order.text = "No formation selected"
 		return
 	if board_view.selected_piece_ids.size() > 1:
@@ -2071,6 +2116,9 @@ func _update_inspector() -> void:
 	inspector_title.visible = false
 	inspector_title.text = ""
 	inspector_stats.text = _formation_detail(piece)
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		inspector_order.text = "Click a highlighted square in your zone to move this formation there."
+		return
 	var order := game.order_for_piece(id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))
