@@ -813,6 +813,12 @@ func _test_deployment_fog_and_redeploy() -> void:
 	var blue_infantry := game.find_alive_piece(StrategoGame.BLUE, StrategoGame.HEAVY_INFANTRY)
 	var cross_owner := game.redeploy_piece(StrategoGame.RED, int(blue_infantry.id), empty_cell)
 	_expect(not bool(cross_owner.get("ok", false)), "a player cannot redeploy another player's formation")
+	var recommended_cell: Vector2i = Vector2i(-1, -1)
+	for entry in StrategoGame.CORNER_DEPLOYMENT:
+		if String(entry[0]) == StrategoGame.MEDIUM_CAVALRY: recommended_cell = game._edge_cell(StrategoGame.RED, int(entry[1]), int(entry[2]))
+	var reset_result := game.reset_deployment(StrategoGame.RED)
+	_expect(bool(reset_result.get("ok", false)) and game.pieces[red_cavalry.id].position == recommended_cell, "auto-deploy's reset restores a dragged formation to its recommended square")
+	_expect(game.piece_at(empty_cell).is_empty(), "the square it had been dragged to is vacated by the reset")
 	for player in game.active_players: game.mark_player_ready(player)
 	var locked := game.redeploy_piece(StrategoGame.RED, int(red_cavalry.id), zone[0])
 	_expect(not bool(locked.get("ok", false)), "deployment is locked once every player is ready")

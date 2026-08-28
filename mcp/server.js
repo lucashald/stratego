@@ -105,9 +105,16 @@ server.tool(
 
 server.tool(
   "new_game",
-  "Start a fresh game. bridge: cross the river with 20 strength. meeting: symmetric back-rank deployment, win by holding the centre square for 3 consecutive rounds. four_player: fog battle with Flags.",
-  { seed: z.number().int().optional(), scenario: z.enum(["bridge", "four_player", "meeting"]).optional() },
+  "Start a fresh game. bridge: cross the river with 20 strength. meeting: symmetric back-rank deployment, win by holding the centre square for 3 consecutive rounds. four_player: fog battle with Flags. crossroads: 2v2 team battle (Red+Green vs Blue+Yellow), same centre-hold win condition as meeting, opens on a deployment phase - call auto_deploy to skip it.",
+  { seed: z.number().int().optional(), scenario: z.enum(["bridge", "four_player", "meeting", "crossroads"]).optional() },
   (args) => forward("new_game", args),
+);
+
+server.tool(
+  "auto_deploy",
+  "Only valid during crossroads' deployment phase. Resets your formations to the recommended positions (undoing anything already placed) and locks every unready player in, yourself included, then resolves deployment into the first round. The lazy path when you don't want to place formations by hand.",
+  {},
+  () => forward("auto_deploy", {}),
 );
 
 server.tool(

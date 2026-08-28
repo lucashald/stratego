@@ -101,6 +101,7 @@ func _dispatch(command: String, args: Dictionary) -> Dictionary:
 		"set_player": return _set_player(args)
 		"commit": return _commit()
 		"end_planning": return _end_planning()
+		"auto_deploy": return _auto_deploy()
 		"get_events": return {"ok": true, "events": _last_events}
 		"get_history": return _get_history(args)
 		"save_replay": return _save_replay(args)
@@ -146,6 +147,9 @@ func _new_game(args: Dictionary) -> Dictionary:
 		controlled_player = game.bridge_attacker
 	elif scenario == StrategoGame.SCENARIO_MEETING:
 		game.setup_meeting(seed_value)
+		controlled_player = StrategoGame.BLUE
+	elif scenario == StrategoGame.SCENARIO_CROSSROADS:
+		game.setup_crossroads(seed_value)
 		controlled_player = StrategoGame.BLUE
 	else:
 		game.setup_random(seed_value, int(args.get("player_count", 4)))
@@ -229,3 +233,21 @@ func _end_planning() -> Dictionary:
 		"ok": true, "resolved": "leftover" if leftover_phase else "main",
 		"events": _last_events, "state": game.observed_state(controlled_player),
 	}
+
+
+## The lazy path for a remote commander who does not want to place formations
+## by hand: resets the controlled player to the recommended deployment (in
+## case anything was already dragged around) and, like end_planning, locks in
+## every other unready player too rather than waiting on them. No bot planning
+## is needed for the others; accepting the recommended formation already is
+## what a bot does here.
+func _auto_deploy() -> Dictionary:
+	if game.game_over: return {"ok": false, "error": "The game is over."}
+	if game.phase != StrategoGame.PHASE_DEPLOYMENT:
+		return {"ok": false, "error": "Not in the deployment phase."}
+	game.reset_deployment(controlled_player)
+	for player in game.active_players:
+		if player not in game.ready_players: game.mark_player_ready(player)
+	if not game.resolve_deployment():
+		return {"ok": false, "error": "Deployment did not resolve."}
+	return {"ok": true, "state": game.observed_state(controlled_player)}

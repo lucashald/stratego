@@ -29,6 +29,7 @@ var detail_help_hidden := false
 var ready_button: Button
 var undo_button: Button
 var cancel_all_button: Button
+var auto_deploy_button: Button
 var settings_button: Button
 var planning_controls: Control
 var playback_controls: Control
@@ -130,6 +131,11 @@ func _start_remote_bridge() -> void:
 
 func _on_remote_committed(_player: int) -> void:
 	if resolution_mode or game.game_over: return
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		if game.all_players_ready():
+			game.resolve_deployment()
+			_update_interface()
+		return
 	if game.all_players_ready(): _resolve_ready_round()
 
 
@@ -274,6 +280,11 @@ func _build_top_controls() -> void:
 	cancel_all_button.pressed.connect(_on_clear_orders)
 	_tint_button(cancel_all_button, Color("#c8564a"))
 	planning_controls.add_child(cancel_all_button)
+	auto_deploy_button = _make_button("AUTO-DEPLOY", 148)
+	auto_deploy_button.tooltip_text = "Reset every formation to the recommended position and lock in immediately."
+	auto_deploy_button.pressed.connect(_on_auto_deploy_pressed)
+	auto_deploy_button.visible = false
+	planning_controls.add_child(auto_deploy_button)
 
 
 ## Paint a button in a warning colour without disturbing the shared theme.
@@ -1204,6 +1215,20 @@ func _configure_board(show_all: bool) -> void:
 		minimap.queue_redraw()
 
 
+## The lazy path: reset Blue to the recommended formation regardless of
+## anything already dragged around, then lock in immediately. One click from
+## "I don't want to deal with this" to playing.
+func _on_auto_deploy_pressed() -> void:
+	if spectator_mode or replay_view_mode or game.game_over or resolution_mode or game.phase != StrategoGame.PHASE_DEPLOYMENT:
+		return
+	board_view.clear_selection()
+	game.reset_deployment(StrategoGame.BLUE)
+	game.mark_player_ready(StrategoGame.BLUE)
+	_plan_unready_bots()
+	game.resolve_deployment()
+	_update_interface()
+
+
 func _on_ready_pressed() -> void:
 	if spectator_mode or replay_view_mode or game.game_over or resolution_mode or game.phase not in [StrategoGame.PHASE_DEPLOYMENT, StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING]:
 		return
@@ -1211,6 +1236,10 @@ func _on_ready_pressed() -> void:
 		board_view.clear_selection()
 		game.mark_player_ready(StrategoGame.BLUE)
 		_plan_unready_bots()
+		if remote_bridge != null and not game.all_players_ready():
+			detail_label.text = "Deployment locked in. Waiting for the remote commander."
+			_update_interface()
+			return
 		game.resolve_deployment()
 		_update_interface()
 		return
@@ -1912,6 +1941,10 @@ func _update_interface(update_detail: bool = true) -> void:
 	# structure rather than saying the same thing throughout.
 	ready_button.text = "END DEPLOYMENT" if deploying else ("END REPOSITION" if leftover_planning else "END PLANNING")
 	ready_button.disabled = not (planning or deploying) or read_only
+	auto_deploy_button.visible = deploying
+	auto_deploy_button.disabled = read_only
+	undo_button.visible = not deploying
+	cancel_all_button.visible = not deploying
 	undo_button.disabled = not planning or read_only or not board_view.can_undo_order()
 	cancel_all_button.disabled = not planning or read_only or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
 	clear_button.disabled = not planning or read_only

@@ -1347,6 +1347,38 @@ func redeploy_piece(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	return {"ok": true, "action": "redeploy", "piece_id": piece_id, "position": target}
 
 
+## Restores a player's formations to the recommended deployment, undoing any
+## redeploys. What "auto-deploy" resets to before marking ready, so pressing it
+## after already dragging a few pieces around is not a no-op that leaves
+## stragglers wherever they were last dropped.
+func reset_deployment(player: int) -> Dictionary:
+	if phase != PHASE_DEPLOYMENT or player in ready_players:
+		return {"ok": false, "message": "Deployment is locked in."}
+	# Two passes: clear every one of this player's cells first. A manual
+	# redeploy may have put some other piece on a cell the recommended layout
+	# wants back, and writing straight over the board array while a stale
+	# occupant is still marked there would corrupt it.
+	for piece: Dictionary in pieces:
+		if piece.alive and int(piece.player) == player:
+			var position: Vector2i = piece.position
+			board[position.y][position.x] = EMPTY
+	var claimed: Dictionary = {}
+	for entry in recommended_deployment(player):
+		var type := String(entry[0])
+		var target: Vector2i = entry[1]
+		for piece: Dictionary in pieces:
+			var id := int(piece.id)
+			if id in claimed or not piece.alive or int(piece.player) != player or piece.type != type: continue
+			claimed[id] = true
+			board[target.y][target.x] = id
+			pieces[id].position = target
+			pieces[id].previous_position = target
+			pieces[id].recent_positions = [target]
+			break
+	_visibility_dirty = true
+	return {"ok": true}
+
+
 ## Once every active player has locked in deployment, place the game on its
 ## first real round: sightings are recorded now, from wherever pieces actually
 ## ended up, rather than at setup against the recommended formation.
