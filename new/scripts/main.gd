@@ -822,6 +822,11 @@ func _update_battle_card(event: Dictionary) -> void:
 		var id := int(id_value)
 		if id >= 0 and id < game.pieces.size():
 			valid_ids.append(id)
+	# Two participants is the ordinary case and reads far better as a comparison
+	# than as two stacked blocks. Multiway battles keep the list form.
+	if valid_ids.size() == 2 and action != "ranged":
+		battle_body.text = content + _battle_comparison(event, valid_ids)
+		return
 	for index in valid_ids.size():
 		var piece: Dictionary = game.pieces[valid_ids[index]]
 		var side_color := "#78b7ff" if int(piece.player) == StrategoGame.BLUE else "#ff8f78"
@@ -837,6 +842,61 @@ func _update_battle_card(event: Dictionary) -> void:
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
 	content += "\n[center][color=#efc77c][b]%s[/b][/color]\n%s[/center]" % [_result_label(event, winner_id), _result_detail(event, winner_id)]
 	battle_body.text = content
+
+
+## A head-to-head table, laid out so every number in the damage calculation is
+## on the page: the raw die, the Strength that capped it, the role bonus, the
+## armour that was subtracted, and the natural-10 chip. Without these the damage
+## looks unrelated to the score, which is exactly how players misread it.
+func _battle_comparison(event: Dictionary, ids: Array[int]) -> String:
+	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
+	var left: Dictionary = game.pieces[ids[0]]
+	var right: Dictionary = game.pieces[ids[1]]
+	var rows: Array = []
+
+	var names: Array = []
+	for id in ids:
+		var piece: Dictionary = game.pieces[id]
+		var tint := "#78b7ff" if int(piece.player) == StrategoGame.BLUE else "#ff8f78"
+		names.append("[color=%s][b]%s[/b][/color]" % [tint, game.piece_description(piece)])
+	rows.append([names[0], "", names[1]])
+
+	var bonuses: Dictionary = event.get("role_bonuses", {})
+	var capped: Dictionary = event.get("capped_rolls", {})
+	var values := func(source: Dictionary, id: int) -> int:
+		return int(source.get(id, source.get(str(id), 0)))
+
+	rows.append([str(_event_roll(event, ids[0], 0)), "D10 ROLL", str(_event_roll(event, ids[1], 1))])
+	if not capped.is_empty():
+		rows.append([str(values.call(capped, ids[0])), "CAPPED BY STRENGTH", str(values.call(capped, ids[1]))])
+	if not bonuses.is_empty():
+		var render_bonus := func(value: int) -> String:
+			return "[color=#9fdc8a]+%d[/color]" % value if value > 0 else "0"
+		rows.append([render_bonus.call(values.call(bonuses, ids[0])), "ROLE BONUS", render_bonus.call(values.call(bonuses, ids[1]))])
+	rows.append(["[b]%d[/b]" % _event_score(event, ids[0], 0), "FINAL SCORE", "[b]%d[/b]" % _event_score(event, ids[1], 1)])
+
+	var armour := func(piece: Dictionary) -> String:
+		var doubled := int(piece.id) == winner_id
+		return "%d [color=#c8a15c](doubled)[/color]" % (int(piece.armor) * 2) if doubled else str(int(piece.armor))
+	rows.append([armour.call(left), "ARMOUR", armour.call(right)])
+
+	for index in 2:
+		if _event_roll(event, ids[index], index) == 10:
+			var chip := ["", "NATURAL 10  +1 DAMAGE", ""]
+			chip[index * 2] = "[color=#e7c47d]+1[/color]"
+			rows.append(chip)
+			break
+
+	rows.append(["[color=#ff9d84]%d[/color]" % _event_damage(event, ids[0], 0), "DAMAGE TAKEN", "[color=#ff9d84]%d[/color]" % _event_damage(event, ids[1], 1)])
+	rows.append([str(int(left.strength)), "STRENGTH LEFT", str(int(right.strength))])
+
+	var table := "[table=3]"
+	for row: Array in rows:
+		table += "[cell]%s[/cell][cell][color=#a9a294]%s[/color][/cell][cell]%s[/cell]" % [row[0], row[1], row[2]]
+	table += "[/table]"
+	return "%s\n\n[center][color=#efc77c][b]%s[/b][/color]\n%s[/center]" % [
+		table, _result_label(event, winner_id), _result_detail(event, winner_id),
+	]
 
 
 func _event_score(event: Dictionary, piece_id: int, index: int) -> int:

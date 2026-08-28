@@ -618,8 +618,21 @@ func _test_meeting_engagement_hold_objective() -> void:
 	for piece: Dictionary in setup_game.pieces:
 		if int(piece.player) == StrategoGame.BLUE: blue_rows.append(int(piece.position.y))
 		else: red_rows.append(int(piece.position.y))
-	_expect(blue_rows.count(19) == blue_rows.size() and red_rows.count(1) == red_rows.size(), "both armies deploy on facing lines")
-	_expect(absi(19 - 10) == absi(1 - 10), "both deployment lines are the same distance from the objective")
+	blue_rows.sort()
+	red_rows.sort()
+	_expect(blue_rows.min() == 17 and blue_rows.max() == 19 and red_rows.min() == 1 and red_rows.max() == 3, "each army deploys in three ranks facing the objective")
+	var blue_front: int = blue_rows.min()
+	var red_front: int = red_rows.max()
+	_expect(absi(blue_front - 10) == absi(red_front - 10), "both leading ranks are the same distance from the objective")
+	var heavy_rows: Array = []
+	var light_rows: Array = []
+	for piece: Dictionary in setup_game.pieces:
+		if int(piece.player) != StrategoGame.RED: continue
+		if String(piece.weight) == StrategoGame.WEIGHT_HEAVY: heavy_rows.append(int(piece.position.y))
+		elif String(piece.weight) == StrategoGame.WEIGHT_LIGHT: light_rows.append(int(piece.position.y))
+	# Slow formations lead so they reach the objective with everyone else.
+	_expect(heavy_rows.min() == 3 and heavy_rows.max() == 3, "Heavy formations hold the leading rank")
+	_expect(light_rows.min() == 1 and light_rows.max() == 1, "Light formations screen from the rear rank")
 	_expect(setup_game.total_strength(StrategoGame.BLUE) == setup_game.total_strength(StrategoGame.RED), "meeting engagements start symmetric")
 
 	var game := StrategoGame.new()

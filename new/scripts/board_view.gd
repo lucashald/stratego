@@ -7,13 +7,13 @@ signal selection_changed(description: String)
 signal zoom_changed(percent: int)
 signal undo_availability_changed(available: bool)
 
-const BLUE_COLOR := Color("#102d57")
+const BLUE_COLOR := Color("#1b4a86")
 const BLUE_EDGE := Color("#7fc2ff")
-const RED_COLOR := Color("#5d1714")
+const RED_COLOR := Color("#93251f")
 const RED_EDGE := Color("#e88b6c")
-const GREEN_COLOR := Color("#174a35")
+const GREEN_COLOR := Color("#1f6b4a")
 const GREEN_EDGE := Color("#75d9aa")
-const YELLOW_COLOR := Color("#665018")
+const YELLOW_COLOR := Color("#94741f")
 const YELLOW_EDGE := Color("#ffe08a")
 const GOLD := Color("#c8a15c")
 const ORDER_BLUE := Color("#5ca9ff")
@@ -205,6 +205,7 @@ func _draw() -> void:
 	var origin: Vector2 = geometry.origin
 	var cell: float = geometry.cell
 	_draw_battlefield(origin, cell, float(geometry.side))
+	_draw_coordinates(origin, cell, float(geometry.side))
 	_draw_order_ghosts(origin, cell)
 	for piece: Dictionary in game.pieces:
 		if not piece.alive:
@@ -231,6 +232,26 @@ func _draw_surroundings() -> void:
 		var tint := Color("#132c1b") if index % 3 else Color("#1b3820")
 		tint.a = 0.38
 		draw_circle(Vector2(px, py), radius, tint)
+
+
+## Column and row numbers down the board's edges. These use engine coordinates,
+## 0 to 19, so what a player reads matches the battle log, the replay files and
+## anything driving the game over the command bridge.
+func _draw_coordinates(origin: Vector2, cell: float, side: float) -> void:
+	var font := ThemeDB.fallback_font
+	var size_points := maxi(9, int(cell * 0.34))
+	# Crowded axes drop every other label rather than overlapping.
+	var stride := 1 if cell >= 26.0 else 2
+	var gutter := maxf(14.0, cell * 0.62)
+	for index in StrategoGame.BOARD_SIZE:
+		if index % stride != 0: continue
+		var faded := Color("#c9b98a")
+		_draw_centered_text(font, str(index),
+			Rect2(Vector2(origin.x + float(index) * cell, origin.y - gutter), Vector2(cell, gutter)),
+			size_points, faded)
+		_draw_centered_text(font, str(index),
+			Rect2(Vector2(origin.x - gutter, origin.y + float(index) * cell), Vector2(gutter, cell)),
+			size_points, faded)
 
 
 ## Objective squares are marked so the contested ground is legible without
@@ -414,17 +435,23 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		shadow.append(point + Vector2(cell * 0.06, cell * 0.08))
 	draw_colored_polygon(shadow, Color(0, 0, 0, 0.48))
 	draw_colored_polygon(banner, colors.fill)
-	var outline := banner.duplicate()
-	outline.append(banner[0])
-	draw_polyline(outline, colors.edge, maxf(1.5, cell * 0.035), true)
-	draw_line(top + Vector2(width * 0.1, height * 0.17), top + Vector2(width * 0.9, height * 0.17), GOLD, maxf(1.0, cell * 0.02))
+	_draw_weight_frame(piece, banner, top, width, height, cell, colors)
 	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
 	if can_see_identity:
-		var weight_text := String(piece.weight).to_upper()
-		var role_text := "FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).to_upper()
-		_draw_centered_text(ThemeDB.fallback_font, weight_text, Rect2(top + Vector2(0, height * 0.03), Vector2(width, height * 0.18)), maxi(8, int(cell * 0.15)), Color("#f6eee0"))
-		_draw_centered_text(ThemeDB.fallback_font, role_text, Rect2(top + Vector2(0, height * 0.16), Vector2(width, height * 0.18)), maxi(8, int(cell * 0.14)), Color.WHITE)
-		_draw_role_icon(piece, center + Vector2(0, cell * 0.02), cell * 0.22, Color("#e8e1d5"))
+		# "HEAVY" and "INFANTRY" cannot fit across a cell at playable zoom: the
+		# font collapses to its minimum and the words turn to mush. The README's
+		# piece code carries the same information in two glyphs, leaving room to
+		# draw the strength large enough to read at a glance.
+		var weight_text := "" if piece.type == StrategoGame.FLAG else String(piece.weight).substr(0, 1).to_upper()
+		var role_text := "FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).substr(0, 1).to_upper()
+		# The frame already states the Weight, so the label only carries the Role:
+		# a full word once there is room for it, a single letter when there is not.
+		var label := role_text if cell < 52.0 else ("FLAG" if piece.type == StrategoGame.FLAG else String(piece.role).to_upper())
+		_draw_centered_text(ThemeDB.fallback_font, label, Rect2(top + Vector2(0, height * 0.06), Vector2(width, height * 0.24)), maxi(11, int(cell * 0.24 if cell < 52.0 else cell * 0.15)), Color("#f6eee0"))
+		# The role icon only earns its space once a cell is big enough to render
+		# it as something other than a smudge.
+		if cell >= 46.0:
+			_draw_role_icon(piece, center + Vector2(0, cell * 0.06), cell * 0.2, Color("#e8e1d5"))
 		_draw_strength_tab(piece, top, width, height, cell)
 	else:
 		_draw_centered_text(ThemeDB.fallback_font, "?", Rect2(center - Vector2(width * 0.5, height * 0.38), Vector2(width, height * 0.63)), maxi(12, int(cell * 0.39)), Color.WHITE)
@@ -438,6 +465,55 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		draw_arc(badge, cell * 0.13, 0.0, TAU, 24, Color("#91d33f"), 1.5)
 		draw_line(badge + Vector2(-cell * 0.055, 0), badge + Vector2(-cell * 0.01, cell * 0.05), Color("#a8df4c"), 2.0)
 		draw_line(badge + Vector2(-cell * 0.01, cell * 0.05), badge + Vector2(cell * 0.07, -cell * 0.06), Color("#a8df4c"), 2.0)
+
+
+const WOOD_FRAME := Color("#8a6233")
+const WOOD_GRAIN := Color("#b08348")
+const MAIL_FRAME := Color("#79838f")
+const MAIL_RING := Color("#aeb8c4")
+const PLATE_FRAME := Color("#8e97a3")
+const PLATE_SHEEN := Color("#dfe6ee")
+
+
+## Weight is carried by the banner's material rather than a letter, because a
+## texture is recognised at a glance where a glyph has to be read. It also maps
+## onto Armour: bound wood at 0, mail at 1, riveted plate at 2.
+func _draw_weight_frame(piece: Dictionary, banner: PackedVector2Array, top: Vector2, width: float, height: float, cell: float, colors: Dictionary) -> void:
+	var outline := banner.duplicate()
+	outline.append(banner[0])
+	if piece.type == StrategoGame.FLAG:
+		draw_polyline(outline, colors.edge, maxf(1.5, cell * 0.035), true)
+		return
+	match String(piece.weight):
+		StrategoGame.WEIGHT_LIGHT:
+			# Bound planks: a slim rim with two seams and a leather lashing.
+			draw_polyline(outline, WOOD_FRAME, maxf(1.6, cell * 0.05), true)
+			draw_polyline(outline, WOOD_GRAIN, maxf(1.0, cell * 0.018), true)
+			for seam in [0.30, 0.58]:
+				draw_line(top + Vector2(width * 0.08, height * seam), top + Vector2(width * 0.92, height * seam),
+					Color(WOOD_GRAIN, 0.35), maxf(1.0, cell * 0.014))
+		StrategoGame.WEIGHT_MEDIUM:
+			# Mail: a doubled rim with a ring of links picked out along the top.
+			draw_polyline(outline, MAIL_FRAME, maxf(2.0, cell * 0.07), true)
+			draw_polyline(outline, MAIL_RING, maxf(1.0, cell * 0.02), true)
+			if cell >= 30.0:
+				var links := 6
+				for index in links:
+					var t := (float(index) + 0.5) / float(links)
+					draw_arc(top + Vector2(width * t, height * 0.12), maxf(1.4, cell * 0.045),
+						0.0, TAU, 10, Color(MAIL_RING, 0.75), maxf(1.0, cell * 0.016))
+		_:
+			# Plate: a thick rim, a bevel highlight along the top, and rivets.
+			draw_polyline(outline, PLATE_FRAME, maxf(2.6, cell * 0.1), true)
+			draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.94, height * 0.05),
+				PLATE_SHEEN, maxf(1.2, cell * 0.026))
+			draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.06, height * 0.7),
+				Color(PLATE_SHEEN, 0.5), maxf(1.0, cell * 0.02))
+			if cell >= 26.0:
+				var rivet := maxf(1.3, cell * 0.035)
+				for spot in [Vector2(0.12, 0.08), Vector2(0.88, 0.08), Vector2(0.12, 0.68), Vector2(0.88, 0.68)]:
+					draw_circle(top + Vector2(width * spot.x, height * spot.y), rivet, PLATE_SHEEN)
+	draw_polyline(outline, Color(colors.edge, 0.55), maxf(1.0, cell * 0.016), true)
 
 
 func _draw_role_icon(piece: Dictionary, center: Vector2, radius: float, color: Color) -> void:
@@ -464,11 +540,20 @@ func _draw_role_icon(piece: Dictionary, center: Vector2, radius: float, color: C
 			draw_line(center + Vector2(-radius * 0.45, -radius * 0.55), center + Vector2(radius * 0.6, radius * 0.58), color, 2.1)
 
 
+## Strength is the number a player reads most often, so it gets the largest
+## glyph on the banner rather than a corner tab. Below a certain cell size the
+## surrounding chrome costs more legibility than it adds, so it is dropped and
+## the numeral is drawn straight onto the banner.
 func _draw_strength_tab(piece: Dictionary, top: Vector2, width: float, height: float, cell: float) -> void:
-	var tab := Rect2(top + Vector2(width * 0.58, height * 0.68), Vector2(width * 0.34, height * 0.24))
-	draw_rect(tab, Color("#111817"), true)
-	draw_rect(tab, GOLD, false, maxf(1.0, cell * 0.022))
-	_draw_centered_text(ThemeDB.fallback_font, str(int(piece.strength)), tab, maxi(10, int(cell * 0.27)), Color.WHITE)
+	if piece.type == StrategoGame.FLAG: return
+	var band := Rect2(top + Vector2(0, height * 0.34), Vector2(width, height * 0.46))
+	if cell >= 34.0:
+		var plate := Rect2(top + Vector2(width * 0.12, height * 0.36), Vector2(width * 0.76, height * 0.42))
+		draw_rect(plate, Color(0.03, 0.06, 0.06, 0.82), true)
+		draw_rect(plate, GOLD, false, maxf(1.0, cell * 0.02))
+	var hurt := int(piece.strength) < int(piece.max_strength)
+	var tint := Color("#ffd9a8") if hurt else Color.WHITE
+	_draw_centered_text(ThemeDB.fallback_font, str(int(piece.strength)), band, maxi(14, int(cell * 0.42)), tint)
 
 
 func _draw_dashed_line(from: Vector2, to: Vector2, color: Color, width: float, dash: float) -> void:

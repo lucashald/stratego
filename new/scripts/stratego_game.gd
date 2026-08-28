@@ -47,6 +47,8 @@ const OBJECTIVE_REACH_AREA := "reach_area"
 const OBJECTIVE_SURVIVE := "survive"
 const SCENARIO_MEETING := "meeting"
 const DEFAULT_HOLD_ROUNDS := 3
+## Rows between the objective and each army's leading rank.
+const MEETING_FRONT_DISTANCE := 7
 const TERRAIN_OPEN := ""
 const TERRAIN_LAKE := "lake"
 const TERRAIN_WATER := "water"
@@ -102,6 +104,20 @@ const BRIDGE_DEFENDER_ROSTER := [
 const MEETING_ROSTER := [
 	HEAVY_INFANTRY, HEAVY_INFANTRY, MEDIUM_INFANTRY, MEDIUM_INFANTRY, LIGHT_INFANTRY, LIGHT_INFANTRY,
 	HEAVY_ARCHER, MEDIUM_ARCHER, LIGHT_ARCHER, HEAVY_CAVALRY, MEDIUM_CAVALRY, LIGHT_CAVALRY,
+]
+
+## A battle line rather than a shuffled row: heavy foot holds the centre with the
+## archer shooting over it, mediums form the second line, and the light troops
+## screen the wings.
+##
+## This is also what fixes the arrival problem. Slow formations take the short
+## central path while fast ones travel the long way round the flanks, so the two
+## converge instead of the Heavies turning up rounds after the fight is decided.
+## Entries are [type, column, rank], rank 0 being the line nearest the enemy.
+const MEETING_DEPLOYMENT := [
+	[HEAVY_INFANTRY, 9, 0], [HEAVY_ARCHER, 10, 0], [HEAVY_INFANTRY, 11, 0], [HEAVY_CAVALRY, 12, 0],
+	[MEDIUM_INFANTRY, 8, 1], [MEDIUM_CAVALRY, 9, 1], [MEDIUM_ARCHER, 11, 1], [MEDIUM_INFANTRY, 12, 1],
+	[LIGHT_CAVALRY, 3, 2], [LIGHT_INFANTRY, 4, 2], [LIGHT_INFANTRY, 16, 2], [LIGHT_ARCHER, 17, 2],
 ]
 const LAKES := [
 	Vector2i(7, 7), Vector2i(8, 7), Vector2i(11, 7), Vector2i(12, 7),
@@ -282,9 +298,9 @@ func setup_meeting(seed_value: int = 0, first: int = BLUE, second: int = RED, ho
 	# than on rows 0 and BOARD_SIZE-1. On an even board the centre square is not
 	# equidistant from the two back ranks, and that single row of advantage is
 	# worth roughly a 65/35 win rate to whichever side gets it.
-	var reach := BOARD_SIZE / 2 - 1
-	_place_roster(first, MEETING_ROSTER, _back_rank_deployment(objective.y + reach), _rng)
-	_place_roster(second, MEETING_ROSTER, _back_rank_deployment(objective.y - reach), _rng)
+	var reach := MEETING_FRONT_DISTANCE
+	_place_battle_line(first, objective.y + reach, 1)
+	_place_battle_line(second, objective.y - reach, -1)
 	add_hold_square_objective(objective, hold_rounds, turn_limit)
 	active_players.assign([second, first])
 	_sort_active_players()
@@ -321,6 +337,25 @@ func setup_skirmish(seed_value: int = 0, blue_roster: Array = MEETING_ROSTER, re
 	_sort_active_players()
 	current_player = BLUE
 	_record_all_sightings()
+
+
+## Places one army in its battle line. `front_row` is the rank nearest the
+## objective and `step` points back toward that army's own edge.
+func _place_battle_line(player: int, front_row: int, step: int) -> void:
+	for entry in MEETING_DEPLOYMENT:
+		var row: int = clampi(front_row + int(entry[2]) * step, 0, BOARD_SIZE - 1)
+		var cell := Vector2i(int(entry[1]), row)
+		if is_blocked_terrain(cell) or not piece_at(cell).is_empty(): continue
+		add_piece(String(entry[0]), player, cell)
+
+
+func _meeting_deployment_rows(player: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var forward := BOARD_SIZE / 2 + MEETING_FRONT_DISTANCE if player == current_player else BOARD_SIZE / 2 - MEETING_FRONT_DISTANCE
+	var step := 1 if player == current_player else -1
+	for rank in 3:
+		cells.append_array(_back_rank_deployment(clampi(forward + rank * step, 0, BOARD_SIZE - 1)))
+	return cells
 
 
 func _back_rank_deployment(row: int) -> Array[Vector2i]:
@@ -402,9 +437,7 @@ func valid_deployment_cells(player: int) -> Array[Vector2i]:
 	if scenario == SCENARIO_BRIDGE:
 		return _bridge_attacker_deployment() if player == bridge_attacker else _bridge_defender_deployment()
 	if scenario == SCENARIO_MEETING:
-		var reach := BOARD_SIZE / 2 - 1
-		var centre := BOARD_SIZE / 2
-		return _back_rank_deployment(centre + reach if player == current_player else centre - reach)
+		return _meeting_deployment_rows(player)
 	return _starting_cells(player)
 
 
@@ -1357,17 +1390,25 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, batch_name: String) -> Dictionary:
 	var scores: Dictionary = {}
 	var raw_rolls: Dictionary = {}
+	var role_bonuses: Dictionary = {}
+	var capped_rolls: Dictionary = {}
 	var participant_ids: Array[int] = []
 	for participant: Dictionary in participants:
 		var id := int(participant.piece_id)
 		if id in participant_ids or not pieces[id].alive: continue
 		participant_ids.append(id)
 		var raw := _roll_d10()
-		var score := mini(raw, int(pieces[id].strength))
-		if bool(participant.is_attacker) and pieces[id].role == ROLE_CAVALRY: score += ROLE_BONUS
-		if not bool(participant.is_attacker) and pieces[id].role == ROLE_INFANTRY: score += ROLE_BONUS
-		scores[id] = score
+		var capped := mini(raw, int(pieces[id].strength))
+		var bonus := 0
+		if bool(participant.is_attacker) and pieces[id].role == ROLE_CAVALRY: bonus = ROLE_BONUS
+		if not bool(participant.is_attacker) and pieces[id].role == ROLE_INFANTRY: bonus = ROLE_BONUS
+		scores[id] = capped + bonus
 		raw_rolls[id] = raw
+		# Recorded rather than left to be inferred: a display cannot reconstruct
+		# the bonus from roll and score alone, because the roll is capped by a
+		# Strength the reader no longer sees once damage has been applied.
+		role_bonuses[id] = bonus
+		capped_rolls[id] = capped
 		pieces[id].participated_in_combat = true
 		pieces[id].melee_count = int(pieces[id].melee_count) + 1
 	var highest := -1
@@ -1437,6 +1478,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		"ok": true, "action": "crossing_battle" if crossing else "melee", "batch": batch_name, "combat": true,
 		"ranged": false, "crossing": crossing, "to": contested, "participants": participant_ids.duplicate(),
 		"scores": scores.duplicate(true), "raw_rolls": raw_rolls.duplicate(true), "damage": damage_by_id.duplicate(true),
+		"role_bonuses": role_bonuses.duplicate(true), "capped_rolls": capped_rolls.duplicate(true),
 		"outcomes": outcomes.duplicate(true), "winner_id": unique_winner_id,
 		"result": "win" if unique_winner_id != EMPTY else "bounce", "known_to": _battle_viewers_for_ids(participant_ids),
 	}
