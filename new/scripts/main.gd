@@ -53,6 +53,8 @@ var battle_panel: PanelContainer
 var battle_title: Label
 var battle_body: RichTextLabel
 var event_panel: PanelContainer
+var left_tabs: TabContainer
+var roster_list: VBoxContainer
 
 var spectator_mode := false
 var replay_view_mode := false
@@ -261,12 +263,16 @@ func _build_top_controls() -> void:
 
 func _build_view_controls() -> void:
 	var panel := PanelContainer.new()
-	panel.position = Vector2(14, 164)
-	panel.size = Vector2(430, 52)
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	panel.offset_left = 10
+	panel.offset_right = REGION_LEFT - 12
+	panel.offset_top = -REGION_BOTTOM - 52
+	panel.offset_bottom = -REGION_BOTTOM - 6
 	panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, Color(0.55, 0.72, 0.82, 0.45), 1, 6))
 	add_child(panel)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 5)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
 	panel.add_child(row)
 	var minus := _make_button("-", 44)
 	minus.custom_minimum_size.y = 34
@@ -418,7 +424,7 @@ func _hide_detail_help() -> void:
 
 func _show_detail_help() -> void:
 	detail_help_hidden = false
-	detail_toast.visible = not resolution_mode
+	detail_toast.visible = false
 	inspector_panel.visible = not resolution_mode
 
 
@@ -526,31 +532,133 @@ func _build_battle_panel() -> void:
 	box.add_child(battle_body)
 
 
+## The left sidebar fills its reserved region for the whole game. Tabs rather
+## than a swap: the log should always be reachable even though it is rarely the
+## thing you want to look at, and a tab makes it a glance away.
 func _build_event_panel() -> void:
 	event_panel = PanelContainer.new()
-	event_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	event_panel.position = Vector2(16, -360)
-	event_panel.size = Vector2(290, 250)
+	event_panel.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	event_panel.offset_left = 10
+	event_panel.offset_right = REGION_LEFT - 12
+	event_panel.offset_top = REGION_TOP + 4
+	event_panel.offset_bottom = -REGION_BOTTOM - 62
 	event_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(event_panel)
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 13)
-	margin.add_theme_constant_override("margin_right", 13)
-	margin.add_theme_constant_override("margin_top", 12)
-	margin.add_theme_constant_override("margin_bottom", 12)
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 10)
 	event_panel.add_child(margin)
-	var box := VBoxContainer.new()
-	margin.add_child(box)
-	var title := Label.new()
-	title.text = "EVENT LOG"
-	title.add_theme_font_size_override("font_size", 15)
-	box.add_child(title)
+	left_tabs = TabContainer.new()
+	left_tabs.add_theme_font_size_override("font_size", 13)
+	margin.add_child(left_tabs)
+
+	var roster_scroll := ScrollContainer.new()
+	roster_scroll.name = "FORMATIONS"
+	roster_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left_tabs.add_child(roster_scroll)
+	roster_list = VBoxContainer.new()
+	roster_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	roster_list.add_theme_constant_override("separation", 5)
+	roster_scroll.add_child(roster_list)
+
+	var log_box := VBoxContainer.new()
+	log_box.name = "LOG"
+	left_tabs.add_child(log_box)
 	history = RichTextLabel.new()
 	history.bbcode_enabled = true
 	history.scroll_active = true
 	history.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	history.add_theme_font_size_override("normal_font_size", 13)
-	box.add_child(history)
+	log_box.add_child(history)
+
+	left_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
+## One row per formation you command, whether or not it is selected, so the
+## panel is never empty and doubles as a way to select by clicking.
+func _refresh_roster() -> void:
+	if roster_list == null or game == null: return
+	for child in roster_list.get_children(): child.queue_free()
+	var owned: Array[Dictionary] = []
+	for piece: Dictionary in game.pieces:
+		if piece.alive and int(piece.player) == StrategoGame.BLUE and game.is_movable(piece):
+			owned.append(piece)
+	owned.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return int(a.position.y) * StrategoGame.BOARD_SIZE + int(a.position.x) < int(b.position.y) * StrategoGame.BOARD_SIZE + int(b.position.x)
+	)
+	for piece: Dictionary in owned:
+		roster_list.add_child(_roster_row(piece))
+
+
+func _roster_row(piece: Dictionary) -> Control:
+	var id := int(piece.id)
+	var selected := board_view != null and id in board_view.selected_piece_ids
+	var row := Button.new()
+	row.custom_minimum_size.y = 46
+	row.focus_mode = Control.FOCUS_NONE
+	row.add_theme_stylebox_override("normal", _panel_style(Color("#0d1c2c") if selected else Color("#08131d"), HUD_BLUE if selected else Color("#2a3a46"), 1, 5))
+	row.add_theme_stylebox_override("hover", _panel_style(Color("#12283c"), HUD_BLUE, 1, 5))
+	row.pressed.connect(_on_roster_row_pressed.bind(id))
+	var line := HBoxContainer.new()
+	line.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	line.add_theme_constant_override("separation", 8)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(line)
+
+	var swatch := Label.new()
+	swatch.text = String(piece.weight).substr(0, 1).to_upper() + String(piece.role).substr(0, 1).to_upper()
+	swatch.custom_minimum_size = Vector2(34, 30)
+	swatch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	swatch.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	swatch.add_theme_font_size_override("font_size", 13)
+	swatch.add_theme_stylebox_override("normal", _panel_style(Color("#1b4a86"), _weight_tint(String(piece.weight)), 2, 3))
+	line.add_child(swatch)
+
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 0)
+	line.add_child(text)
+	var name_label := Label.new()
+	name_label.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+	name_label.add_theme_font_size_override("font_size", 12)
+	name_label.add_theme_color_override("font_color", Color("#f0ead6"))
+	text.add_child(name_label)
+	var stat_label := Label.new()
+	# Aiming spends a point, so an Archer that has declared a shot correctly
+	# shows one pip already hollow.
+	var spent := game.movement_committed(piece)
+	var limit := game.movement_limit_for(piece)
+	var pips := ""
+	for index in limit: pips += "●" if index >= spent else "○"
+	stat_label.text = "STR %d/%d    %s" % [int(piece.strength), int(piece.max_strength), pips]
+	stat_label.add_theme_font_size_override("font_size", 11)
+	stat_label.add_theme_color_override("font_color", Color("#c8a15c"))
+	text.add_child(stat_label)
+
+	if not game.order_for_piece(id).is_empty():
+		var ordered := Label.new()
+		ordered.text = "✓"
+		ordered.custom_minimum_size.x = 18
+		ordered.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		ordered.add_theme_color_override("font_color", Color("#91d33f"))
+		line.add_child(ordered)
+	return row
+
+
+func _weight_tint(weight: String) -> Color:
+	match weight:
+		StrategoGame.WEIGHT_LIGHT: return Color("#8a6233")
+		StrategoGame.WEIGHT_MEDIUM: return Color("#9aa3ad")
+	return Color("#d3a94b")
+
+
+func _on_roster_row_pressed(piece_id: int) -> void:
+	if board_view == null or not board_view.interaction_enabled: return
+	board_view.selected_piece_ids.assign([piece_id])
+	board_view.selected_piece_id = piece_id
+	board_view.queue_redraw()
+	_refresh_roster()
+	_update_inspector()
 
 
 func _build_settings_drawer() -> void:
@@ -1280,8 +1388,10 @@ func _update_interface(update_detail: bool = true) -> void:
 	playback_controls.visible = resolution_mode
 	inspector_panel.visible = not resolution_mode and not detail_help_hidden
 	battle_panel.visible = resolution_mode
-	event_panel.visible = resolution_mode
-	detail_toast.visible = not resolution_mode and not detail_help_hidden
+	# The sidebar is a region, not a pop-up: it is present in every phase and only
+	# its contents change.
+	event_panel.visible = true
+	detail_toast.visible = false
 	if resolution_mode:
 		phase_title.text = "PHASE: BATTLE RESOLUTION"
 		phase_subtitle.text = "Verified replay events" if replay_view_mode else "Resolving movement collisions and combat"
@@ -1364,6 +1474,7 @@ func _update_timeline(active_index: int) -> void:
 
 
 func _update_inspector() -> void:
+	_refresh_roster()
 	if group_move_controls != null:
 		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty()
 	if board_view == null or game == null or board_view.selected_piece_ids.is_empty():
