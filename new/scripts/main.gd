@@ -767,7 +767,11 @@ func _rebuild_log(events: Array[Dictionary]) -> void:
 			"summary": "%s marched to %s" % [game.piece_display_code(piece), str(march.to)],
 			"detail": "from %s" % str(march.from),
 		})
-	log_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.index) < int(b.index))
+	# Round first: an index only orders events inside the round that produced
+	# them, so on its own it interleaves rounds.
+	log_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.round) != int(b.round): return int(a.round) < int(b.round)
+		return int(a.index) < int(b.index))
 	_render_log()
 
 
@@ -817,27 +821,49 @@ func _log_row(entry: Dictionary) -> Control:
 	row.custom_minimum_size.y = 38
 	row.focus_mode = Control.FOCUS_NONE
 	row.tooltip_text = String(entry.detail)
-	row.add_theme_stylebox_override("normal", _panel_style(Color("#08131d"), Color("#243440"), 1, 4))
-	row.add_theme_stylebox_override("hover", _panel_style(Color("#12283c"), HUD_BLUE, 1, 4))
+	var tint := Color(String(LOG_TINTS.get(String(entry.type), "#c9c6bf")))
+	var kind := String(entry.type)
+	var quiet := kind == "move"
+	row.add_theme_stylebox_override("normal", _log_row_style(Color("#08131d"), tint, quiet))
+	row.add_theme_stylebox_override("hover", _log_row_style(Color("#12283c"), tint, false))
 	# Clicking an entry jumps playback to it, which is what makes a single list
-	# serve in place of a separate battle queue.
-	row.pressed.connect(_on_log_row_pressed.bind(int(entry.index)))
+	# serve in place of a separate battle queue. An index only means anything
+	# inside its own round, so older rows are shown but not wired up.
+	if int(entry.round) == game.round_number:
+		row.pressed.connect(_on_log_row_pressed.bind(int(entry.index)))
+	else:
+		row.disabled = true
+		row.add_theme_stylebox_override("disabled", _log_row_style(Color("#070f16"), tint.darkened(0.4), true))
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Clear of the accent edge: a full-rect preset ignores the style's content
+	# margin, so the first character sat under the border.
+	box.offset_left = 10
+	box.offset_right = -6
 	box.add_theme_constant_override("separation", 0)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(box)
 	var head := Label.new()
 	head.text = "R%d  %s" % [int(entry.round), String(entry.summary)]
-	head.add_theme_font_size_override("font_size", 11)
-	head.add_theme_color_override("font_color", Color(String(LOG_TINTS.get(String(entry.type), "#c9c6bf"))))
+	head.add_theme_font_size_override("font_size", 12)
+	head.add_theme_color_override("font_color", tint)
 	box.add_child(head)
 	var tail := Label.new()
 	tail.text = String(entry.detail)
-	tail.add_theme_font_size_override("font_size", 10)
+	tail.add_theme_font_size_override("font_size", 11)
 	tail.add_theme_color_override("font_color", Color("#7f8a93"))
 	box.add_child(tail)
 	return row
+
+
+## A row keyed by its kind: the accent runs down the left edge so battles and
+## shots pick themselves out of a column of marches.
+func _log_row_style(background: Color, accent: Color, quiet: bool) -> StyleBoxFlat:
+	var style := _panel_style(background, Color("#243440"), 1, 4)
+	style.border_width_left = 2 if quiet else 4
+	style.border_color = accent if not quiet else Color(accent, 0.45)
+	style.content_margin_left = 8
+	return style
 
 
 func _on_log_row_pressed(event_index: int) -> void:
