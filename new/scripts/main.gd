@@ -419,7 +419,6 @@ func _build_detail_toast() -> void:
 func _hide_detail_help() -> void:
 	detail_help_hidden = true
 	detail_toast.visible = false
-	inspector_panel.visible = false
 
 
 func _show_detail_help() -> void:
@@ -430,9 +429,11 @@ func _show_detail_help() -> void:
 
 func _build_inspector() -> void:
 	inspector_panel = PanelContainer.new()
-	inspector_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	inspector_panel.position = Vector2(-330, -480)
-	inspector_panel.size = Vector2(310, 380)
+	inspector_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	inspector_panel.offset_left = -REGION_RIGHT + 12
+	inspector_panel.offset_right = -10
+	inspector_panel.offset_top = REGION_TOP + 4
+	inspector_panel.offset_bottom = -REGION_BOTTOM - 4
 	inspector_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(inspector_panel)
 	var margin := MarginContainer.new()
@@ -502,9 +503,11 @@ func _issue_group_direction(direction: Vector2i) -> void:
 
 func _build_battle_panel() -> void:
 	battle_panel = PanelContainer.new()
-	battle_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	battle_panel.position = Vector2(-350, 100)
-	battle_panel.size = Vector2(330, 700)
+	battle_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	battle_panel.offset_left = -REGION_RIGHT + 12
+	battle_panel.offset_right = -10
+	battle_panel.offset_top = REGION_TOP + 4
+	battle_panel.offset_bottom = -REGION_BOTTOM - 4
 	battle_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(battle_panel)
 	var margin := MarginContainer.new()
@@ -1386,7 +1389,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	var read_only := spectator_mode or replay_view_mode
 	planning_controls.visible = not resolution_mode
 	playback_controls.visible = resolution_mode
-	inspector_panel.visible = not resolution_mode and not detail_help_hidden
+	inspector_panel.visible = not resolution_mode
 	battle_panel.visible = resolution_mode
 	# The sidebar is a region, not a pop-up: it is present in every phase and only
 	# its contents change.
