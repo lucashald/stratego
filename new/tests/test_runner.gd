@@ -30,6 +30,7 @@ func _run() -> void:
 	_test_leftover_is_a_separate_order_phase()
 	_test_leftover_allows_second_melee_only_after_win()
 	_test_cavalry_always_leftover_toggle()
+	_test_phase_has_no_decision_ignores_idle_formations()
 	_test_blocked_retreat_destroys_loser()
 	_test_enemy_retreat_collision_battle()
 	_test_impulse_sighting_is_remembered()
@@ -548,6 +549,60 @@ func _test_cavalry_always_leftover_toggle() -> void:
 
 	on_game.pieces[hc_on].round_status = StrategoGame.STATUS_LOST
 	_expect(not on_game.can_receive_leftover_order(StrategoGame.BLUE, hc_on), "losing a fight still blocks the leftover move even with the toggle on")
+
+
+func _test_phase_has_no_decision_ignores_idle_formations() -> void:
+	# A formation nobody gave an order to is technically leftover-eligible
+	# too, since its whole movement budget is unspent - but that describes
+	# almost every formation in almost every round (anything left to hold
+	# position), so gating the interface's auto-skip on raw eligibility meant
+	# the reposition phase essentially never actually skipped in real play.
+	# Only a formation that did something this round should count as a real
+	# decision worth stopping and asking about.
+	var idle_game := _test_game()
+	idle_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6))
+	idle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	for player in idle_game.active_players: idle_game.mark_player_ready(player)
+	idle_game.resolve_main_and_ranged()
+	var idle_presenter: Control = load("res://scripts/main.gd").new()
+	idle_presenter.game = idle_game
+	_expect(idle_presenter._phase_has_no_decision(), "a round where every formation sat idle has nothing to decide in reposition, even though idle formations are technically leftover-eligible")
+	idle_presenter.free()
+
+	var partial_game := _test_game()
+	var partial_mover := partial_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6), 8)
+	partial_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	partial_game.set_unit_order(StrategoGame.BLUE, partial_mover, [Vector2i(8, 5)])
+	for player in partial_game.active_players: partial_game.mark_player_ready(player)
+	partial_game.resolve_main_and_ranged()
+	var partial_presenter: Control = load("res://scripts/main.gd").new()
+	partial_presenter.game = partial_game
+	_expect(not partial_presenter._phase_has_no_decision(), "a formation that spent only part of its movement budget still has a real reposition decision")
+	partial_presenter.free()
+
+	var win_game := _test_game()
+	var win_attacker := win_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
+	var win_defender := win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	win_game.set_unit_order(StrategoGame.RED, win_attacker, [Vector2i(2, 1)])
+	win_game.set_forced_rolls([1, 10])
+	for player in win_game.active_players: win_game.mark_player_ready(player)
+	win_game.resolve_main_and_ranged()
+	_expect(String(win_game.pieces[win_defender].round_status) == StrategoGame.STATUS_WON, "the defender in this setup wins the melee in place")
+	var win_presenter: Control = load("res://scripts/main.gd").new()
+	win_presenter.game = win_game
+	_expect(not win_presenter._phase_has_no_decision(), "a formation that won a fight in place still has a real decision: press the advantage")
+	win_presenter.free()
+
+	var toggle_game := _test_game()
+	toggle_game.cavalry_always_leftover = true
+	toggle_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
+	toggle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	for player in toggle_game.active_players: toggle_game.mark_player_ready(player)
+	toggle_game.resolve_main_and_ranged()
+	var toggle_presenter: Control = load("res://scripts/main.gd").new()
+	toggle_presenter.game = toggle_game
+	_expect(not toggle_presenter._phase_has_no_decision(), "with the toggle on, an otherwise-idle Cavalry formation still counts as a real decision")
+	toggle_presenter.free()
 
 
 func _test_blocked_retreat_destroys_loser() -> void:

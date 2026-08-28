@@ -1318,16 +1318,20 @@ func _resolve_ready_round() -> void:
 		_log_event(event)
 	_rebuild_log(events)
 	resolution_events = _visible_presentation_events(events)
-	if resolution_events.is_empty():
+	# Nothing to look at means nothing to wait on either: a round with no
+	# battle the viewer could see has no reason to make them click through an
+	# empty card, so it plays out the same way spectator mode always does.
+	var no_visible_events := resolution_events.is_empty()
+	if no_visible_events:
 		resolution_events.append({"action": "no_contact", "batch": "leftover" if resolving_leftover else "ranged", "combat": false, "result": "no_visible_contact"})
 	resolution_index = 0
 	resolution_mode = true
-	presentation_paused = not spectator_mode
+	presentation_paused = not spectator_mode and not (no_visible_events and not replay_view_mode)
 	presentation_speed = 1.0
 	playback_pause_button.text = _resolution_completion_label() if resolution_events.size() == 1 else "NEXT"
 	board_view.clear_selection()
 	_update_interface()
-	if spectator_mode:
+	if spectator_mode or (no_visible_events and not replay_view_mode):
 		_play_resolution(session_id)
 
 
@@ -1373,9 +1377,15 @@ func _finish_resolution_presentation(active_session: int = -1) -> void:
 		_log_game_end()
 		return
 	# A reposition phase nobody can act in has nothing to decide, so it does not
-	# stop and ask. Skipping is deferred a frame so the interface settles first.
+	# stop and ask. This has to happen synchronously, not deferred to the next
+	# frame: _skip_to_end_of_round() drives this same phase transition through
+	# its own tight synchronous loop, and a deferred call left dangling here
+	# would fire after that loop has already moved the game on to the round
+	# after this one - silently auto-submitting that next round's orders as
+	# empty before the player ever saw its planning screen.
 	if _phase_has_no_decision() and not spectator_mode and not replay_view_mode:
-		call_deferred("_on_ready_pressed")
+		_log_line("No formations had movement left over from this round; reposition phase skipped.")
+		_on_ready_pressed()
 		return
 	if spectator_mode and not replay_view_mode:
 		_run_spectator_round(session_id if active_session < 0 else active_session)
@@ -1899,7 +1909,20 @@ func _skip_to_end_of_round() -> void:
 func _phase_has_no_decision() -> bool:
 	if game.phase != StrategoGame.PHASE_LEFTOVER_PLANNING: return false
 	for piece: Dictionary in game.pieces:
-		if game.can_receive_leftover_order(StrategoGame.BLUE, int(piece.id)): return false
+		if not game.can_receive_leftover_order(StrategoGame.BLUE, int(piece.id)): continue
+		# Eligibility alone is too generous a bar here: a formation nobody
+		# gave an order to this round is technically eligible too, since its
+		# whole movement budget is unspent - but every round has formations
+		# like that (anything left to hold position), so gating on raw
+		# eligibility meant this phase almost never actually skipped, forcing
+		# a click every round regardless of whether anything happened. Only
+		# count a formation that did something this round: spent part of its
+		# movement or committed to a shot and got stopped short, won a fight
+		# it could now press, or is a Cavalry formation the toggle explicitly
+		# wants offered a chance regardless of what it did.
+		if game.movement_committed(piece) > 0: return false
+		if String(piece.round_status) == StrategoGame.STATUS_WON: return false
+		if game.cavalry_always_leftover and piece.role == StrategoGame.ROLE_CAVALRY: return false
 	return true
 
 
