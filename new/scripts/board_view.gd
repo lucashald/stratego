@@ -453,12 +453,17 @@ func _draw_selection(origin: Vector2, cell: float) -> void:
 	if anchor_id == StrategoGame.EMPTY:
 		return
 	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
+	var projected_center := _cell_center(projected, origin, cell)
 	for direction in [Vector2i.UP, Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT]:
 		var destination: Vector2i = projected + direction
 		if game.is_inside(destination) and not game.is_blocked_terrain(destination):
 			var marker_color := LEFTOVER_COLOR if leftover_mode else Color("#d8edff")
 			var destination_center := _cell_center(destination, origin, cell)
-			_draw_direction_marker(destination_center, direction, cell, marker_color)
+			# On the boundary between the two cells, not the destination cell's
+			# centre: whatever stands on the destination square stays readable.
+			# The whole square is still the click target either way (hit-testing
+			# is per-cell, not per-marker), so this is purely a visual move.
+			_draw_direction_marker(projected_center.lerp(destination_center, 0.5), direction, cell, marker_color)
 
 
 func _command_anchor_id() -> int:
@@ -479,16 +484,16 @@ func _piece_has_unused_movement(piece_id: int) -> bool:
 
 
 func _draw_direction_marker(center: Vector2, direction: Vector2i, cell: float, color: Color) -> void:
-	draw_circle(center, cell * 0.31, Color(0.025, 0.16, 0.28, 0.9))
-	draw_arc(center, cell * 0.31, 0.0, TAU, 28, color, maxf(2.0, cell * 0.055))
+	draw_circle(center, cell * 0.19, Color(0.025, 0.16, 0.28, 0.9))
+	draw_arc(center, cell * 0.19, 0.0, TAU, 24, color, maxf(1.6, cell * 0.04))
 	var vector := Vector2(direction)
 	var perpendicular := Vector2(-vector.y, vector.x)
-	var tip := center + vector * cell * 0.17
-	var back := center - vector * cell * 0.12
+	var tip := center + vector * cell * 0.11
+	var back := center - vector * cell * 0.08
 	draw_colored_polygon(PackedVector2Array([
 		tip,
-		back + perpendicular * cell * 0.14,
-		back - perpendicular * cell * 0.14,
+		back + perpendicular * cell * 0.09,
+		back - perpendicular * cell * 0.09,
 	]), color)
 
 
@@ -860,7 +865,7 @@ func _gui_input(event: InputEvent) -> void:
 		accept_event()
 		return
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		_open_context_menu(event.position)
+		_handle_right_click(event.position)
 		accept_event()
 		return
 	if event.button_index != MOUSE_BUTTON_LEFT:
@@ -897,6 +902,27 @@ func _select_in_rect(rect: Rect2, additive: bool) -> void:
 			selected_piece_ids.append(int(piece.id))
 	selected_piece_id = selected_piece_ids.back() if not selected_piece_ids.is_empty() else StrategoGame.EMPTY
 	_emit_selected_description()
+
+
+## Right-click's primary job is "send my selection here" - a square move away
+## from the small border-hugging direction markers, and a shortcut for a
+## destination that is not one of the four highlighted directions at all. It
+## only falls back to the context menu when there is no order to give: nothing
+## selected, or the square is not a legal next step (too far, blocked, an
+## archer choosing a ranged target rather than a walk-in).
+func _handle_right_click(screen_position: Vector2) -> void:
+	var geometry := _board_geometry()
+	var local: Vector2 = screen_position - Vector2(geometry.origin)
+	if local.x < 0 or local.y < 0 or local.x >= geometry.side or local.y >= geometry.side:
+		return
+	var clicked := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
+	if not selected_piece_ids.is_empty() and selected_piece_id != StrategoGame.EMPTY:
+		var clicked_piece := game.piece_at(clicked)
+		var result := _issue_order_to_square(clicked, clicked_piece, true)
+		if bool(result.get("ok", false)):
+			queue_redraw()
+			return
+	_open_context_menu(screen_position)
 
 
 ## Right-click menu for a board square. Examine is always offered; Shoot and
@@ -1037,14 +1063,32 @@ func _handle_left_click(screen_position: Vector2, additive: bool, force_select: 
 				selected_piece_ids.erase(clicked_id)
 			else:
 				selected_piece_ids.append(clicked_id)
-		elif clicked_id not in selected_piece_ids:
+			selected_piece_id = clicked_id if clicked_id in selected_piece_ids else (selected_piece_ids.back() if not selected_piece_ids.is_empty() else StrategoGame.EMPTY)
+			_emit_selected_description()
+		elif clicked_id in selected_piece_ids:
+			# A plain click on a piece that is already the (sole) selection
+			# toggles it off, rather than sitting there doing nothing.
+			clear_selection()
+		else:
 			selected_piece_ids.assign([clicked_id])
-		selected_piece_id = clicked_id if clicked_id in selected_piece_ids else (selected_piece_ids.back() if not selected_piece_ids.is_empty() else StrategoGame.EMPTY)
-		_emit_selected_description()
+			selected_piece_id = clicked_id
+			_emit_selected_description()
 		return
+	_issue_order_to_square(clicked, clicked_piece)
+
+
+## Everything past "a square, not a piece of mine, was clicked": issue the
+## current selection's order toward it. Shared by the left-click flow and the
+## right-click shortcut, so the two stay identical rather than drifting.
+##
+## silent_on_failure drops the error toast on a failed attempt: the right-click
+## shortcut falls back to the context menu when there is nothing to order, and
+## flashing "Invalid order" right before that menu opens would read as if
+## something had gone wrong rather than as the ordinary Inspect/Attack path.
+func _issue_order_to_square(clicked: Vector2i, clicked_piece: Dictionary, silent_on_failure: bool = false) -> Dictionary:
 	if selected_piece_ids.is_empty() or selected_piece_id == StrategoGame.EMPTY:
 		clear_selection()
-		return
+		return {"ok": false, "message": "No formation selected."}
 	var selected_piece: Dictionary = game.pieces[selected_piece_id]
 	var anchor_id := _command_anchor_id()
 	var projected_id := anchor_id if anchor_id != StrategoGame.EMPTY else selected_piece_id
@@ -1056,8 +1100,7 @@ func _handle_left_click(screen_position: Vector2, additive: bool, force_select: 
 			var leftover_direction: Vector2i = clicked - projected
 			result = game.set_group_leftover_step(viewing_player, selected_piece_ids, leftover_direction)
 		elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty():
-			order_changed.emit("Ranged orders are issued to one Archer at a time.")
-			return
+			result = {"ok": false, "message": "Ranged orders are issued to one Archer at a time."}
 		else:
 			var direction: Vector2i = clicked - projected
 			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction)
@@ -1069,10 +1112,13 @@ func _handle_left_click(screen_position: Vector2, additive: bool, force_select: 
 		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked, int(clicked_piece.id))
 	else:
 		result = game.append_order_step(viewing_player, selected_piece_id, clicked)
-	if bool(result.get("ok", false)) and before != _current_order_snapshot():
+	var ok := bool(result.get("ok", false))
+	if ok and before != _current_order_snapshot():
 		_record_order_undo(before)
-	order_changed.emit("Order updated." if bool(result.get("ok", false)) else String(result.get("message", "Invalid order.")))
-	_emit_selected_description()
+	if ok or not silent_on_failure:
+		order_changed.emit("Order updated." if ok else String(result.get("message", "Invalid order.")))
+	if ok: _emit_selected_description()
+	return result
 
 
 func _emit_selected_description() -> void:
