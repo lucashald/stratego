@@ -843,19 +843,37 @@ func _open_context_menu(screen_position: Vector2) -> void:
 	if _context_menu == null:
 		_context_menu = PopupMenu.new()
 		_context_menu.id_pressed.connect(_on_context_menu_pressed)
+		var frame := StyleBoxFlat.new()
+		frame.bg_color = Color("#08131d")
+		frame.border_color = GOLD
+		frame.set_border_width_all(1)
+		frame.set_corner_radius_all(4)
+		frame.set_content_margin_all(6)
+		_context_menu.add_theme_stylebox_override("panel", frame)
+		var highlight := StyleBoxFlat.new()
+		highlight.bg_color = Color("#14375e")
+		highlight.border_color = GOLD
+		highlight.set_border_width_all(1)
+		highlight.set_corner_radius_all(3)
+		_context_menu.add_theme_stylebox_override("hover", highlight)
+		_context_menu.add_theme_color_override("font_color", Color("#f0ead6"))
+		_context_menu.add_theme_color_override("font_hover_color", Color("#ffe9b8"))
+		_context_menu.add_theme_font_size_override("font_size", 14)
 		add_child(_context_menu)
 	_context_menu.clear()
 	_context_menu_cell = cell
 	_context_menu_piece = int(occupant.id) if visible_occupant else StrategoGame.EMPTY
 	if visible_occupant:
-		_context_menu.add_item("Examine", CONTEXT_EXAMINE)
+		_context_menu.add_item("Inspect", CONTEXT_EXAMINE)
 	var archer_id := _selected_archer_id()
 	if archer_id != StrategoGame.EMPTY:
 		var enemy_here := visible_occupant and not game.are_allied_players(viewing_player, int(occupant.player))
 		if enemy_here and game.ranged_order_is_available(viewing_player, archer_id, cell, int(occupant.id)):
-			_context_menu.add_item("Shoot", CONTEXT_SHOOT)
+			_context_menu.add_item("Attack", CONTEXT_SHOOT)
 		if game.ranged_order_is_available(viewing_player, archer_id, cell):
-			_context_menu.add_item("Suppress Square", CONTEXT_SUPPRESS)
+			# "Volley" for suppressing fire: it reads as an action rather than as
+			# a description of the targeting mode.
+			_context_menu.add_item("Volley", CONTEXT_SUPPRESS)
 	if _context_menu.item_count == 0: return
 	_context_menu.position = Vector2i(get_screen_position() + screen_position)
 	_context_menu.reset_size()
