@@ -24,6 +24,7 @@ var weight_overrides: Dictionary = {}
 var assume_blue: Dictionary = {}
 var assume_red: Dictionary = {}
 var side_wins: Dictionary = {}
+var team_wins: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -65,13 +66,15 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	var game := StrategoGame.new()
 	if scenario == StrategoGame.SCENARIO_MEETING: game.setup_meeting(seed_value)
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)
+	elif scenario == "crossroads": game.setup_crossroads(seed_value)
 	else: game.setup_bridge(seed_value)
-	# One policy per side so the two can hold different assumptions.
+	# One policy per side so the two can hold different assumptions. Beyond two
+	# players --assumeblue is the only profile in play; every bot shares it.
 	var bots: Dictionary = {}
-	for player in [StrategoGame.BLUE, StrategoGame.RED]:
+	for player in game.active_players:
 		var policy := StrategoBotPolicy.new()
 		for key in weight_overrides: policy.weights[key] = float(weight_overrides[key])
-		var profile: Dictionary = assume_blue if player == StrategoGame.BLUE else assume_red
+		var profile: Dictionary = assume_blue if (player == StrategoGame.BLUE or game.active_players.size() > 2) else assume_red
 		for key in profile: policy.assumptions[key] = profile[key]
 		bots[player] = policy
 	var rng := RandomNumberGenerator.new()
@@ -108,6 +111,11 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	_accumulate(game, totals, occupancy, first_arrival)
 	var label := "draw" if game.winner == StrategoGame.DRAW else game.player_name(game.winner)
 	side_wins[label] = int(side_wins.get(label, 0)) + 1
+	# In a team scenario the individual winner is whichever ally happened to be
+	# first in turn order when the streak completed; the team is what matters.
+	if scenario == "crossroads":
+		var team_label := "draw" if game.winning_team == StrategoGame.DRAW else game.player_name(game.winning_team)
+		team_wins[team_label] = int(team_wins.get(team_label, 0)) + 1
 	if game.winner == StrategoGame.DRAW: return "draw"
 	return game.end_reason
 
@@ -149,6 +157,7 @@ func _report(totals: Dictionary, outcomes: Dictionary, round_total: int) -> void
 		print("Blue assumes: %s" % JSON.stringify(assume_blue if not assume_blue.is_empty() else StrategoBotPolicy.ASSUMPTION_DEFAULTS))
 		print("Red  assumes: %s" % JSON.stringify(assume_red if not assume_red.is_empty() else StrategoBotPolicy.ASSUMPTION_DEFAULTS))
 	print("wins by side: %s" % JSON.stringify(side_wins))
+	if not team_wins.is_empty(): print("wins by team: %s" % JSON.stringify(team_wins))
 	print("melee shapes: %s" % JSON.stringify(_melee_shapes))
 	var codes: Array = totals.keys()
 	var rank := func(code: String) -> float:

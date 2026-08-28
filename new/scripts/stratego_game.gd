@@ -339,6 +339,37 @@ func setup_skirmish(seed_value: int = 0, blue_roster: Array = MEETING_ROSTER, re
 	_record_all_sightings()
 
 
+## Crossroads: a 2v2 team battle in the four-lake clearing. Same corner
+## deployment and terrain the four-player melee already uses, but Red+Green and
+## Blue+Yellow are allied on adjacent corners rather than left to fight alone.
+## That pairing is point-symmetric: rotate the board 180 degrees and Team Red
+## becomes Team Blue exactly, so it is as fair as Meeting's centred deployment
+## without needing a bespoke check for it.
+##
+## The win condition is the same hold_square primitive Meeting uses. Nothing
+## about it is 2-player-specific: _check_objectives already loops every active
+## player and scores by are_allied_players, so either teammate holding the
+## centre builds the team's streak for free.
+func setup_crossroads(seed_value: int = 0, hold_rounds: int = DEFAULT_HOLD_ROUNDS, turn_limit: int = 30, use_private_battle_results: bool = true) -> void:
+	setup_empty()
+	scenario = SCENARIO_FOUR_PLAYER
+	configured_player_count = 4
+	private_battle_results = use_private_battle_results
+	apply_lake_terrain()
+	_seed_rng(seed_value)
+	player_teams[RED] = RED
+	player_teams[GREEN] = RED
+	player_teams[BLUE] = BLUE
+	player_teams[YELLOW] = BLUE
+	for player in players_for_count(4):
+		_place_army(player, _starting_cells(player), _rng)
+	active_players.assign(players_for_count(4))
+	_sort_active_players()
+	current_player = BLUE
+	add_hold_square_objective(Vector2i(BOARD_SIZE / 2, BOARD_SIZE / 2), hold_rounds, turn_limit)
+	_record_all_sightings()
+
+
 ## Places one army in its battle line. `front_row` is the rank nearest the
 ## objective and `step` points back toward that army's own edge.
 func _place_battle_line(player: int, front_row: int, step: int) -> void:
