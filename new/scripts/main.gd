@@ -13,6 +13,7 @@ var remote_bridge: StrategoMCPBridge = null
 var rng := RandomNumberGenerator.new()
 var board_view: StrategoBoardView
 
+var top_bar_actions: HBoxContainer
 var phase_title: Label
 var phase_subtitle: Label
 var units_label: Label
@@ -100,9 +101,18 @@ func _on_remote_committed(_player: int) -> void:
 	if game.all_players_ready(): _resolve_ready_round()
 
 
+## Reserved screen regions. Panels sit beside the board rather than over it, so
+## nothing occludes the field and no region ever moves. The board takes whatever
+## is left, which is the one area that should flex.
+const REGION_TOP := 78.0
+const REGION_BOTTOM := 88.0
+const REGION_LEFT := 300.0
+const REGION_RIGHT := 340.0
+
+
 func _build_interface() -> void:
 	board_view = StrategoBoardView.new()
-	board_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fit_to_board_region(board_view)
 	board_view.order_changed.connect(_on_order_changed)
 	board_view.examine_requested.connect(_on_examine_requested)
 	board_view.selection_changed.connect(_on_selection_changed)
@@ -119,81 +129,102 @@ func _build_interface() -> void:
 	_build_battle_panel()
 	_build_event_panel()
 	_build_settings_drawer()
+	resized.connect(_on_window_resized)
 
 
+## Anchors a control to the board region between the reserved bars.
+func _fit_to_board_region(control: Control) -> void:
+	control.set_anchors_preset(Control.PRESET_FULL_RECT)
+	control.offset_left = REGION_LEFT
+	control.offset_right = -REGION_RIGHT
+	control.offset_top = REGION_TOP
+	control.offset_bottom = -REGION_BOTTOM
+
+
+func _on_window_resized() -> void:
+	if board_view != null: board_view.queue_redraw()
+
+
+## One framed strip across the reserved top region, replacing the three panels
+## that used to float over the board and occlude its first rows.
 func _build_objective_panel() -> void:
 	var panel := PanelContainer.new()
-	panel.position = Vector2(14, 14)
-	panel.size = Vector2(400, 74)
+	panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	panel.offset_left = 10
+	panel.offset_right = -10
+	panel.offset_top = 8
+	panel.custom_minimum_size.y = REGION_TOP - 16
 	panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 8))
 	add_child(panel)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 15)
+	row.add_theme_constant_override("separation", 16)
+	row.alignment = BoxContainer.ALIGNMENT_BEGIN
 	panel.add_child(row)
+
 	var crest := Label.new()
 	crest.text = "LION"
-	crest.custom_minimum_size = Vector2(58, 54)
+	crest.custom_minimum_size = Vector2(50, 44)
 	crest.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	crest.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	crest.add_theme_font_size_override("font_size", 11)
 	crest.add_theme_color_override("font_color", Color("#e7c47d"))
 	crest.add_theme_stylebox_override("normal", _panel_style(Color("#0b2340"), HUD_GOLD, 2, 3))
 	row.add_child(crest)
+
+	phase_title = Label.new()
+	phase_title.custom_minimum_size.x = 210
+	phase_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	phase_title.add_theme_font_size_override("font_size", 20)
+	phase_title.add_theme_color_override("font_color", HUD_BLUE)
+	row.add_child(phase_title)
+
+	phase_subtitle = Label.new()
+	phase_subtitle.custom_minimum_size.x = 250
+	phase_subtitle.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	phase_subtitle.add_theme_font_size_override("font_size", 13)
+	phase_subtitle.add_theme_color_override("font_color", Color("#ddd8d0"))
+	row.add_child(phase_subtitle)
+
+	row.add_child(VSeparator.new())
+
 	units_label = Label.new()
 	units_label.text = "Units 0"
-	units_label.custom_minimum_size.x = 90
-	units_label.add_theme_font_size_override("font_size", 19)
+	units_label.custom_minimum_size.x = 78
 	units_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	units_label.add_theme_font_size_override("font_size", 15)
 	row.add_child(units_label)
-	var separator := VSeparator.new()
-	row.add_child(separator)
+
 	var objective_box := VBoxContainer.new()
 	objective_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	objective_box.add_theme_constant_override("separation", 4)
+	objective_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	objective_box.add_theme_constant_override("separation", 3)
 	row.add_child(objective_box)
 	objective_label = Label.new()
-	objective_label.add_theme_font_size_override("font_size", 17)
+	objective_label.add_theme_font_size_override("font_size", 14)
 	objective_label.add_theme_color_override("font_color", Color("#f2eee8"))
 	objective_box.add_child(objective_label)
 	objective_progress = ProgressBar.new()
-	objective_progress.custom_minimum_size = Vector2(170, 9)
+	objective_progress.custom_minimum_size = Vector2(180, 8)
 	objective_progress.show_percentage = false
 	objective_progress.add_theme_stylebox_override("background", _panel_style(Color("#253136"), Color.TRANSPARENT, 0, 5))
 	objective_progress.add_theme_stylebox_override("fill", _panel_style(Color("#277ed0"), Color.TRANSPARENT, 0, 5))
 	objective_box.add_child(objective_progress)
 
+	top_bar_actions = HBoxContainer.new()
+	top_bar_actions.add_theme_constant_override("separation", 8)
+	top_bar_actions.alignment = BoxContainer.ALIGNMENT_END
+	row.add_child(top_bar_actions)
+
 
 func _build_phase_banner() -> void:
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	panel.position = Vector2(-245, 0)
-	panel.size = Vector2(490, 82)
-	panel.add_theme_stylebox_override("panel", _panel_style(Color(0.025, 0.05, 0.065, 0.95), HUD_GOLD, 1, 5))
-	add_child(panel)
-	var box := VBoxContainer.new()
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 0)
-	panel.add_child(box)
-	phase_title = Label.new()
-	phase_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	phase_title.add_theme_font_size_override("font_size", 28)
-	phase_title.add_theme_color_override("font_color", HUD_BLUE)
-	box.add_child(phase_title)
-	phase_subtitle = Label.new()
-	phase_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	phase_subtitle.add_theme_font_size_override("font_size", 16)
-	phase_subtitle.add_theme_color_override("font_color", Color("#ddd8d0"))
-	box.add_child(phase_subtitle)
+	pass
 
 
 func _build_top_controls() -> void:
 	planning_controls = HBoxContainer.new()
-	planning_controls.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	planning_controls.position = Vector2(-540, 18)
-	planning_controls.size = Vector2(520, 54)
-	planning_controls.add_theme_constant_override("separation", 10)
-	add_child(planning_controls)
-	ready_button = _make_button("END PLANNING", 180)
+	planning_controls.add_theme_constant_override("separation", 8)
+	top_bar_actions.add_child(planning_controls)
+	ready_button = _make_button("END ORDERS", 150)
 	ready_button.add_theme_font_size_override("font_size", 18)
 	ready_button.pressed.connect(_on_ready_pressed)
 	planning_controls.add_child(ready_button)
@@ -201,7 +232,7 @@ func _build_top_controls() -> void:
 	undo_button.tooltip_text = "Undo the last order change. Shortcut: Ctrl+Z."
 	undo_button.pressed.connect(board_view.undo_last_order)
 	planning_controls.add_child(undo_button)
-	cancel_all_button = _make_button("CANCEL ALL ORDERS", 130)
+	cancel_all_button = _make_button("CANCEL ALL", 110)
 	cancel_all_button.tooltip_text = "Remove every order issued this planning phase. This can be undone."
 	cancel_all_button.pressed.connect(_on_clear_orders)
 	planning_controls.add_child(cancel_all_button)
@@ -210,11 +241,8 @@ func _build_top_controls() -> void:
 	planning_controls.add_child(settings_button)
 
 	playback_controls = HBoxContainer.new()
-	playback_controls.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	playback_controls.position = Vector2(-442, 18)
-	playback_controls.size = Vector2(422, 54)
 	playback_controls.add_theme_constant_override("separation", 4)
-	add_child(playback_controls)
+	top_bar_actions.add_child(playback_controls)
 	for definition in [["FIRST", Callable(self, "_playback_first")], ["PREV", Callable(self, "_playback_previous")]]:
 		var button := _make_button(String(definition[0]), 64)
 		button.pressed.connect(definition[1])

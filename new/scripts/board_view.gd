@@ -35,7 +35,7 @@ var combat_started_msec := 0
 var combat_duration_msec := 1600
 var combat_hold := false
 var zoom_level := 1.0
-var pan_offset := Vector2(0, -34)
+var pan_offset := Vector2.ZERO
 var min_zoom := 0.9
 var max_zoom := 2.6
 var left_button_down := false
@@ -81,7 +81,9 @@ func clear_selection() -> void:
 
 
 func _board_geometry() -> Dictionary:
-	var base_side := maxf(300.0, minf(size.y - 80.0, size.x - 520.0))
+	# The control is now sized to the reserved board region, so the whole of it is
+	# available. Subtracting chrome here as well would take the same space twice.
+	var base_side := maxf(300.0, minf(size.y, size.x) - 26.0)
 	var side := base_side * zoom_level
 	var origin := (size - Vector2(side, side)) * 0.5 + pan_offset
 	return {"origin": origin, "side": side, "cell": side / float(StrategoGame.BOARD_SIZE)}
@@ -97,7 +99,7 @@ func zoom_out() -> void:
 
 func reset_view() -> void:
 	zoom_level = 1.0
-	pan_offset = Vector2(0, -34)
+	pan_offset = Vector2.ZERO
 	zoom_changed.emit(int(round(zoom_level * 100.0)))
 	queue_redraw()
 
@@ -179,7 +181,7 @@ func _set_zoom(value: float, focus: Vector2) -> void:
 	var old_geometry := _board_geometry()
 	var board_point := (focus - Vector2(old_geometry.origin)) / float(old_geometry.cell)
 	zoom_level = clampf(value, min_zoom, max_zoom)
-	var base_side := maxf(300.0, minf(size.y - 80.0, size.x - 520.0))
+	var base_side := maxf(300.0, minf(size.y, size.x) - 26.0)
 	var new_side := base_side * zoom_level
 	var centered_origin := (size - Vector2(new_side, new_side)) * 0.5
 	pan_offset = focus - centered_origin - board_point * (new_side / float(StrategoGame.BOARD_SIZE))
