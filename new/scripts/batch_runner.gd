@@ -21,6 +21,9 @@ var separation := 3
 var blue_roster: Array = StrategoGame.MEETING_ROSTER
 var red_roster: Array = StrategoGame.MEETING_ROSTER
 var weight_overrides: Dictionary = {}
+var assume_blue: Dictionary = {}
+var assume_red: Dictionary = {}
+var side_wins: Dictionary = {}
 
 
 func _initialize() -> void:
@@ -34,6 +37,13 @@ func _initialize() -> void:
 		for pair in String(arguments.w).split(",", false):
 			var halves := String(pair).split("=")
 			if halves.size() == 2: weight_overrides[String(halves[0]).strip_edges()] = float(halves[1])
+	# --assume / --assumeblue / --assumered set what a bot pretends an
+	# unidentified enemy is, e.g. "role=infantry,strength=5,weight=medium".
+	if arguments.has("assume"):
+		assume_blue = _parse_assumption(String(arguments.assume))
+		assume_red = assume_blue.duplicate()
+	if arguments.has("assumeblue"): assume_blue = _parse_assumption(String(arguments.assumeblue))
+	if arguments.has("assumered"): assume_red = _parse_assumption(String(arguments.assumered))
 	if arguments.has("blue"): blue_roster = _parse_roster(String(arguments.blue))
 	if arguments.has("red"): red_roster = _parse_roster(String(arguments.red))
 	var totals: Dictionary = {}
@@ -56,8 +66,14 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	if scenario == StrategoGame.SCENARIO_MEETING: game.setup_meeting(seed_value)
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)
 	else: game.setup_bridge(seed_value)
-	var bot := StrategoBotPolicy.new()
-	for key in weight_overrides: bot.weights[key] = float(weight_overrides[key])
+	# One policy per side so the two can hold different assumptions.
+	var bots: Dictionary = {}
+	for player in [StrategoGame.BLUE, StrategoGame.RED]:
+		var policy := StrategoBotPolicy.new()
+		for key in weight_overrides: policy.weights[key] = float(weight_overrides[key])
+		var profile: Dictionary = assume_blue if player == StrategoGame.BLUE else assume_red
+		for key in profile: policy.assumptions[key] = profile[key]
+		bots[player] = policy
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	# Skirmish has no positional objective, so occupancy is meaningless there.
@@ -68,12 +84,12 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	while not game.game_over and guard < 200:
 		guard += 1
 		for player in game.active_players.duplicate():
-			bot.plan_round(game, player, rng)
+			bots[player].plan_round(game, player, rng)
 			game.mark_player_ready(player)
 		game.resolve_main_and_ranged()
 		if game.game_over: break
 		for player in game.active_players.duplicate():
-			bot.plan_leftover(game, player, rng)
+			bots[player].plan_leftover(game, player, rng)
 			game.mark_player_ready(player)
 		game.resolve_leftover_phase()
 		# Objective occupancy and time-to-objective, measured per formation.
@@ -90,6 +106,8 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 		_melee_shapes[label] = int(_melee_shapes.get(label, 0)) + 1
 	_last_rounds = game.round_number
 	_accumulate(game, totals, occupancy, first_arrival)
+	var label := "draw" if game.winner == StrategoGame.DRAW else game.player_name(game.winner)
+	side_wins[label] = int(side_wins.get(label, 0)) + 1
 	if game.winner == StrategoGame.DRAW: return "draw"
 	return game.end_reason
 
@@ -127,6 +145,10 @@ func _report(totals: Dictionary, outcomes: Dictionary, round_total: int) -> void
 	print("average length: %.1f rounds" % (float(round_total) / maxf(1.0, float(games))))
 	print("outcomes: %s" % JSON.stringify(outcomes))
 	if not weight_overrides.is_empty(): print("weight overrides: %s" % JSON.stringify(weight_overrides))
+	if not assume_blue.is_empty() or not assume_red.is_empty():
+		print("Blue assumes: %s" % JSON.stringify(assume_blue if not assume_blue.is_empty() else StrategoBotPolicy.ASSUMPTION_DEFAULTS))
+		print("Red  assumes: %s" % JSON.stringify(assume_red if not assume_red.is_empty() else StrategoBotPolicy.ASSUMPTION_DEFAULTS))
+	print("wins by side: %s" % JSON.stringify(side_wins))
 	print("melee shapes: %s" % JSON.stringify(_melee_shapes))
 	var codes: Array = totals.keys()
 	var rank := func(code: String) -> float:
@@ -184,3 +206,15 @@ func _parse_roster(spec: String) -> Array:
 		var count := int(parts[1]) if parts.size() > 1 else 1
 		for _index in count: roster.append(code)
 	return roster
+
+
+## Assumption specs like "role=infantry,strength=5,weight=medium".
+func _parse_assumption(spec: String) -> Dictionary:
+	var result: Dictionary = {}
+	for pair in spec.split(",", false):
+		var halves := String(pair).split("=")
+		if halves.size() != 2: continue
+		var key := String(halves[0]).strip_edges()
+		var value := String(halves[1]).strip_edges()
+		result[key] = int(value) if key == "strength" else value
+	return result

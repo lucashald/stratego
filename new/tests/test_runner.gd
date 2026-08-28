@@ -618,7 +618,8 @@ func _test_meeting_engagement_hold_objective() -> void:
 	for piece: Dictionary in setup_game.pieces:
 		if int(piece.player) == StrategoGame.BLUE: blue_rows.append(int(piece.position.y))
 		else: red_rows.append(int(piece.position.y))
-	_expect(blue_rows.count(19) == blue_rows.size() and red_rows.count(0) == red_rows.size(), "both armies deploy on their own back rank")
+	_expect(blue_rows.count(19) == blue_rows.size() and red_rows.count(1) == red_rows.size(), "both armies deploy on facing lines")
+	_expect(absi(19 - 10) == absi(1 - 10), "both deployment lines are the same distance from the objective")
 	_expect(setup_game.total_strength(StrategoGame.BLUE) == setup_game.total_strength(StrategoGame.RED), "meeting engagements start symmetric")
 
 	var game := StrategoGame.new()

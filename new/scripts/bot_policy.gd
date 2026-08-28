@@ -27,9 +27,43 @@ const WEIGHT_DEFAULTS := {
 	"ranged_damage": 1.6,           # expected damage from a declared shot
 	"finish_target": 2.0,           # preferring targets a shot can actually kill
 	"idle": -1.2,                   # holding for no reason
+	"unknown_risk": -1.5,           # flat caution about fighting the unidentified
+}
+
+## What the bot pretends an unidentified enemy is when it has to judge a fight.
+## Deliberately a parameter rather than a constant: which assumption plays best
+## is an empirical question, and two bots holding different assumptions can be
+## matched against each other to settle it.
+const ASSUMPTION_DEFAULTS := {
+	"role": StrategoGame.ROLE_INFANTRY,
+	"weight": StrategoGame.WEIGHT_MEDIUM,
+	"strength": 5,
 }
 
 var weights: Dictionary = WEIGHT_DEFAULTS.duplicate(true)
+var assumptions: Dictionary = ASSUMPTION_DEFAULTS.duplicate(true)
+
+
+## A stand-in for an enemy whose identity has not been earned. Keeps the real
+## position so collision logic still works, and substitutes assumed statistics
+## for the ones the bot has no right to read.
+func _assumed_enemy(actual: Dictionary) -> Dictionary:
+	var weight := String(assumptions.get("weight", StrategoGame.WEIGHT_MEDIUM))
+	return {
+		"id": actual.get("id", -1), "player": actual.get("player", -1),
+		"position": actual.get("position", Vector2i(-1, -1)),
+		"type": StrategoGame.MEDIUM_INFANTRY, "alive": true,
+		"role": String(assumptions.get("role", StrategoGame.ROLE_INFANTRY)),
+		"weight": weight,
+		"strength": int(assumptions.get("strength", 5)),
+		"armor": int(StrategoGame.ARMOR_BY_WEIGHT.get(weight, 1)),
+	}
+
+
+## The enemy as this player is entitled to see it: the real formation once its
+## identity has been earned, the assumed profile until then.
+func _perceived_enemy(game: StrategoGame, player: int, actual: Dictionary) -> Dictionary:
+	return actual if game.is_piece_revealed_to(actual, player) else _assumed_enemy(actual)
 
 
 func plan_round(game: StrategoGame, player: int, rng: RandomNumberGenerator) -> void:
@@ -131,11 +165,13 @@ func _score_destination(game: StrategoGame, piece: Dictionary, player: int, dest
 	var occupant := game.piece_at(destination)
 	var entering_enemy: bool = not occupant.is_empty() and not game.are_allied_players(player, int(occupant.player)) and occupant.type != StrategoGame.FLAG
 	if entering_enemy:
-		# melee_advantage is positive when this formation is favoured attacking.
-		var advantage := game.melee_advantage(piece, occupant)
+		# Judge the fight against what this player actually knows, not the truth.
+		var defender := _perceived_enemy(game, player, occupant)
+		var advantage := game.melee_advantage(piece, defender)
 		score += float(weights.fight_advantage) * advantage
 		if advantage < 0.0: score += float(weights.losing_fight) * absf(advantage)
 		if piece.role == StrategoGame.ROLE_CAVALRY: score += float(weights.cavalry_charges)
+		if not game.is_piece_revealed_to(occupant, player): score += float(weights.unknown_risk)
 	elif holding:
 		# Standing still is how a formation gets attacked rather than attacking,
 		# which is the only way the Infantry bonus is ever collected.
@@ -165,10 +201,12 @@ func _ranged_candidates(game: StrategoGame, piece: Dictionary, player: int) -> A
 		if game.are_allied_players(player, int(target.player)): continue
 		if not game.is_piece_visible_to(target, player): continue
 		if StrategoGame.grid_distance(piece.position, target.position) > 2: continue
-		var damage := game.expected_ranged_damage(piece, target)
+		# "Shoot the weakest" would otherwise read strengths the bot has not earned.
+		var perceived := _perceived_enemy(game, player, target)
+		var damage := game.expected_ranged_damage(piece, perceived)
 		var score := float(weights.ranged_damage) * damage
 		# Prefer a shot that finishes something over chipping a healthy formation.
-		if damage >= float(target.strength): score += float(weights.finish_target)
+		if damage >= float(perceived.strength): score += float(weights.finish_target)
 		score += float(weights.archer_exposure) * float(_archer_threat_count(game, player, piece.position))
 		results.append({
 			"to": piece.position, "path": [], "score": score,
