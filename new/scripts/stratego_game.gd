@@ -41,6 +41,8 @@ const PHASE_GAME_OVER := "game_over"
 const SCENARIO_FOUR_PLAYER := "four_player"
 const SCENARIO_BRIDGE := "bridge"
 const OBJECTIVE_HOLD_SQUARE := "hold_square"
+const OBJECTIVE_ELIMINATE := "eliminate"
+const SCENARIO_SKIRMISH := "skirmish"
 const OBJECTIVE_REACH_AREA := "reach_area"
 const OBJECTIVE_SURVIVE := "survive"
 const SCENARIO_MEETING := "meeting"
@@ -140,6 +142,8 @@ var bridge_defender := RED
 var bridge_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var bridge_strength_target := BRIDGE_STRENGTH_TARGET
 var _meeting_hold_rounds := DEFAULT_HOLD_ROUNDS
+var _skirmish_turn_limit := 40
+var _skirmish_separation := 3
 var _meeting_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var setup_seed := 0
 var replay_rounds: Array[Dictionary] = []
@@ -203,6 +207,8 @@ func setup_empty() -> void:
 	bridge_strength_target = BRIDGE_STRENGTH_TARGET
 	_meeting_hold_rounds = DEFAULT_HOLD_ROUNDS
 	_meeting_turn_limit = DEFAULT_BRIDGE_TURN_LIMIT
+	_skirmish_turn_limit = 40
+	_skirmish_separation = 3
 	setup_seed = 0
 	replay_rounds.clear()
 	current_player = BLUE
@@ -278,6 +284,37 @@ func setup_meeting(seed_value: int = 0, first: int = BLUE, second: int = RED, ho
 	active_players.assign([second, first])
 	_sort_active_players()
 	current_player = first
+	_record_all_sightings()
+
+
+## Skirmish: a deliberately dull control scenario. Bare board, no terrain, no
+## positional objective, two facing lines `separation` rows apart, and the only
+## way to win is to destroy the other army.
+##
+## Separation is the important dial. At 2 or 3 every formation is in contact
+## immediately regardless of Weight, so the result reflects combat maths alone;
+## widen it and travel time re-enters, which is the variable the bridge and
+## meeting scenarios are dominated by. Rosters are parameters so a run can test
+## one matchup at a time rather than a whole army list.
+func setup_skirmish(seed_value: int = 0, blue_roster: Array = MEETING_ROSTER, red_roster: Array = MEETING_ROSTER, separation: int = 3, turn_limit: int = 40, use_private_battle_results: bool = true) -> void:
+	setup_empty()
+	scenario = SCENARIO_SKIRMISH
+	configured_player_count = 2
+	private_battle_results = use_private_battle_results
+	_skirmish_turn_limit = maxi(1, turn_limit)
+	_skirmish_separation = clampi(separation, 1, BOARD_SIZE - 2)
+	player_teams[BLUE] = BLUE
+	player_teams[RED] = RED
+	_seed_rng(seed_value)
+	var middle := BOARD_SIZE / 2
+	var blue_row := clampi(middle + (_skirmish_separation + 1) / 2, 0, BOARD_SIZE - 1)
+	var red_row := clampi(blue_row - _skirmish_separation, 0, BOARD_SIZE - 1)
+	_place_roster(BLUE, blue_roster, _back_rank_deployment(blue_row), _rng)
+	_place_roster(RED, red_roster, _back_rank_deployment(red_row), _rng)
+	add_eliminate_objective(_skirmish_turn_limit)
+	active_players.assign([RED, BLUE])
+	_sort_active_players()
+	current_player = BLUE
 	_record_all_sightings()
 
 
@@ -458,6 +495,13 @@ func add_reach_area_objective(player: int, area: Rect2i, strength: int, reason: 
 	})
 
 
+## eliminate: no positional goal at all, just destroy the other army. Losing
+## every formation already loses the game, so this only supplies the deadline
+## that stops two survivors circling each other forever.
+func add_eliminate_objective(turn_limit: int) -> void:
+	objectives.append({"type": OBJECTIVE_ELIMINATE, "turn_limit": maxi(1, turn_limit)})
+
+
 ## survive: a player wins simply by still being in the game at `until_round`.
 ## Paired with reach_area, this is an attacker/defender scenario.
 func add_survive_objective(player: int, until_round: int, reason: String = "held_out") -> void:
@@ -506,6 +550,11 @@ func _check_objectives() -> void:
 		if kind == OBJECTIVE_SURVIVE:
 			if round_number >= int(objective.until_round):
 				_finish_game(int(objective.player), reason)
+				return
+			continue
+		if kind == OBJECTIVE_ELIMINATE:
+			if round_number >= int(objective.turn_limit):
+				_finish_game(DRAW, "stalemate")
 				return
 			continue
 		if kind != OBJECTIVE_HOLD_SQUARE:
@@ -1927,6 +1976,9 @@ func describe_objectives() -> Array:
 			entry["summary"] = "%s wins with %d Strength inside rows %d-%d at the end of a round (currently %d)." % [
 				player_name(owner), int(objective.strength), area.position.y, area.end.y - 1, strength_in_area(owner, area),
 			]
+		elif kind == OBJECTIVE_ELIMINATE:
+			entry["turn_limit"] = int(objective.turn_limit)
+			entry["summary"] = "Destroy the opposing army. A draw if both survive to the end of round %d." % int(objective.turn_limit)
 		elif kind == OBJECTIVE_SURVIVE:
 			entry["player"] = int(objective.player)
 			entry["until_round"] = int(objective.until_round)
@@ -1984,6 +2036,7 @@ func build_replay_document() -> Dictionary:
 			"bridge_attacker": bridge_attacker, "bridge_defender": bridge_defender,
 			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
 			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
+			"skirmish_turn_limit": _skirmish_turn_limit, "skirmish_separation": _skirmish_separation,
 			"teams": teams,
 		},
 		"rounds": replay_rounds.duplicate(true),
@@ -2117,6 +2170,8 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 		replay_game.bridge_strength_target = int(setup.get("bridge_strength_target", BRIDGE_STRENGTH_TARGET))
 	elif replay_scenario == SCENARIO_MEETING:
 		replay_game.setup_meeting(seed, BLUE, RED, int(setup.get("meeting_hold_rounds", DEFAULT_HOLD_ROUNDS)), int(setup.get("meeting_turn_limit", DEFAULT_BRIDGE_TURN_LIMIT)), privacy)
+	elif replay_scenario == SCENARIO_SKIRMISH:
+		replay_game.setup_skirmish(seed, MEETING_ROSTER, MEETING_ROSTER, int(setup.get("skirmish_separation", 3)), int(setup.get("skirmish_turn_limit", 40)), privacy)
 	elif replay_scenario == SCENARIO_FOUR_PLAYER:
 		replay_game.setup_random(seed, int(setup.get("player_count", 4)), privacy)
 	else:

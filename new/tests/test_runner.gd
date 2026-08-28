@@ -665,6 +665,22 @@ func _test_meeting_engagement_hold_objective() -> void:
 	_expect(bool(verified.get("ok", false)), "a meeting engagement replays deterministically: %s" % String(verified.get("message", "")))
 	_expect(String(verified.get("digest", "")) == replayable.state_digest(), "the meeting replay reconstructs the exact final state")
 
+	var skirmish := StrategoGame.new()
+	skirmish.setup_skirmish(3, ["LI", "LI"], ["LC", "LC"], 3, 40)
+	_expect(skirmish.scenario == StrategoGame.SCENARIO_SKIRMISH, "skirmish loads its own scenario")
+	_expect(skirmish.terrain.is_empty(), "the control scenario has no terrain")
+	_expect(skirmish.count_alive(StrategoGame.BLUE) == 2 and skirmish.count_alive(StrategoGame.RED) == 2, "skirmish rosters are taken from their parameters")
+	var rows: Dictionary = {}
+	for piece: Dictionary in skirmish.pieces: rows[int(piece.player)] = int(piece.position.y)
+	_expect(absi(int(rows[StrategoGame.BLUE]) - int(rows[StrategoGame.RED])) == 3, "the two lines stand the requested distance apart")
+	_expect(skirmish.objective_aim_point(StrategoGame.BLUE) == Vector2i(-1, -1), "an elimination scenario has no positional aim point")
+	for piece: Dictionary in skirmish.pieces:
+		if int(piece.player) == StrategoGame.RED: skirmish.pieces[piece.id].strength = 0
+	skirmish._remove_piece(skirmish.find_alive_piece(StrategoGame.RED, "LC").id)
+	skirmish._remove_piece(skirmish.find_alive_piece(StrategoGame.RED, "LC").id)
+	_ready_and_resolve(skirmish)
+	_expect(skirmish.game_over and skirmish.winner == StrategoGame.BLUE and skirmish.end_reason == "army_destroyed", "destroying the opposing army wins the control scenario")
+
 	var drawn := StrategoGame.new()
 	drawn.setup_empty()
 	drawn.scenario = StrategoGame.SCENARIO_MEETING
