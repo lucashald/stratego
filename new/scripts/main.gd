@@ -17,6 +17,7 @@ var minimap: StrategoBoardView
 var examined_piece_id := StrategoGame.EMPTY
 var top_bar_actions: HBoxContainer
 var objective_pips: HBoxContainer
+const PIP_LIMIT := 6
 var phase_title: Label
 var phase_subtitle: Label
 var units_label: Label
@@ -55,6 +56,10 @@ var group_move_title: Label
 var battle_panel: PanelContainer
 var battle_title: Label
 var battle_body: RichTextLabel
+var battle_cards: VBoxContainer
+var battle_stats: GridContainer
+var battle_result: Label
+var battle_result_detail: Label
 var event_panel: PanelContainer
 var left_tabs: TabContainer
 var roster_list: VBoxContainer
@@ -603,7 +608,7 @@ func _build_battle_panel() -> void:
 	add_child(battle_panel)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 16)
-	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_right", 20)
 	margin.add_theme_constant_override("margin_top", 15)
 	margin.add_theme_constant_override("margin_bottom", 15)
 	battle_panel.add_child(margin)
@@ -621,10 +626,35 @@ func _build_battle_panel() -> void:
 	battle_body = RichTextLabel.new()
 	battle_body.bbcode_enabled = true
 	battle_body.scroll_active = false
-	battle_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	battle_body.fit_content = true
 	battle_body.add_theme_font_size_override("normal_font_size", 16)
 	battle_body.add_theme_color_override("default_color", Color("#dfddd7"))
+	# Facing banner cards for the two sides, the numbers between them, and the
+	# outcome in one large line at the foot.
+	battle_cards = VBoxContainer.new()
+	battle_cards.add_theme_constant_override("separation", 4)
+	box.add_child(battle_cards)
+	battle_stats = GridContainer.new()
+	battle_stats.columns = 3
+	battle_stats.add_theme_constant_override("h_separation", 10)
+	battle_stats.add_theme_constant_override("v_separation", 3)
+	box.add_child(battle_stats)
 	box.add_child(battle_body)
+	var battle_spacer := Control.new()
+	battle_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(battle_spacer)
+	battle_result = Label.new()
+	battle_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	battle_result.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	battle_result.add_theme_font_size_override("font_size", 21)
+	battle_result.add_theme_color_override("font_color", Color("#efc77c"))
+	box.add_child(battle_result)
+	battle_result_detail = Label.new()
+	battle_result_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	battle_result_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	battle_result_detail.add_theme_font_size_override("font_size", 14)
+	battle_result_detail.add_theme_color_override("font_color", Color("#a9a294"))
+	box.add_child(battle_result_detail)
 	box.add_child(HSeparator.new())
 	playback_controls = HBoxContainer.new()
 	playback_controls.add_theme_constant_override("separation", 4)
@@ -1277,22 +1307,19 @@ func _resolution_event_duration(event: Dictionary) -> float:
 
 func _update_battle_card(event: Dictionary) -> void:
 	var action := String(event.get("action", "event"))
-	var is_battle := bool(event.get("combat", false))
-	# The header already says ACTIVE BATTLE, so this line carries only the name.
 	battle_title.text = _battle_name(event)
-	if not is_battle: battle_title.text = _battle_name(event)
+	battle_result.text = ""
+	battle_result_detail.text = ""
 	if action == "leftover_move":
 		var piece_id := int(event.get("piece_id", StrategoGame.EMPTY))
-		var piece_text := "Formation"
-		if piece_id >= 0 and piece_id < game.pieces.size():
-			var piece: Dictionary = game.pieces[piece_id]
-			piece_text = "%s\n%s" % [game.player_name(int(piece.player)).to_upper(), game.piece_description(piece)]
-		battle_body.text = "[center][color=#f2b15b][font_size=19]REPOSITION[/font_size][/color]\n\n%s\n\n%s  ->  %s\n\n[color=#efc77c][b]MOVE COMPLETED[/b][/color][/center]" % [piece_text, str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
+		var moved: Array[int] = []
+		if piece_id >= 0 and piece_id < game.pieces.size(): moved.append(piece_id)
+		_refresh_battle_cards(moved)
+		for child in battle_stats.get_children(): child.queue_free()
+		battle_body.visible = true
+		battle_body.text = "[center]%s  ->  %s[/center]" % [str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
+		battle_result.text = "MOVE COMPLETED"
 		return
-	# The header says ACTIVE BATTLE and the title names the event; a headline
-	# that repeats the title is the same words a third time.
-	var headline := _action_label(action)
-	var content := "" if headline == battle_title.text else "[center][color=#8fc4ff][font_size=18]%s[/font_size][/color][/center]\n\n" % headline
 	var ids: Array = event.get("participants", [])
 	if action == "ranged":
 		ids = [int(event.get("shooter_id", StrategoGame.EMPTY)), int(event.get("target_id", StrategoGame.EMPTY))]
@@ -1301,84 +1328,175 @@ func _update_battle_card(event: Dictionary) -> void:
 		var id := int(id_value)
 		if id >= 0 and id < game.pieces.size():
 			valid_ids.append(id)
+	_refresh_battle_cards(valid_ids)
+	for child in battle_stats.get_children(): child.queue_free()
+	if valid_ids.is_empty():
+		# Nothing fought, so the outcome line is the whole card.
+		battle_body.text = ""
+		battle_result_detail.text = _result_detail(event, StrategoGame.EMPTY)
+		return
+	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
+	battle_result.text = _result_label(event, winner_id)
+	battle_result_detail.text = _result_detail(event, winner_id)
 	# Two participants is the ordinary case and reads far better as a comparison
 	# than as two stacked blocks. Multiway battles keep the list form.
-	if valid_ids.size() == 2 and action != "ranged":
-		battle_body.text = content + _battle_comparison(event, valid_ids)
+	if valid_ids.size() == 2:
+		_refresh_battle_stats(event, valid_ids)
+		battle_body.text = ""
+		battle_body.visible = false
 		return
+	var content := ""
 	for index in valid_ids.size():
 		var piece: Dictionary = game.pieces[valid_ids[index]]
-		var side_color := "#78b7ff" if int(piece.player) == StrategoGame.BLUE else "#ff8f78"
-		content += "[color=%s][b]%s[/b][/color]\n%s\n" % [side_color, game.player_name(int(piece.player)).to_upper(), game.piece_description(piece)]
 		var roll := _event_roll(event, valid_ids[index], index)
 		# A natural 10 adds a point of damage after Armor, and the score alone
 		# never reveals it: a weakened formation caps its score well below 10,
 		# so the damage otherwise looks like it does not follow from the numbers.
 		var roll_note := "  [color=#e7c47d](natural 10: +1 damage)[/color]" if roll == 10 else ""
-		content += "D10 roll   [b]%d[/b]%s\nFinal score   [b]%d[/b]\nDamage taken   [b]%d[/b]\nRemaining Strength   [b]%d[/b]\n" % [roll, roll_note, _event_score(event, valid_ids[index], index), _event_damage(event, valid_ids[index], index), int(piece.strength)]
-		if index < valid_ids.size() - 1:
-			content += "\n[center][color=#aaa39a]VERSUS[/color][/center]\n\n"
-	if valid_ids.is_empty():
-		battle_body.text = "[center][color=#aaa39a]%s[/color][/center]" % _result_detail(event, StrategoGame.EMPTY)
-		return
-	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
-	content += "\n[center][color=#efc77c][b]%s[/b][/color]\n%s[/center]" % [_result_label(event, winner_id), _result_detail(event, winner_id)]
+		content += "[color=#efc77c][b]%s[/b][/color]\nD10 roll   [b]%d[/b]%s\nFinal score   [b]%d[/b]\nDamage taken   [b]%d[/b]\nRemaining Strength   [b]%d[/b]\n\n" % [game.piece_description(piece), roll, roll_note, _event_score(event, valid_ids[index], index), _event_damage(event, valid_ids[index], index), int(piece.strength)]
 	battle_body.text = content
+	battle_body.visible = content != ""
 
 
-## A head-to-head table, laid out so every number in the damage calculation is
-## on the page: the raw die, the Strength that capped it, the role bonus, the
-## armour that was subtracted, and the natural-10 chip. Without these the damage
-## looks unrelated to the score, which is exactly how players misread it.
-func _battle_comparison(event: Dictionary, ids: Array[int]) -> String:
+## One side of a battle as a banner card: the same shield the board draws, the
+## formation's name, and its army. Two of these facing each other say who is
+## fighting before a single number has to be read.
+func _battle_side_card(piece: Dictionary) -> Control:
+	var tint: Color = board_view._player_colors(int(piece.player)).edge
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _panel_style(Color("#0b1620"), Color(tint, 0.55), 1, 6))
+	var margin := MarginContainer.new()
+	for side in ["left", "right"]: margin.add_theme_constant_override("margin_" + side, 10)
+	for side in ["top", "bottom"]: margin.add_theme_constant_override("margin_" + side, 8)
+	card.add_child(margin)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	margin.add_child(row)
+	var shield := Control.new()
+	shield.custom_minimum_size = Vector2(46, 46)
+	shield.draw.connect(_draw_card_shield.bind(shield, piece))
+	row.add_child(shield)
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", 1)
+	column.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_child(column)
+	var army := Label.new()
+	army.text = game.player_name(int(piece.player)).to_upper()
+	army.add_theme_font_size_override("font_size", 13)
+	army.add_theme_color_override("font_color", tint)
+	column.add_child(army)
+	var name_label := Label.new()
+	name_label.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+	name_label.add_theme_font_size_override("font_size", 17)
+	name_label.add_theme_color_override("font_color", Color("#f3eee5"))
+	column.add_child(name_label)
+	var starting := Label.new()
+	starting.text = "STARTING STRENGTH  %d" % int(piece.max_strength)
+	starting.add_theme_font_size_override("font_size", 12)
+	starting.add_theme_color_override("font_color", Color("#a9a294"))
+	column.add_child(starting)
+	return card
+
+
+## The board's banner at card size, so the same shape means the same formation
+## whether you are reading the map or the panel.
+func _draw_card_shield(host: Control, piece: Dictionary) -> void:
+	var width := host.size.x
+	var height := host.size.y * 0.94
+	var banner := PackedVector2Array([
+		Vector2.ZERO, Vector2(width, 0), Vector2(width, height * 0.72),
+		Vector2(width * 0.5, height), Vector2(0, height * 0.72),
+	])
+	host.draw_colored_polygon(banner, board_view._player_colors(int(piece.player)).fill)
+	var outline := banner.duplicate()
+	outline.append(banner[0])
+	var rim := Color("#c69350")
+	if String(piece.weight) == StrategoGame.WEIGHT_MEDIUM: rim = Color("#8f9dad")
+	elif String(piece.weight) == StrategoGame.WEIGHT_HEAVY: rim = Color("#eef3fa")
+	host.draw_polyline(outline, rim, 3.0, true)
+	var font := ThemeDB.fallback_font
+	var role := String(piece.role).substr(0, 1).to_upper()
+	var role_width := font.get_string_size(role, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+	host.draw_string(font, Vector2((width - role_width) * 0.5, height * 0.32), role, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f6eee0"))
+	var numeral := str(int(piece.strength))
+	var numeral_width := font.get_string_size(numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
+	host.draw_string(font, Vector2((width - numeral_width) * 0.5, height * 0.72), numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+
+
+## Crossed blades between the two cards, the same mark the board uses for a
+## contested square.
+func _battle_swords() -> Control:
+	var host := Control.new()
+	host.custom_minimum_size = Vector2(0, 26)
+	host.draw.connect(_draw_swords.bind(host))
+	return host
+
+
+func _draw_swords(host: Control) -> void:
+	var middle := host.size * 0.5
+	var reach := 11.0
+	for sign_value in [-1.0, 1.0]:
+		host.draw_line(middle + Vector2(-reach * sign_value, -reach), middle + Vector2(reach * sign_value, reach), Color("#c8a15c"), 2.0, true)
+	host.draw_line(middle + Vector2(-52, 0), middle + Vector2(-22, 0), Color(0.55, 0.47, 0.34, 0.45), 1.0)
+	host.draw_line(middle + Vector2(22, 0), middle + Vector2(52, 0), Color(0.55, 0.47, 0.34, 0.45), 1.0)
+
+
+## Rebuild the facing cards for however many formations the event involves.
+func _refresh_battle_cards(ids: Array[int]) -> void:
+	for child in battle_cards.get_children(): child.queue_free()
+	for index in ids.size():
+		if index > 0: battle_cards.add_child(_battle_swords())
+		battle_cards.add_child(_battle_side_card(game.pieces[ids[index]]))
+
+
+## A head-to-head grid, laid out so every number in the damage calculation is on
+## the page: the raw die, the Strength that capped it, the role bonus, the armour
+## that was subtracted, and the natural-10 chip. Without these the damage looks
+## like it does not follow from the roll.
+func _refresh_battle_stats(event: Dictionary, ids: Array[int]) -> void:
+	for child in battle_stats.get_children(): child.queue_free()
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
 	var left: Dictionary = game.pieces[ids[0]]
 	var right: Dictionary = game.pieces[ids[1]]
-	var rows: Array = []
-
-	var names: Array = []
-	for id in ids:
-		var piece: Dictionary = game.pieces[id]
-		var tint := "#78b7ff" if int(piece.player) == StrategoGame.BLUE else "#ff8f78"
-		names.append("[color=%s][b]%s[/b][/color]" % [tint, game.piece_description(piece)])
-	rows.append([names[0], "", names[1]])
-
 	var bonuses: Dictionary = event.get("role_bonuses", {})
 	var capped: Dictionary = event.get("capped_rolls", {})
 	var values := func(source: Dictionary, id: int) -> int:
 		return int(source.get(id, source.get(str(id), 0)))
-
-	rows.append([str(_event_roll(event, ids[0], 0)), "D10 ROLL", str(_event_roll(event, ids[1], 1))])
+	var plain := Color("#e6e1d6")
+	var rows: Array = []
+	rows.append([str(_event_roll(event, ids[0], 0)), "D10 ROLL", str(_event_roll(event, ids[1], 1)), plain])
 	if not capped.is_empty():
-		rows.append([str(values.call(capped, ids[0])), "CAPPED BY STRENGTH", str(values.call(capped, ids[1]))])
+		rows.append([str(values.call(capped, ids[0])), "CAPPED", str(values.call(capped, ids[1])), plain])
 	if not bonuses.is_empty():
-		var render_bonus := func(value: int) -> String:
-			return "[color=#9fdc8a]+%d[/color]" % value if value > 0 else "0"
-		rows.append([render_bonus.call(values.call(bonuses, ids[0])), "ROLE BONUS", render_bonus.call(values.call(bonuses, ids[1]))])
-	rows.append(["[b]%d[/b]" % _event_score(event, ids[0], 0), "FINAL SCORE", "[b]%d[/b]" % _event_score(event, ids[1], 1)])
-
+		var render := func(value: int) -> String: return "+%d" % value if value > 0 else "0"
+		rows.append([render.call(values.call(bonuses, ids[0])), "ROLE", render.call(values.call(bonuses, ids[1])), Color("#9fdc8a")])
+	rows.append([str(_event_score(event, ids[0], 0)), "SCORE", str(_event_score(event, ids[1], 1)), Color("#f3eee5")])
 	var armour := func(piece: Dictionary) -> String:
-		var doubled := int(piece.id) == winner_id
-		return "%d [color=#c8a15c](doubled)[/color]" % (int(piece.armor) * 2) if doubled else str(int(piece.armor))
-	rows.append([armour.call(left), "ARMOUR", armour.call(right)])
-
+		return str(int(piece.armor) * 2) if int(piece.id) == winner_id else str(int(piece.armor))
+	rows.append([armour.call(left), "ARMOUR", armour.call(right), plain])
 	for index in 2:
 		if _event_roll(event, ids[index], index) == 10:
-			var chip := ["", "NATURAL 10  +1 DAMAGE", ""]
-			chip[index * 2] = "[color=#e7c47d]+1[/color]"
+			var chip := ["", "NATURAL 10", "", Color("#e7c47d")]
+			chip[index * 2] = "+1"
 			rows.append(chip)
 			break
-
-	rows.append(["[color=#ff9d84]%d[/color]" % _event_damage(event, ids[0], 0), "DAMAGE TAKEN", "[color=#ff9d84]%d[/color]" % _event_damage(event, ids[1], 1)])
-	rows.append([str(int(left.strength)), "STRENGTH LEFT", str(int(right.strength))])
-
-	var table := "[table=3]"
+	rows.append([str(_event_damage(event, ids[0], 0)), "DAMAGE", str(_event_damage(event, ids[1], 1)), Color("#ff9d84")])
+	rows.append([str(int(left.strength)), "LEFT", str(int(right.strength)), plain])
 	for row: Array in rows:
-		table += "[cell]%s[/cell][cell][color=#a9a294]%s[/color][/cell][cell]%s[/cell]" % [row[0], row[1], row[2]]
-	table += "[/table]"
-	return "%s\n\n[center][color=#efc77c][b]%s[/b][/color]\n%s[/center]" % [
-		table, _result_label(event, winner_id), _result_detail(event, winner_id),
-	]
+		battle_stats.add_child(_stat_cell(String(row[0]), HORIZONTAL_ALIGNMENT_RIGHT, row[3], 16))
+		battle_stats.add_child(_stat_cell(String(row[1]), HORIZONTAL_ALIGNMENT_CENTER, Color("#a9a294"), 13))
+		battle_stats.add_child(_stat_cell(String(row[2]), HORIZONTAL_ALIGNMENT_LEFT, row[3], 16))
+
+
+func _stat_cell(text_value: String, alignment: int, tint: Color, size: int) -> Label:
+	var cell := Label.new()
+	cell.text = text_value
+	cell.horizontal_alignment = alignment
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.add_theme_font_size_override("font_size", size)
+	cell.add_theme_color_override("font_color", tint)
+	return cell
 
 
 func _event_score(event: Dictionary, piece_id: int, index: int) -> int:
@@ -1715,9 +1833,10 @@ func _update_interface(update_detail: bool = true) -> void:
 		objective_label.text = "OBJECTIVE: Hold the centre" + ("    Red %d/%d" % [rival, required] if rival > 0 else "")
 		_refresh_objective_pips(held, required)
 	else:
-		objective_label.text = "%d Strength remaining" % game.total_strength(StrategoGame.BLUE)
-		objective_progress.max_value = maxf(1.0, game.total_strength(StrategoGame.BLUE))
-		objective_progress.value = game.total_strength(StrategoGame.BLUE)
+		# Destroy-the-army has no countable progress, so the slot carries the
+		# objective in words and the pips are cleared rather than left stale.
+		objective_label.text = "OBJECTIVE: Destroy the enemy army    %d Strength remaining" % game.total_strength(StrategoGame.BLUE)
+		_refresh_objective_pips(0, 0)
 	for player in count_labels:
 		var label: Label = count_labels[player]
 		label.visible = player in game.active_players or player in game.eliminated_players
@@ -1759,13 +1878,23 @@ func _battle_title() -> String:
 	return "%s  ·  Round %d" % [String(name_by_scenario.get(game.scenario, "Battle")), game.round_number]
 
 
-## Objective progress as whole pips, filled for rounds already banked.
+## Objective progress as whole pips, filled for rounds already banked. Pips only
+## read as a count while you can take them in at a glance, so a large total
+## falls back to the ratio in words.
 func _refresh_objective_pips(filled: int, total: int) -> void:
 	if objective_pips == null: return
 	for child in objective_pips.get_children(): child.queue_free()
-	for index in maxi(0, total):
+	if total <= 0: return
+	if total > PIP_LIMIT:
+		var ratio := Label.new()
+		ratio.add_theme_font_size_override("font_size", 15)
+		ratio.add_theme_color_override("font_color", Color("#e7c47d"))
+		ratio.text = "%d / %d" % [filled, total]
+		objective_pips.add_child(ratio)
+		return
+	for index in total:
 		var pip := Label.new()
-		pip.text = "●" if index < filled else "○"
+		pip.text = "\u25cf" if index < filled else "\u25cb"
 		pip.add_theme_font_size_override("font_size", 17)
 		pip.add_theme_color_override("font_color", Color("#e7c47d") if index < filled else Color(0.55, 0.55, 0.5, 0.6))
 		objective_pips.add_child(pip)

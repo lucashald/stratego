@@ -17,6 +17,9 @@ var _resolve := false
 var _zoom := 0.0
 var _pan := Vector2.ZERO
 var _tab := -1
+var _rounds := 0
+var _spectate := false
+var _played := 0
 
 
 func _initialize() -> void:
@@ -31,6 +34,10 @@ func _initialize() -> void:
 	_zoom = float(arguments.get("zoom", "0"))
 	_pan = Vector2(float(arguments.get("panx", "0")), float(arguments.get("pany", "0")))
 	_tab = int(arguments.get("tab", "-1"))
+	# Play whole rounds before shooting, so a real melee card can be checked.
+	_rounds = int(arguments.get("rounds", "0"))
+	# Both sides driven by the bot, so battles actually happen unattended.
+	_spectate = String(arguments.get("spectate", "0")) == "1"
 	# In a SceneTree script `root` is the Window itself.
 	root.size = Vector2i(int(arguments.get("width", 1600)), int(arguments.get("height", 900)))
 	var packed: PackedScene = load("res://scenes/main.tscn")
@@ -43,7 +50,9 @@ func _process(_delta: float) -> bool:
 	# Switch scenario once the interface has built itself, not during _initialize.
 	if not _started and _counted >= 3:
 		_started = true
-		if _scenario == StrategoGame.SCENARIO_BRIDGE and _main.has_method("start_bridge_game"):
+		if _spectate and _main.has_method("start_spectator_game"):
+			_main.start_spectator_game()
+		elif _scenario == StrategoGame.SCENARIO_BRIDGE and _main.has_method("start_bridge_game"):
 			_main.start_bridge_game()
 		elif _main.has_method("start_meeting_game"):
 			_main.start_meeting_game()
@@ -51,13 +60,21 @@ func _process(_delta: float) -> bool:
 			_main.board_view.zoom_level = _zoom
 			_main.board_view.pan_offset = _pan
 			_main.board_view.queue_redraw()
-		if _resolve:
+		if _resolve and _rounds <= 0:
 			_main.call_deferred("_on_ready_pressed")
 	if _started and _reveal and _main.get("board_view") != null:
 		_main.board_view.reveal_all = true
 		_main.board_view.queue_redraw()
 	if _tab >= 0 and _main.get("left_tabs") != null:
 		_main.left_tabs.current_tab = _tab
+	# One round per handful of frames: end planning, skip its playback, repeat.
+	if _rounds > 0 and _started and _counted % 6 == 0 and not _main.game.game_over:
+		if bool(_main.resolution_mode):
+			_main._skip_to_end_of_round()
+		elif _played < _rounds:
+			_played += 1
+			_main._on_ready_pressed()
+			if _played >= _rounds and _resolve: _rounds = 0
 	if _counted < _frames: return false
 	var image := root.get_texture().get_image()
 	image.save_png(_out)
