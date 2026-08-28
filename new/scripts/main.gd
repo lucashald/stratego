@@ -1,8 +1,8 @@
 extends Control
 
 const HUD_BLUE := Color("#79b9ff")
-const HUD_GOLD := Color("#b79254")
-const PANEL_BG := Color(0.025, 0.055, 0.07, 0.93)
+const HUD_GOLD := Color("#c9a25e")
+const PANEL_BG := Color(0.035, 0.055, 0.095, 0.96)
 const LAST_REPLAY_PATH := "user://replays/last_replay.json"
 
 var game := StrategoGame.new()
@@ -16,6 +16,7 @@ var minimap: StrategoBoardView
 
 var examined_piece_id := StrategoGame.EMPTY
 var top_bar_actions: HBoxContainer
+var objective_pips: HBoxContainer
 var phase_title: Label
 var phase_subtitle: Label
 var units_label: Label
@@ -74,8 +75,25 @@ var playback_pause_button: Button
 var zoom_label: Label
 
 
+## A serif face for the whole interface. The mockups' character comes as much
+## from the letterforms as from the gold: a sans-serif reads as a utility, a
+## serif reads as a campaign map. SystemFont falls back through the list, so a
+## machine missing one still gets a serif.
+func _apply_theme() -> void:
+	var serif := SystemFont.new()
+	serif.font_names = PackedStringArray(["Garamond", "Georgia", "Palatino Linotype", "Book Antiqua", "Times New Roman", "serif"])
+	serif.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+	var ui := Theme.new()
+	for kind in ["Label", "Button", "RichTextLabel", "TabContainer", "PopupMenu", "CheckButton"]:
+		ui.set_font("font", kind, serif)
+	ui.set_font("normal_font", "RichTextLabel", serif)
+	ui.set_font("bold_font", "RichTextLabel", serif)
+	theme = ui
+
+
 func _ready() -> void:
 	rng.randomize()
+	_apply_theme()
 	_build_interface()
 	start_bridge_game()
 	_start_remote_bridge()
@@ -179,43 +197,44 @@ func _build_objective_panel() -> void:
 	crest.add_theme_stylebox_override("normal", _panel_style(Color("#0b2340"), HUD_GOLD, 2, 3))
 	row.add_child(crest)
 
+	# The battle's name, not the phase: the phase bar already says which step we
+	# are in, and repeating it here wastes the most prominent slot on the screen.
 	phase_title = Label.new()
-	phase_title.custom_minimum_size.x = 210
+	phase_title.custom_minimum_size.x = 260
 	phase_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	phase_title.add_theme_font_size_override("font_size", 20)
-	phase_title.add_theme_color_override("font_color", HUD_BLUE)
+	phase_title.add_theme_font_size_override("font_size", 21)
+	phase_title.add_theme_color_override("font_color", Color("#e7c47d"))
 	row.add_child(phase_title)
 
-	phase_subtitle = Label.new()
-	phase_subtitle.custom_minimum_size.x = 250
-	phase_subtitle.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	phase_subtitle.add_theme_font_size_override("font_size", 13)
-	phase_subtitle.add_theme_color_override("font_color", Color("#ddd8d0"))
-	row.add_child(phase_subtitle)
+	var divider := VSeparator.new()
+	row.add_child(divider)
 
-	row.add_child(VSeparator.new())
-
-	units_label = Label.new()
-	units_label.text = "Units 0"
-	units_label.custom_minimum_size.x = 78
-	units_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	units_label.add_theme_font_size_override("font_size", 15)
-	row.add_child(units_label)
-
-	var objective_box := VBoxContainer.new()
+	var objective_box := HBoxContainer.new()
 	objective_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	objective_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	objective_box.add_theme_constant_override("separation", 3)
+	objective_box.alignment = BoxContainer.ALIGNMENT_BEGIN
+	objective_box.add_theme_constant_override("separation", 12)
 	row.add_child(objective_box)
 	objective_label = Label.new()
-	objective_label.add_theme_font_size_override("font_size", 14)
+	objective_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	objective_label.add_theme_font_size_override("font_size", 15)
 	objective_label.add_theme_color_override("font_color", Color("#f2eee8"))
 	objective_box.add_child(objective_label)
+	# Discrete pips rather than a bar: the objective is counted in whole rounds,
+	# and a bar implies a continuous quantity it does not have.
+	objective_pips = HBoxContainer.new()
+	objective_pips.alignment = BoxContainer.ALIGNMENT_CENTER
+	objective_pips.add_theme_constant_override("separation", 7)
+	objective_box.add_child(objective_pips)
+
+	# Kept off-screen: the round summary still writes to these.
+	phase_subtitle = Label.new()
+	phase_subtitle.visible = false
+	objective_box.add_child(phase_subtitle)
+	units_label = Label.new()
+	units_label.visible = false
+	objective_box.add_child(units_label)
 	objective_progress = ProgressBar.new()
-	objective_progress.custom_minimum_size = Vector2(180, 8)
-	objective_progress.show_percentage = false
-	objective_progress.add_theme_stylebox_override("background", _panel_style(Color("#253136"), Color.TRANSPARENT, 0, 5))
-	objective_progress.add_theme_stylebox_override("fill", _panel_style(Color("#277ed0"), Color.TRANSPARENT, 0, 5))
+	objective_progress.visible = false
 	objective_box.add_child(objective_progress)
 
 	top_bar_actions = HBoxContainer.new()
@@ -229,42 +248,34 @@ func _build_phase_banner() -> void:
 
 
 func _build_top_controls() -> void:
+	# Three actions, present in every phase. Playback lives with the resolution
+	# content in the right panel, and settings with the other game commands, so
+	# the bar itself never changes shape as the round advances.
 	planning_controls = HBoxContainer.new()
 	planning_controls.add_theme_constant_override("separation", 8)
 	top_bar_actions.add_child(planning_controls)
-	ready_button = _make_button("END ORDERS", 150)
+	ready_button = _make_button("END PLANNING", 168)
 	ready_button.add_theme_font_size_override("font_size", 18)
 	ready_button.pressed.connect(_on_ready_pressed)
 	planning_controls.add_child(ready_button)
-	undo_button = _make_button("UNDO", 75)
+	undo_button = _make_button("UNDO", 92)
 	undo_button.tooltip_text = "Undo the last order change. Shortcut: Ctrl+Z."
 	undo_button.pressed.connect(board_view.undo_last_order)
 	planning_controls.add_child(undo_button)
-	cancel_all_button = _make_button("CANCEL ALL", 110)
+	cancel_all_button = _make_button("CANCEL ALL", 128)
 	cancel_all_button.tooltip_text = "Remove every order issued this planning phase. This can be undone."
 	cancel_all_button.pressed.connect(_on_clear_orders)
+	_tint_button(cancel_all_button, Color("#c8564a"))
 	planning_controls.add_child(cancel_all_button)
-	settings_button = _make_button("SETTINGS", 100)
-	settings_button.pressed.connect(_toggle_settings)
-	planning_controls.add_child(settings_button)
 
-	playback_controls = HBoxContainer.new()
-	playback_controls.add_theme_constant_override("separation", 4)
-	top_bar_actions.add_child(playback_controls)
-	for definition in [["FIRST", Callable(self, "_playback_first")], ["PREV", Callable(self, "_playback_previous")]]:
-		var button := _make_button(String(definition[0]), 64)
-		button.pressed.connect(definition[1])
-		playback_controls.add_child(button)
-	playback_pause_button = _make_button("NEXT", 128)
-	playback_pause_button.add_theme_font_size_override("font_size", 17)
-	playback_pause_button.pressed.connect(_playback_next)
-	playback_controls.add_child(playback_pause_button)
-	var last_button := _make_button("LAST", 64)
-	last_button.pressed.connect(_playback_last)
-	playback_controls.add_child(last_button)
-	var playback_settings := _make_button("SET", 62)
-	playback_settings.pressed.connect(_toggle_settings)
-	playback_controls.add_child(playback_settings)
+
+## Paint a button in a warning colour without disturbing the shared theme.
+func _tint_button(button: Button, tint: Color) -> void:
+	button.add_theme_color_override("font_color", tint)
+	button.add_theme_color_override("font_hover_color", tint.lightened(0.3))
+	button.add_theme_stylebox_override("normal", _panel_style(Color("#1c1210"), tint.darkened(0.25), 1, 5))
+	button.add_theme_stylebox_override("hover", _panel_style(Color("#2c1a16"), tint, 1, 5))
+	button.add_theme_stylebox_override("pressed", _panel_style(Color("#3a201a"), tint, 1, 5))
 
 
 ## MAP OVERVIEW: a second board view in overview mode, showing the same game.
@@ -281,12 +292,7 @@ func _build_minimap() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 4)
 	panel.add_child(box)
-	var title := Label.new()
-	title.text = "MAP OVERVIEW"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 12)
-	title.add_theme_color_override("font_color", Color("#c8a15c"))
-	box.add_child(title)
+	box.add_child(_ornate_header("MAP OVERVIEW"))
 	minimap = StrategoBoardView.new()
 	minimap.overview_mode = true
 	minimap.interaction_enabled = false
@@ -362,6 +368,7 @@ const STEP_END_TURN := 5
 var phase_step_panels: Array[PanelContainer] = []
 var phase_step_labels: Array[Label] = []
 var phase_step_dots: Array = []
+var _active_phase_step := 0
 
 
 func _build_timeline() -> void:
@@ -376,27 +383,24 @@ func _build_timeline() -> void:
 	row.add_theme_constant_override("separation", 6)
 	timeline_panel.add_child(row)
 	for index in PHASE_STEPS.size():
-		if index > 0:
-			var arrow := Label.new()
-			arrow.text = ">"
-			arrow.add_theme_font_size_override("font_size", 22)
-			arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
-			row.add_child(arrow)
 		var step: Dictionary = PHASE_STEPS[index]
 		var panel := PanelContainer.new()
-		panel.custom_minimum_size = Vector2(150, 50)
-		panel.add_theme_stylebox_override("panel", _timeline_style(false, false))
+		panel.custom_minimum_size = Vector2(176, 54)
+		panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		panel.mouse_filter = Control.MOUSE_FILTER_STOP
 		panel.gui_input.connect(_on_phase_step_clicked.bind(index))
+		# The chevron and its icon are drawn over the panel, so the step reads as
+		# an arrow in a sequence rather than as a box in a row.
+		panel.draw.connect(_draw_phase_chevron.bind(panel, index))
 		row.add_child(panel)
 		var column := VBoxContainer.new()
 		column.alignment = BoxContainer.ALIGNMENT_CENTER
 		column.add_theme_constant_override("separation", 1)
 		panel.add_child(column)
 		var label := Label.new()
-		label.text = "%d  %s" % [index + 1, String(step.name)]
+		label.text = "     %d   %s" % [index + 1, String(step.name)]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 13)
+		label.add_theme_font_size_override("font_size", 14)
 		column.add_child(label)
 		var dot_row := HBoxContainer.new()
 		dot_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -419,6 +423,57 @@ func _build_timeline() -> void:
 
 ## END TURN is a control, not just a marker: it resolves whatever is left of the
 ## round without stopping, for a player with no orders left to give.
+## Arrow-shaped step with a gold glyph, drawn rather than assembled from
+## widgets: Godot has no chevron container and the shape is the point.
+func _draw_phase_chevron(panel: PanelContainer, index: int) -> void:
+	var box := Vector2(panel.size)
+	var notch := box.x * 0.12
+	var shape := PackedVector2Array([
+		Vector2(0, 0), Vector2(box.x - notch, 0), Vector2(box.x, box.y * 0.5),
+		Vector2(box.x - notch, box.y), Vector2(0, box.y), Vector2(notch, box.y * 0.5),
+	])
+	var active := index == _active_phase_step
+	panel.draw_colored_polygon(shape, Color("#12335c") if active else Color(0.03, 0.06, 0.1, 0.9))
+	var outline := shape.duplicate()
+	outline.append(shape[0])
+	panel.draw_polyline(outline, HUD_GOLD if active else Color(HUD_GOLD, 0.55), 2.0 if active else 1.0, true)
+	_draw_phase_glyph(panel, index, Vector2(box.x * 0.155, box.y * 0.5), box.y * 0.2)
+
+
+## Simple gold glyphs, one per step: a shield, a boot, crossed swords, a bow, a
+## banner and an hourglass.
+func _draw_phase_glyph(panel: PanelContainer, index: int, at: Vector2, radius: float) -> void:
+	var gold := Color("#e0b874")
+	var line := maxf(1.4, radius * 0.17)
+	match index:
+		STEP_ORDERS:
+			panel.draw_colored_polygon(PackedVector2Array([
+				at + Vector2(-radius * 0.7, -radius * 0.8), at + Vector2(radius * 0.7, -radius * 0.8),
+				at + Vector2(radius * 0.7, radius * 0.2), at, at + Vector2(-radius * 0.7, radius * 0.2),
+			]), gold)
+		STEP_MARCH:
+			panel.draw_line(at + Vector2(-radius * 0.3, -radius * 0.8), at + Vector2(-radius * 0.3, radius * 0.5), gold, line)
+			panel.draw_line(at + Vector2(-radius * 0.3, radius * 0.5), at + Vector2(radius * 0.75, radius * 0.5), gold, line)
+			panel.draw_line(at + Vector2(-radius * 0.3, -radius * 0.2), at + Vector2(radius * 0.35, -radius * 0.2), gold, line)
+		STEP_MELEE:
+			panel.draw_line(at + Vector2(-radius * 0.75, -radius * 0.75), at + Vector2(radius * 0.75, radius * 0.75), gold, line)
+			panel.draw_line(at + Vector2(radius * 0.75, -radius * 0.75), at + Vector2(-radius * 0.75, radius * 0.75), gold, line)
+		STEP_MISSILES:
+			panel.draw_arc(at + Vector2(-radius * 0.2, 0), radius * 0.8, -PI * 0.45, PI * 0.45, 14, gold, line)
+			panel.draw_line(at + Vector2(-radius * 0.75, 0), at + Vector2(radius * 0.8, 0), gold, line)
+		STEP_REPOSITION:
+			panel.draw_line(at + Vector2(-radius * 0.5, radius * 0.8), at + Vector2(-radius * 0.5, -radius * 0.8), gold, line)
+			panel.draw_colored_polygon(PackedVector2Array([
+				at + Vector2(-radius * 0.45, -radius * 0.75), at + Vector2(radius * 0.8, -radius * 0.4),
+				at + Vector2(-radius * 0.45, -radius * 0.05),
+			]), gold)
+		_:
+			panel.draw_line(at + Vector2(-radius * 0.6, -radius * 0.8), at + Vector2(radius * 0.6, -radius * 0.8), gold, line)
+			panel.draw_line(at + Vector2(-radius * 0.6, radius * 0.8), at + Vector2(radius * 0.6, radius * 0.8), gold, line)
+			panel.draw_line(at + Vector2(-radius * 0.5, -radius * 0.8), at + Vector2(radius * 0.5, radius * 0.8), gold, line)
+			panel.draw_line(at + Vector2(radius * 0.5, -radius * 0.8), at + Vector2(-radius * 0.5, radius * 0.8), gold, line)
+
+
 func _on_phase_step_clicked(event: InputEvent, index: int) -> void:
 	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
 		return
@@ -480,6 +535,7 @@ func _build_inspector() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
 	margin.add_child(box)
+	box.add_child(_ornate_header("DETAIL"))
 	inspector_title = Label.new()
 	inspector_title.add_theme_font_size_override("font_size", 20)
 	inspector_title.add_theme_color_override("font_color", Color("#f3eee5"))
@@ -568,6 +624,22 @@ func _build_battle_panel() -> void:
 	battle_body.add_theme_font_size_override("normal_font_size", 16)
 	battle_body.add_theme_color_override("default_color", Color("#dfddd7"))
 	box.add_child(battle_body)
+	box.add_child(HSeparator.new())
+	playback_controls = HBoxContainer.new()
+	playback_controls.add_theme_constant_override("separation", 4)
+	playback_controls.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_child(playback_controls)
+	for definition in [["|<", Callable(self, "_playback_first")], ["<", Callable(self, "_playback_previous")]]:
+		var button := _make_button(String(definition[0]), 44)
+		button.pressed.connect(definition[1])
+		playback_controls.add_child(button)
+	playback_pause_button = _make_button("NEXT", 118)
+	playback_pause_button.add_theme_font_size_override("font_size", 17)
+	playback_pause_button.pressed.connect(_playback_next)
+	playback_controls.add_child(playback_pause_button)
+	var last_button := _make_button(">|", 44)
+	last_button.pressed.connect(_playback_last)
+	playback_controls.add_child(last_button)
 
 
 ## The left sidebar fills its reserved region for the whole game. Tabs rather
@@ -863,6 +935,9 @@ func _build_settings_drawer() -> void:
 	replay_last_button.tooltip_text = "Reload the last export, verify it, and click through its recorded battles."
 	replay_last_button.pressed.connect(_on_replay_last)
 	game_buttons.add_child(replay_last_button)
+	settings_button = _make_button("SETTINGS", 100)
+	settings_button.pressed.connect(_toggle_settings)
+	game_buttons.add_child(settings_button)
 	ranged_toggle = CheckButton.new()
 	ranged_toggle.text = "Archer target mode"
 	ranged_toggle.tooltip_text = "Target at range 1 with unused movement, or range 2 if the Archer makes no main move."
@@ -919,7 +994,41 @@ func _panel_style(background: Color, border: Color, width: int, radius: int) -> 
 	style.content_margin_right = 10
 	style.content_margin_top = 8
 	style.content_margin_bottom = 8
+	if width > 0 and border.a > 0.2:
+		# A second, dimmer rule just inside the first.
+		style.shadow_color = Color(border, 0.35)
+		style.shadow_size = 2
+		style.shadow_offset = Vector2.ZERO
 	return style
+
+
+## A header in the mockups' voice: gold, letterspaced, flanked by rules and a
+## diamond. Used wherever a panel names itself.
+func _ornate_header(text_value: String) -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	var left_rule := Label.new()
+	left_rule.text = "—— ♦"
+	left_rule.add_theme_font_size_override("font_size", 11)
+	left_rule.add_theme_color_override("font_color", Color(HUD_GOLD, 0.7))
+	row.add_child(left_rule)
+	var title := Label.new()
+	# Letterspacing by hand: Godot has no tracking control on Label.
+	var spaced := ""
+	for index in text_value.length():
+		spaced += text_value[index]
+		if index < text_value.length() - 1: spaced += " "
+	title.text = spaced
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", Color("#e7c47d"))
+	row.add_child(title)
+	var right_rule := Label.new()
+	right_rule.text = "♦ ——"
+	right_rule.add_theme_font_size_override("font_size", 11)
+	right_rule.add_theme_color_override("font_color", Color(HUD_GOLD, 0.7))
+	row.add_child(right_rule)
+	return row
 
 
 func _timeline_style(active: bool, completed: bool) -> StyleBoxFlat:
@@ -1551,7 +1660,8 @@ func _update_interface(update_detail: bool = true) -> void:
 	var leftover_planning := not resolution_mode and not game.game_over and game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
 	var planning := main_planning or leftover_planning
 	var read_only := spectator_mode or replay_view_mode
-	planning_controls.visible = not resolution_mode
+	# The top bar keeps its shape all round; only what you may press changes.
+	planning_controls.visible = true
 	playback_controls.visible = resolution_mode
 	inspector_panel.visible = not resolution_mode
 	battle_panel.visible = resolution_mode
@@ -1560,7 +1670,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	event_panel.visible = true
 	detail_toast.visible = false
 	if resolution_mode:
-		phase_title.text = "PHASE: RESOLUTION"
+		phase_title.text = _battle_title()
 		phase_subtitle.text = "Verified replay events" if replay_view_mode else "Resolving movement collisions and combat"
 		_present_resolution_event()
 	elif replay_view_mode:
@@ -1570,23 +1680,21 @@ func _update_interface(update_detail: bool = true) -> void:
 		phase_title.text = "BATTLE COMPLETE"
 		phase_subtitle.text = "%s · %s" % [game.player_name(game.winner), game.end_reason.replace("_", " ")]
 	elif leftover_planning:
-		phase_title.text = "PHASE: REPOSITION"
+		phase_title.text = _battle_title()
 		phase_subtitle.text = "Round %d · Issue one optional move to formations with movement remaining" % game.round_number
 	else:
-		phase_title.text = "PHASE: ORDERS"
+		phase_title.text = _battle_title()
 		phase_subtitle.text = "Round %d · Issue orders to all formations" % game.round_number
 	units_label.text = "Units  %d" % game.count_alive(StrategoGame.BLUE)
 	if game.scenario == StrategoGame.SCENARIO_BRIDGE:
-		objective_label.text = "%d / %d across river" % [game.bridge_strength_across(), game.bridge_strength_target]
-		objective_progress.max_value = game.bridge_strength_target
-		objective_progress.value = game.bridge_strength_across()
+		objective_label.text = "OBJECTIVE: Cross the river"
+		_refresh_objective_pips(mini(game.bridge_strength_across(), game.bridge_strength_target), game.bridge_strength_target)
 	elif game.scenario == StrategoGame.SCENARIO_MEETING and not game.objectives.is_empty():
 		var required := int(game.objectives[0].rounds)
 		var held := game.objective_streak(0, StrategoGame.BLUE)
 		var rival := game.objective_streak(0, StrategoGame.RED)
-		objective_label.text = "Centre held %d / %d  (Red %d)" % [held, required, rival]
-		objective_progress.max_value = required
-		objective_progress.value = held
+		objective_label.text = "OBJECTIVE: Hold the centre" + ("    Red %d/%d" % [rival, required] if rival > 0 else "")
+		_refresh_objective_pips(held, required)
 	else:
 		objective_label.text = "%d Strength remaining" % game.total_strength(StrategoGame.BLUE)
 		objective_progress.max_value = maxf(1.0, game.total_strength(StrategoGame.BLUE))
@@ -1597,7 +1705,7 @@ func _update_interface(update_detail: bool = true) -> void:
 		label.text = "%s · %d units · %d Strength" % [game.player_name(player), game.count_alive(player), game.total_strength(player)]
 	# The primary action names the phase it ends, so the button teaches the round
 	# structure rather than saying the same thing throughout.
-	ready_button.text = "END REPOSITION" if leftover_planning else "END ORDERS"
+	ready_button.text = "END REPOSITION" if leftover_planning else "END PLANNING"
 	ready_button.disabled = not planning or read_only
 	undo_button.disabled = not planning or read_only or not board_view.can_undo_order()
 	cancel_all_button.disabled = not planning or read_only or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
@@ -1613,7 +1721,7 @@ func _update_interface(update_detail: bool = true) -> void:
 	board_view.prefer_ranged = main_planning and ranged_toggle.button_pressed
 	board_view.interaction_enabled = planning and not read_only
 	if not resolution_mode:
-		_update_timeline(6 if leftover_planning or game.game_over else -1 if main_planning else 0)
+		_update_timeline(STEP_END_TURN if game.game_over else (STEP_REPOSITION if leftover_planning else STEP_ORDERS))
 	group_move_title.text = "SET REPOSITION MOVE" if leftover_planning else "MOVE SELECTION"
 	group_move_title.add_theme_color_override("font_color", Color("#f2b15b") if leftover_planning else HUD_BLUE)
 	_update_inspector()
@@ -1622,7 +1730,30 @@ func _update_interface(update_detail: bool = true) -> void:
 	board_view.queue_redraw()
 
 
+## The scenario's name, which is what belongs in the most prominent slot.
+func _battle_title() -> String:
+	var name_by_scenario := {
+		StrategoGame.SCENARIO_BRIDGE: "Battle of the Ford",
+		StrategoGame.SCENARIO_MEETING: "Battle of Oakfield",
+		StrategoGame.SCENARIO_SKIRMISH: "Skirmish",
+	}
+	return "%s  ·  Round %d" % [String(name_by_scenario.get(game.scenario, "Battle")), game.round_number]
+
+
+## Objective progress as whole pips, filled for rounds already banked.
+func _refresh_objective_pips(filled: int, total: int) -> void:
+	if objective_pips == null: return
+	for child in objective_pips.get_children(): child.queue_free()
+	for index in maxi(0, total):
+		var pip := Label.new()
+		pip.text = "●" if index < filled else "○"
+		pip.add_theme_font_size_override("font_size", 17)
+		pip.add_theme_color_override("font_color", Color("#e7c47d") if index < filled else Color(0.55, 0.55, 0.5, 0.6))
+		objective_pips.add_child(pip)
+
+
 func _update_timeline(active_index: int) -> void:
+	_active_phase_step = active_index
 	var reached: Dictionary = {}
 	# Dots fill from the events already played, so an impulse that produced no
 	# battles leaves its MELEE dot hollow rather than compacting the row.
@@ -1631,7 +1762,7 @@ func _update_timeline(active_index: int) -> void:
 		reached["%d:%d" % [int(placement.step), int(placement.dot)]] = true
 	for index in phase_step_panels.size():
 		var completed := (resolution_mode or game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING) and index < active_index
-		phase_step_panels[index].add_theme_stylebox_override("panel", _timeline_style(index == active_index, completed))
+		phase_step_panels[index].queue_redraw()
 		phase_step_labels[index].add_theme_color_override("font_color", HUD_BLUE if index == active_index else Color("#c9c6bf"))
 		var dots: Array = phase_step_dots[index]
 		for dot_index in dots.size():

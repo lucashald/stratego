@@ -538,8 +538,12 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		var word_size := int(width * 0.19)
 		var spelled := word_size >= 11
 		var label := word if spelled else role_text
-		var label_size := word_size if spelled else maxi(11, int(cell * 0.24))
-		_draw_centered_text(ThemeDB.fallback_font, label, Rect2(top + Vector2(0, height * 0.07), Vector2(width, height * 0.22)), label_size, Color("#f6eee0"))
+		var label_size := word_size if spelled else maxi(10, int(cell * 0.22))
+		# Clear of the rim above and the numeral below, with a shadow so a light
+		# letter still reads where the frame's highlight runs behind it.
+		var label_box := Rect2(top + Vector2(0, height * 0.10), Vector2(width, height * 0.20))
+		_draw_centered_text(ThemeDB.fallback_font, label, Rect2(label_box.position + Vector2(0, 1.0), label_box.size), label_size, Color(0, 0, 0, 0.55))
+		_draw_centered_text(ThemeDB.fallback_font, label, label_box, label_size, Color("#f6eee0"))
 		# The role icon only earns its space once a cell is big enough to render
 		# it as something other than a smudge, and never behind the strength
 		# numeral, where the two read as one doubled glyph.
@@ -580,12 +584,12 @@ static func _frame_texture(weight: String) -> Texture2D:
 	return texture
 
 
-const WOOD_FRAME := Color("#8a6233")
-const WOOD_GRAIN := Color("#b08348")
-const MAIL_FRAME := Color("#79838f")
-const MAIL_RING := Color("#aeb8c4")
-const PLATE_FRAME := Color("#8e97a3")
-const PLATE_SHEEN := Color("#dfe6ee")
+const WOOD_FRAME := Color("#7a4d22")
+const WOOD_GRAIN := Color("#c69350")
+const MAIL_FRAME := Color("#4d5a68")
+const MAIL_RING := Color("#8f9dad")
+const PLATE_FRAME := Color("#9aa4b2")
+const PLATE_SHEEN := Color("#eef3fa")
 
 
 ## Weight is carried by the banner's material rather than a letter, because a
@@ -613,14 +617,14 @@ func _draw_weight_frame(piece: Dictionary, banner: PackedVector2Array, top: Vect
 			# Bound planks: a slim rim with two seams and a leather lashing.
 			draw_polyline(outline, WOOD_FRAME, maxf(1.6, cell * 0.05), true)
 			draw_polyline(outline, WOOD_GRAIN, maxf(1.0, cell * 0.018), true)
-			for seam in [0.30, 0.58]:
+			for seam in ([0.30, 0.58] if cell >= 44.0 else []):
 				draw_line(top + Vector2(width * 0.08, height * seam), top + Vector2(width * 0.92, height * seam),
 					Color(WOOD_GRAIN, 0.35), maxf(1.0, cell * 0.014))
 		StrategoGame.WEIGHT_MEDIUM:
 			# Mail: a doubled rim with a ring of links picked out along the top.
 			draw_polyline(outline, MAIL_FRAME, maxf(2.0, cell * 0.07), true)
 			draw_polyline(outline, MAIL_RING, maxf(1.0, cell * 0.02), true)
-			if cell >= 30.0:
+			if cell >= 44.0:
 				var links := 6
 				for index in links:
 					var t := (float(index) + 0.5) / float(links)
@@ -628,16 +632,19 @@ func _draw_weight_frame(piece: Dictionary, banner: PackedVector2Array, top: Vect
 						0.0, TAU, 10, Color(MAIL_RING, 0.75), maxf(1.0, cell * 0.016))
 		_:
 			# Plate: a thick rim, a bevel highlight along the top, and rivets.
-			draw_polyline(outline, PLATE_FRAME, maxf(2.6, cell * 0.1), true)
-			draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.94, height * 0.05),
-				PLATE_SHEEN, maxf(1.2, cell * 0.026))
-			draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.06, height * 0.7),
-				Color(PLATE_SHEEN, 0.5), maxf(1.0, cell * 0.02))
-			if cell >= 26.0:
+			draw_polyline(outline, PLATE_FRAME, maxf(3.0, cell * 0.12), true)
+			draw_polyline(outline, PLATE_SHEEN, maxf(1.0, cell * 0.03), true)
+			if cell >= 44.0:
+				draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.94, height * 0.05),
+					PLATE_SHEEN, maxf(1.2, cell * 0.026))
+				draw_line(top + Vector2(width * 0.06, height * 0.05), top + Vector2(width * 0.06, height * 0.7),
+					Color(PLATE_SHEEN, 0.5), maxf(1.0, cell * 0.02))
 				var rivet := maxf(1.3, cell * 0.035)
 				for spot in [Vector2(0.12, 0.08), Vector2(0.88, 0.08), Vector2(0.12, 0.68), Vector2(0.88, 0.68)]:
 					draw_circle(top + Vector2(width * spot.x, height * spot.y), rivet, PLATE_SHEEN)
-	draw_polyline(outline, Color(colors.edge, 0.55), maxf(1.0, cell * 0.016), true)
+	# Thin and faint: the rim's job is to say which material, and a heavy army
+	# tint over it pulls all three weights toward the same colour.
+	draw_polyline(outline, Color(colors.edge, 0.3), maxf(1.0, cell * 0.012), true)
 
 
 func _draw_role_icon(piece: Dictionary, center: Vector2, radius: float, color: Color) -> void:
@@ -670,22 +677,14 @@ func _draw_role_icon(piece: Dictionary, center: Vector2, radius: float, color: C
 ## the numeral is drawn straight onto the banner.
 func _draw_strength_tab(piece: Dictionary, top: Vector2, width: float, height: float, cell: float) -> void:
 	if piece.type == StrategoGame.FLAG: return
-	var band := Rect2(top + Vector2(0, height * 0.32), Vector2(width, height * 0.42))
-	# With frame art the banner already has a border; a second plate competes
-	# with it and hides the pentagon's point.
-	var framed := cell >= 52.0 and _frame_texture(String(piece.weight)) != null
-	if cell >= 34.0 and not framed:
-		var plate := Rect2(top + Vector2(width * 0.12, height * 0.36), Vector2(width * 0.76, height * 0.42))
-		draw_rect(plate, Color(0.03, 0.06, 0.06, 0.82), true)
-		draw_rect(plate, GOLD, false, maxf(1.0, cell * 0.02))
+	var band := Rect2(top + Vector2(0, height * 0.28), Vector2(width, height * 0.46))
 	var hurt := int(piece.strength) < int(piece.max_strength)
 	var tint := Color("#ffd9a8") if hurt else Color.WHITE
 	var numeral := str(int(piece.strength))
-	var glyph := maxi(14, int(cell * 0.42))
-	if framed:
-		# A soft dark backing rather than an outline: an outline at this size
-		# ghosts the glyph, a wash simply lifts it off the field.
-		draw_circle(band.position + band.size * 0.5, glyph * 0.62, Color(0.02, 0.05, 0.09, 0.5))
+	var glyph := maxi(14, int(cell * 0.44))
+	# A soft dark wash rather than a plate or an outline: an outline at this size
+	# ghosts the glyph, a plate covers the shield, a wash just lifts it off.
+	_draw_centered_text(ThemeDB.fallback_font, numeral, Rect2(band.position + Vector2(0, maxf(1.0, cell * 0.03)), band.size), glyph, Color(0, 0, 0, 0.6))
 	_draw_centered_text(ThemeDB.fallback_font, numeral, band, glyph, tint)
 
 
