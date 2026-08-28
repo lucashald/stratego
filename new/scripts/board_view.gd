@@ -1024,7 +1024,11 @@ func _handle_left_click(screen_position: Vector2, additive: bool, force_select: 
 	var clicked := Vector2i(int(local.x / geometry.cell), int(local.y / geometry.cell))
 	var clicked_piece := game.piece_at(clicked)
 	var selects_clicked_piece := not clicked_piece.is_empty() and int(clicked_piece.player) == viewing_player and game.is_movable(clicked_piece)
-	if selects_clicked_piece and not force_select and _click_continues_order(clicked):
+	# A shift/ctrl-click always means "add this to my group," never "continue my
+	# order into the square it stands on" - otherwise selecting a second unit
+	# fails silently the moment it happens to be adjacent to the first, which in
+	# a battle line is most of the time.
+	if selects_clicked_piece and not additive and not force_select and _click_continues_order(clicked):
 		selects_clicked_piece = false
 	if selects_clicked_piece:
 		var clicked_id := int(clicked_piece.id)
