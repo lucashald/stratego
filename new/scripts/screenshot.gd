@@ -19,6 +19,7 @@ var _pan := Vector2.ZERO
 var _tab := -1
 var _rounds := 0
 var _spectate := false
+var _select := 0
 var _played := 0
 
 
@@ -38,6 +39,8 @@ func _initialize() -> void:
 	_rounds = int(arguments.get("rounds", "0"))
 	# Both sides driven by the bot, so battles actually happen unattended.
 	_spectate = String(arguments.get("spectate", "0")) == "1"
+	# Select a few of the viewer's formations so the detail panel has content.
+	_select = int(arguments.get("select", "0"))
 	# In a SceneTree script `root` is the Window itself.
 	root.size = Vector2i(int(arguments.get("width", 1600)), int(arguments.get("height", 900)))
 	var packed: PackedScene = load("res://scenes/main.tscn")
@@ -65,6 +68,14 @@ func _process(_delta: float) -> bool:
 	if _started and _reveal and _main.get("board_view") != null:
 		_main.board_view.reveal_all = true
 		_main.board_view.queue_redraw()
+	if _select > 0 and _started and _counted == 5 and _main.get("board_view") != null:
+		var chosen: Array[int] = []
+		for piece in _main.game.pieces:
+			if int(piece.player) == StrategoGame.BLUE and bool(piece.alive) and chosen.size() < _select:
+				chosen.append(int(piece.id))
+		_main.board_view.selected_piece_ids = chosen
+		if not chosen.is_empty(): _main.board_view.selected_piece_id = chosen[0]
+		_main._update_inspector()
 	if _tab >= 0 and _main.get("left_tabs") != null:
 		_main.left_tabs.current_tab = _tab
 	# One round per handful of frames: end planning, skip its playback, repeat.

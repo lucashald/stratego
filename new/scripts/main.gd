@@ -49,6 +49,8 @@ var timeline_stages: Array[PanelContainer] = []
 var timeline_labels: Array[Label] = []
 var inspector_panel: PanelContainer
 var inspector_title: Label
+var inspector_cards: VBoxContainer
+const SELECTION_CARD_LIMIT := 4
 var inspector_stats: RichTextLabel
 var inspector_order: Label
 var group_move_controls: VBoxContainer
@@ -540,11 +542,15 @@ func _build_inspector() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 7)
 	margin.add_child(box)
-	box.add_child(_ornate_header("DETAIL"))
+	box.add_child(_ornate_header("SELECTED UNITS"))
+	inspector_cards = VBoxContainer.new()
+	inspector_cards.add_theme_constant_override("separation", 5)
+	box.add_child(inspector_cards)
 	inspector_title = Label.new()
 	inspector_title.add_theme_font_size_override("font_size", 20)
 	inspector_title.add_theme_color_override("font_color", Color("#f3eee5"))
 	box.add_child(inspector_title)
+	inspector_title.visible = true
 	box.add_child(HSeparator.new())
 	inspector_stats = RichTextLabel.new()
 	inspector_stats.bbcode_enabled = true
@@ -1387,7 +1393,7 @@ func _update_battle_card(event: Dictionary) -> void:
 ## One side of a battle as a banner card: the same shield the board draws, the
 ## formation's name, and its army. Two of these facing each other say who is
 ## fighting before a single number has to be read.
-func _battle_side_card(piece: Dictionary) -> Control:
+func _battle_side_card(piece: Dictionary, footer: String = "") -> Control:
 	var tint: Color = board_view._player_colors(int(piece.player)).edge
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", _panel_style(Color("#0b1620"), Color(tint, 0.55), 1, 6))
@@ -1418,7 +1424,7 @@ func _battle_side_card(piece: Dictionary) -> Control:
 	name_label.add_theme_color_override("font_color", Color("#f3eee5"))
 	column.add_child(name_label)
 	var starting := Label.new()
-	starting.text = "STARTING STRENGTH  %d" % int(piece.max_strength)
+	starting.text = footer if footer != "" else "STARTING STRENGTH  %d" % int(piece.max_strength)
 	starting.add_theme_font_size_override("font_size", 12)
 	starting.add_theme_color_override("font_color", Color("#a9a294"))
 	column.add_child(starting)
@@ -1991,15 +1997,52 @@ Fighting it reveals its Role, Weight and current Strength. Watching it move reve
 	inspector_order.text = "Examined · identity unknown"
 
 
+## The selection as banner cards. A long selection is summarised rather than
+## listed: past a handful the cards stop being readable and start being a wall.
+func _refresh_inspector_cards() -> void:
+	for child in inspector_cards.get_children(): child.queue_free()
+	if board_view == null or game == null: return
+	var ids: Array = board_view.selected_piece_ids
+	if ids.is_empty() and examined_piece_id >= 0 and examined_piece_id < game.pieces.size():
+		ids = [examined_piece_id]
+	for index in mini(ids.size(), SELECTION_CARD_LIMIT):
+		var piece_id := int(ids[index])
+		if piece_id < 0 or piece_id >= game.pieces.size(): continue
+		inspector_cards.add_child(_battle_side_card(game.pieces[piece_id], _order_footer(piece_id)))
+	if ids.size() > SELECTION_CARD_LIMIT:
+		var more := Label.new()
+		more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		more.text = "+ %d more selected" % (ids.size() - SELECTION_CARD_LIMIT)
+		more.add_theme_font_size_override("font_size", 13)
+		more.add_theme_color_override("font_color", Color("#a9a294"))
+		inspector_cards.add_child(more)
+
+
+## What a formation has been told to do, in the space the battle card gives to
+## starting Strength.
+func _order_footer(piece_id: int) -> String:
+	var order := game.order_for_piece(piece_id)
+	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
+		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))
+		return "REPOSITION TO %s" % str(leftover) if leftover.x >= 0 else "NO REPOSITION SET"
+	if order.is_empty(): return "NO ORDER ISSUED"
+	var path: Array = order.get("path", [])
+	var aimed: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+	if aimed.x >= 0: return "AIMED AT %s" % str(aimed)
+	return "ORDERED  %d IMPULSE%s" % [path.size(), "" if path.size() == 1 else "S"]
+
+
 func _update_inspector() -> void:
 	_refresh_roster()
+	_refresh_inspector_cards()
+	inspector_title.visible = true
 	if examined_piece_id >= 0 and examined_piece_id < game.pieces.size() and board_view != null and board_view.selected_piece_ids.is_empty():
 		_show_examined(game.pieces[examined_piece_id])
 		return
 	if group_move_controls != null:
 		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty()
 	if board_view == null or game == null or board_view.selected_piece_ids.is_empty():
-		inspector_title.text = "ISSUE FORMATION ORDERS"
+		inspector_title.text = "NOTHING SELECTED"
 		inspector_stats.text = "Select one or more banners.\n\n[color=#9fc8e8]Shift-click or drag[/color] to build a group.\n\n[color=#9fc8e8]Alt-click[/color] selects a formation instead of stepping into its square.\n\nMouse wheel zooms; middle-drag pans."
 		inspector_order.text = "No formation selected"
 		return
@@ -2025,7 +2068,8 @@ func _update_inspector() -> void:
 	if id < 0 or id >= game.pieces.size():
 		return
 	var piece: Dictionary = game.pieces[id]
-	inspector_title.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+	inspector_title.visible = false
+	inspector_title.text = ""
 	inspector_stats.text = _formation_detail(piece)
 	var order := game.order_for_piece(id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
