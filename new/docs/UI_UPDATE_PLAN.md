@@ -32,13 +32,14 @@ into replay files and the state serializer and must not change.
 |---|---|---|---|
 | 1 | ORDERS | `PHASE_PLANNING` | — |
 | 2 | MARCH | movement events, batches `impulse_1..3` | **3 dots** |
-| 3 | MELEE | `melee`, `crossing_battle`, and the `retreat` / `retreat_battle` events that follow from them | — |
+| 3 | MELEE | `melee`, `crossing_battle`, and the `retreat` / `retreat_battle` events that follow from them | **3 dots** |
 | 4 | MISSILES | `ranged` / `ranged_fizzle` events | — |
 | 5 | REPOSITION | `PHASE_LEFTOVER_PLANNING` + `leftover` events | — |
 | 6 | END TURN | round rollover | — |
 
-Only MARCH carries dots, one per impulse. The others take a single state dot
-rather than pretending to sub-steps they do not have.
+MARCH and MELEE each carry three dots, one per impulse, because there really are
+three of each and they alternate. The rest take a single state dot rather than
+pretending to sub-steps they do not have.
 
 **Rout is not a phase.** `_resolve_movement_batch` resolves a melee batch and
 then the retreats caused by that batch, so a retreat belongs to a specific
@@ -54,28 +55,32 @@ impulse*, so a round interleaves March → Melee → Rout → March → Melee �
 A strictly left-to-right bar therefore misrepresents the round. Two
 options:
 
-- **A (recommended):** the bar is a legend, not a progress track. Whichever step
-  owns the current event lights up, so MELEE may light during impulse 2 and
-  MARCH may light again afterwards. Honest, no engine change.
-- **B:** regroup presentation so all melees are shown together after all
-  movement. Reads cleanly left-to-right but no longer reflects resolution order,
-  which matters because simultaneity is the point of the game.
+**Settled: the bar is a legend, not a progress track.** Whichever step owns the
+current event lights up, so highlighting moves MARCH -> MELEE -> MARCH -> MELEE
+as the impulses play, and the paired dot rows make that legible: three marches,
+three melees, one melee for each march. The bar is allowed to jump backwards.
 
-Going with A unless overridden.
+The alternative — regrouping so all melee is shown after all movement — was
+rejected. It reads more tidily left to right but stops reflecting the order
+things actually happen in, and simultaneity is the point of the game.
 
 ### Auto-advance and skipping
 
 - **Enter** advances the current phase. This is the primary control.
-- Phases in which the local player has **no decision to make** should play
-  through without stopping. A phase is skippable when it produces no events
-  visible to the viewing player and requires no order. In practice: MELEE, ROUT
-  and MISSILES auto-advance when empty; MARCH always shows because movement is
-  always visible.
-- The **END TURN** step on the phase bar is clickable and jumps to the end of the
-  round, resolving any remaining phases without stopping. Useful when a player
-  has no orders left to give.
-- Auto-advance must never skip a phase that requires input: ORDERS and
-  REPOSITION always stop.
+- **Enter advances everything** — one event, then the next, then through the
+  phase boundary into the following phase. A player should be able to press
+  Enter a handful of times and arrive at the next turn without ever reaching for
+  the mouse. This makes keyboard-only play the default path rather than an
+  accessibility afterthought.
+- Phases where the local player has **no decision to make** play through without
+  stopping. A phase with no events visible to the viewing player and no order to
+  give is skipped.
+- **REPOSITION auto-advances when nothing is eligible.** If no formation can take
+  a leftover step there is nothing to decide, so the phase does not stop. When it
+  does stop, arrow keys issue the moves, so even that stays on the keyboard.
+- ORDERS always stops.
+- The **END TURN** chevron is clickable and jumps to the end of the round,
+  resolving whatever remains without pausing.
 
 ---
 
@@ -131,9 +136,10 @@ selects it on the board. Each row:
 - `MOVEMENT` pips: one per point, filled for unspent, hollow for spent
 - a small marker when the formation already has orders
 
-A tab or toggle at the top switches to the **event log** without leaving the
-phase, for a player who wants to re-read what happened last round while planning
-the next one.
+**Tabs** at the top switch to the **event log** without leaving the phase. Tabs
+cost the roster some vertical space, and that is the right trade: the log should
+always be *reachable* even though it is rarely the thing you want to look at, and
+a tab makes it a glance away rather than a mode change.
 
 ### Left, resolution — event log
 
@@ -141,6 +147,15 @@ The round's events in order, the current one highlighted, scrolling as playback
 advances. Clicking an entry jumps playback to it, which subsumes the battle-queue
 idea from the earlier mockup: a battle is just an event worth jumping to, and a
 single list handles moves, battles and shots without a separate queue panel.
+
+**Granularity: where a formation ended up, and every battle.** An impulse in
+which nothing happened is not worth a row, and a formation's march is one entry
+naming its destination rather than one row per square.
+
+Filtering and search come later but should be designed for now, because they
+decide the row format. The range runs from battle results only, through
+movement and battles, to everything including dice rolls — so a row needs a
+type, an owning formation, and a detail payload that can be shown or withheld.
 
 ### Right, order phase — inspector
 
@@ -259,8 +274,11 @@ Engine numbering 0-19, matching logs, replays and the command bridge.
 
 Bottom-right, framed like every other panel:
 
-- the whole board rendered small, including terrain and formation dots coloured
-  by side
+- **the same board, drawn smaller.** Not a schematic or a second representation:
+  the same draw path at a reduced scale. Fog is then inherited rather than
+  reimplemented, since the existing code already refuses to draw formations the
+  viewing player cannot see. A parallel schematic could drift out of step with
+  the real visibility rules and silently leak positions; this cannot.
 - a blue rectangle marking the current viewport, draggable to pan
 - zoom controls beneath: `-`, current percentage, `+`, `FIT`
 
@@ -338,20 +356,17 @@ without blocking anything.
 
 ## 10. Open questions
 
-- **Phase-bar semantics**: option A or B in section 1. Dropping Rout removes one
-  source of interleaving but not the main one: MELEE still occurs inside each
-  impulse, so MARCH and MELEE alternate rather than running in sequence.
-- **Does REPOSITION always stop?** It has no decision when nothing is eligible.
-  Suggest auto-advancing when no formation can act, stopping otherwise.
-- **Enter during resolution**: same key advances events and phases, or separate?
-- **Minimap must respect fog.** Drawing every formation there would hand the
-  player exactly what four-square vision is meant to withhold. Terrain in full,
-  formations only where the viewing player can legitimately see them. Easy to
-  get wrong, and getting it wrong silently voids the fog rules.
-- **Minimap fidelity**: real terrain scaled into a render target, or a schematic
-  of terrain colours? The schematic is cheaper and probably clearer at that size.
-- **Left sidebar toggle**: tabs, or a single button that swaps between roster and
-  log? Tabs cost vertical space the roster wants.
-- **Event log granularity**: every movement event is a lot of rows for twelve
-  formations over three impulses. Possibly collapse a formation's whole march
-  into one entry and expand battles individually.
+Most of this section has been settled and folded into the sections above: phase
+bar semantics, REPOSITION skipping, Enter behaviour, minimap fog and fidelity,
+the sidebar toggle, and log granularity.
+
+Still open:
+
+- **Do MELEE dots skip empty impulses?** If impulse 2 produced no battles, does
+  its dot stay hollow while 1 and 3 fill, or does the row compact? Hollow is
+  more honest and keeps the dots aligned with the MARCH row above.
+- **Event log row format**, in enough detail to support the eventual filters
+  without a rewrite: type, formation, and a withheld detail payload.
+- **Heavy Cavalry still does not reach the fight** even after the deployment
+  change, and it is a bot pathing problem rather than a UI one. Noted here only
+  so it is not lost.
