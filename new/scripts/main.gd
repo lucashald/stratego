@@ -12,7 +12,9 @@ var bot := StrategoBotPolicy.new()
 var remote_bridge: StrategoMCPBridge = null
 var rng := RandomNumberGenerator.new()
 var board_view: StrategoBoardView
+var minimap: StrategoBoardView
 
+var examined_piece_id := StrategoGame.EMPTY
 var top_bar_actions: HBoxContainer
 var phase_title: Label
 var phase_subtitle: Label
@@ -125,6 +127,7 @@ func _build_interface() -> void:
 	_build_phase_banner()
 	_build_top_controls()
 	_build_view_controls()
+	_build_minimap()
 	_build_timeline()
 	_build_detail_toast()
 	_build_inspector()
@@ -259,6 +262,35 @@ func _build_top_controls() -> void:
 	var playback_settings := _make_button("SET", 62)
 	playback_settings.pressed.connect(_toggle_settings)
 	playback_controls.add_child(playback_settings)
+
+
+## MAP OVERVIEW: a second board view in overview mode, showing the same game.
+## Being the same draw path means it obeys fog for free.
+func _build_minimap() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	panel.offset_left = 10
+	panel.offset_right = REGION_LEFT - 12
+	panel.offset_top = -REGION_BOTTOM - 268
+	panel.offset_bottom = -REGION_BOTTOM - 58
+	panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 6))
+	add_child(panel)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 4)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "MAP OVERVIEW"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 12)
+	title.add_theme_color_override("font_color", Color("#c8a15c"))
+	box.add_child(title)
+	minimap = StrategoBoardView.new()
+	minimap.overview_mode = true
+	minimap.interaction_enabled = false
+	minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	minimap.custom_minimum_size = Vector2(0, 170)
+	minimap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(minimap)
 
 
 func _build_view_controls() -> void:
@@ -544,7 +576,7 @@ func _build_event_panel() -> void:
 	event_panel.offset_left = 10
 	event_panel.offset_right = REGION_LEFT - 12
 	event_panel.offset_top = REGION_TOP + 4
-	event_panel.offset_bottom = -REGION_BOTTOM - 62
+	event_panel.offset_bottom = -REGION_BOTTOM - 274
 	event_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 7))
 	add_child(event_panel)
 	var margin := MarginContainer.new()
@@ -844,6 +876,10 @@ func _configure_board(show_all: bool) -> void:
 	board_view.leftover_mode = game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
 	board_view.set_game(game)
 	if remote_bridge != null: remote_bridge.game = game
+	if minimap != null:
+		minimap.game = game
+		minimap.reveal_all = show_all
+		minimap.queue_redraw()
 
 
 func _on_ready_pressed() -> void:
@@ -1272,6 +1308,9 @@ func _on_order_changed(message: String) -> void:
 ## fuller panel belongs here later; for now it answers "what am I looking at".
 func _on_examine_requested(piece_id: int) -> void:
 	if piece_id < 0 or piece_id >= game.pieces.size(): return
+	examined_piece_id = piece_id
+	if board_view != null: board_view.clear_selection()
+	_update_inspector()
 	var piece: Dictionary = game.pieces[piece_id]
 	var role := String(piece.role)
 	var weight := String(piece.weight)
@@ -1476,8 +1515,57 @@ func _update_timeline(active_index: int) -> void:
 			dots[dot_index].add_theme_color_override("font_color", Color("#6fbf63") if lit else Color("#3d4a4a"))
 
 
+## What the player is entitled to know about a formation, and what its Weight and
+## Role actually do. Stating the effects beside the numbers means a player need
+## not have memorised the rules to read a banner.
+func _formation_detail(piece: Dictionary) -> String:
+	var role_note: String = {
+		StrategoGame.ROLE_INFANTRY: "+%d when defending" % StrategoGame.ROLE_BONUS,
+		StrategoGame.ROLE_CAVALRY: "+%d when attacking" % StrategoGame.ROLE_BONUS,
+		StrategoGame.ROLE_ARCHER: "no melee bonus; shoots at range",
+	}.get(String(piece.role), "")
+	var remaining := maxi(0, game.movement_limit_for(piece) - game.movement_committed(piece))
+	var text := "[table=2]"
+	text += "[cell]Strength[/cell][cell][right]%d / %d[/right][/cell]" % [int(piece.strength), int(piece.max_strength)]
+	text += "[cell]Armour[/cell][cell][right]%d[/right][/cell]" % int(piece.armor)
+	text += "[cell]Movement[/cell][cell][right]%d of %d left[/right][/cell]" % [remaining, game.movement_limit_for(piece)]
+	text += "[/table]
+"
+	text += "[color=#9fc8e8]%s[/color] · %s
+" % [String(piece.role).capitalize(), role_note]
+	text += "[color=#c8a15c]%s[/color] · armour %d, moves %d
+" % [
+		String(piece.weight).capitalize(), int(piece.armor), game.movement_limit_for(piece),
+	]
+	if int(piece.strength) < int(piece.max_strength):
+		# The roll is capped by current Strength, so damage quietly weakens a
+		# formation's dice as well as its life.
+		text += "
+[color=#ffd9a8]Damaged: its die cannot roll above %d.[/color]" % int(piece.strength)
+	return text
+
+
+## Examine fills the same panel that shows your own formations, because it is the
+## same question asked of a different subject. For an enemy the honest answer may
+## be very little, and showing that emptiness is itself informative.
+func _show_examined(piece: Dictionary) -> void:
+	inspector_title.text = "%s %s" % [game.player_name(int(piece.player)).to_upper(), "FORMATION"]
+	if game.is_piece_revealed_to(piece, StrategoGame.BLUE) or int(piece.player) == StrategoGame.BLUE:
+		inspector_title.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+		inspector_stats.text = _formation_detail(piece)
+		inspector_order.text = "Examined · %s" % game.player_name(int(piece.player))
+		return
+	inspector_stats.text = "This formation has not been identified.
+
+Fighting it reveals its Role, Weight and current Strength. Watching it move reveals its Weight, since speed follows from it."
+	inspector_order.text = "Examined · identity unknown"
+
+
 func _update_inspector() -> void:
 	_refresh_roster()
+	if examined_piece_id >= 0 and examined_piece_id < game.pieces.size() and board_view != null and board_view.selected_piece_ids.is_empty():
+		_show_examined(game.pieces[examined_piece_id])
+		return
 	if group_move_controls != null:
 		group_move_controls.visible = board_view != null and board_view.interaction_enabled and not board_view.selected_piece_ids.is_empty()
 	if board_view == null or game == null or board_view.selected_piece_ids.is_empty():
@@ -1508,7 +1596,7 @@ func _update_inspector() -> void:
 		return
 	var piece: Dictionary = game.pieces[id]
 	inspector_title.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
-	inspector_stats.text = "[table=2][cell]Strength[/cell][cell][right]%d / %d[/right][/cell][cell]Armor[/cell][cell][right]%d[/right][/cell][cell]Movement[/cell][cell][right]%d[/right][/cell][/table]" % [int(piece.strength), int(piece.max_strength), int(piece.armor), game.movement_limit_for(piece)]
+	inspector_stats.text = _formation_detail(piece)
 	var order := game.order_for_piece(id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))

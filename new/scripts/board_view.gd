@@ -57,6 +57,10 @@ var order_undo_stack: Array[Dictionary] = []
 
 
 func _ready() -> void:
+	if overview_mode:
+		# The overview is sized by its panel; the playing view demands room.
+		custom_minimum_size = Vector2(0, 0)
+		return
 	custom_minimum_size = Vector2(900, 700)
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	set_process_unhandled_key_input(true)
@@ -199,8 +203,17 @@ func _clamp_pan() -> void:
 	pan_offset.y = clampf(pan_offset.y, -limit_y, limit_y)
 
 
+## When true this view draws itself as an overview: the whole board, no chrome,
+## no interaction. It is the same draw path at a smaller scale, so fog is
+## inherited rather than reimplemented and cannot drift from the real rules.
+var overview_mode := false
+
+
 func _draw() -> void:
 	if game == null:
+		return
+	if overview_mode:
+		_draw_overview()
 		return
 	_draw_surroundings()
 	var geometry := _board_geometry()
@@ -223,6 +236,34 @@ func _draw() -> void:
 		_draw_combat_overlay(origin, cell)
 	elif game.game_over:
 		_draw_game_over_overlay(origin, cell, float(geometry.side))
+
+
+## The whole board at panel scale, plus a frame showing what the main view is
+## currently looking at.
+func _draw_overview() -> void:
+	var side := minf(size.x, size.y) - 8.0
+	var origin := (size - Vector2(side, side)) * 0.5
+	var cell := side / float(StrategoGame.BOARD_SIZE)
+	draw_rect(Rect2(origin, Vector2(side, side)), Color("#20301f"), true)
+	for y in StrategoGame.BOARD_SIZE:
+		for x in StrategoGame.BOARD_SIZE:
+			var position := Vector2i(x, y)
+			var rect := Rect2(origin + Vector2(x, y) * cell, Vector2(cell, cell))
+			var ground := Color("#4a5b38")
+			if game.is_lake(position) or game.is_water(position): ground = Color("#2b5560")
+			elif game.is_bridge(position): ground = Color("#7d5f38")
+			elif _is_objective_square(position): ground = Color("#8a7130")
+			draw_rect(rect, ground, true)
+			if not reveal_all and not game.game_over and not game.is_position_visible_to(position, viewing_player):
+				draw_rect(rect, Color(0.02, 0.04, 0.05, 0.72), true)
+	# Formations go through the same visibility test the main board uses.
+	for piece: Dictionary in game.pieces:
+		if not piece.alive or piece.type == StrategoGame.FLAG: continue
+		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player): continue
+		var colors := _player_colors(int(piece.player))
+		var centre := origin + (Vector2(piece.position) + Vector2(0.5, 0.5)) * cell
+		draw_circle(centre, maxf(1.6, cell * 0.34), colors.edge)
+	draw_rect(Rect2(origin, Vector2(side, side)), GOLD, false, 1.0)
 
 
 func _draw_surroundings() -> void:
