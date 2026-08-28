@@ -266,15 +266,34 @@ func _draw_overview() -> void:
 	draw_rect(Rect2(origin, Vector2(side, side)), GOLD, false, 1.0)
 
 
+## A treeline framing the play area, rather than the drifting bokeh discs that
+## previously filled this space and read as interface noise. Trees are drawn only
+## in the margin outside the board, so they frame without competing.
 func _draw_surroundings() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color("#06100e"), true)
-	for index in 110:
-		var px := _noise_value(index, 3) * size.x
-		var py := _noise_value(index, 11) * size.y
-		var radius := 12.0 + _noise_value(index, 23) * 38.0
-		var tint := Color("#132c1b") if index % 3 else Color("#1b3820")
-		tint.a = 0.38
-		draw_circle(Vector2(px, py), radius, tint)
+	draw_rect(Rect2(Vector2.ZERO, size), Color("#0a1410"), true)
+	var geometry := _board_geometry()
+	var field := Rect2(Vector2(geometry.origin), Vector2(geometry.side, geometry.side)).grow(6.0)
+	for index in 160:
+		var point := Vector2(_noise_value(index, 3) * size.x, _noise_value(index, 11) * size.y)
+		if field.has_point(point): continue
+		var scale := 9.0 + _noise_value(index, 23) * 13.0
+		_draw_tree(point, scale, index)
+
+
+## A simple conifer: a dark trunk under two stacked canopies. Cheap enough to
+## draw a hundred and a half of them every frame.
+func _draw_tree(base: Vector2, scale: float, seed_value: int) -> void:
+	var tint := Color("#14301d") if seed_value % 3 else Color("#1b3a24")
+	var shade := tint.darkened(0.25)
+	draw_line(base, base - Vector2(0, scale * 0.5), Color("#241a12"), maxf(1.0, scale * 0.16))
+	for tier in 2:
+		var lift := scale * (0.42 + float(tier) * 0.42)
+		var spread := scale * (0.62 - float(tier) * 0.16)
+		draw_colored_polygon(PackedVector2Array([
+			base - Vector2(0, lift + scale * 0.62),
+			base + Vector2(spread, -lift),
+			base + Vector2(-spread, -lift),
+		]), shade if tier == 0 else tint)
 
 
 ## Column and row numbers down the board's edges. These use engine coordinates,
@@ -341,8 +360,25 @@ func _draw_cell_texture(position: Vector2i, rect: Rect2, cell: float) -> void:
 			var plank_y := rect.position.y + cell * float(plank + 1) / 4.0
 			draw_line(Vector2(rect.position.x, plank_y), Vector2(rect.end.x, plank_y), Color(0.16, 0.11, 0.065, 0.55), maxf(1.0, cell * 0.025))
 	else:
-		var sprig := rect.position + Vector2(_noise_value(position.x, position.y + 17), _noise_value(position.x + 20, position.y)) * cell
-		draw_circle(sprig, maxf(0.7, cell * 0.026), Color(0.78, 0.76, 0.42, 0.2))
+		# Ground detail: a worn patch on some squares, a few tufts on others, so
+		# the field reads as terrain rather than as a spreadsheet of tinted cells.
+		var wear := _noise_value(position.x + 31, position.y + 7)
+		if wear > 0.72:
+			var patch_centre := rect.position + Vector2(0.35 + wear * 0.3, 0.4 + _noise_value(position.x, position.y + 5) * 0.25) * cell
+			draw_circle(patch_centre, cell * (0.16 + wear * 0.13), Color(0.42, 0.36, 0.22, 0.24))
+		var tufts := 2 if wear < 0.5 else 1
+		for index in tufts:
+			var tuft := rect.position + Vector2(
+				_noise_value(position.x * 3 + index, position.y + 17),
+				_noise_value(position.x + 20, position.y * 3 + index),
+			) * cell
+			var blade := maxf(1.0, cell * 0.09)
+			draw_line(tuft, tuft - Vector2(blade * 0.25, blade), Color(0.55, 0.62, 0.29, 0.34), maxf(0.8, cell * 0.022))
+			draw_line(tuft, tuft - Vector2(-blade * 0.2, blade * 0.85), Color(0.48, 0.57, 0.26, 0.3), maxf(0.8, cell * 0.02))
+		if _noise_value(position.x + 63, position.y + 41) > 0.93:
+			var stone := rect.position + Vector2(0.5, 0.55) * cell
+			draw_circle(stone, cell * 0.11, Color(0.44, 0.44, 0.41, 0.5))
+			draw_circle(stone - Vector2(cell * 0.02, cell * 0.03), cell * 0.075, Color(0.58, 0.58, 0.54, 0.45))
 
 
 func _draw_river_banks(origin: Vector2, cell: float) -> void:
