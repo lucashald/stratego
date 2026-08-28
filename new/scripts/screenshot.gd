@@ -16,6 +16,7 @@ var _reveal := false
 var _resolve := false
 var _zoom := 0.0
 var _pan := Vector2.ZERO
+var _tab := -1
 
 
 func _initialize() -> void:
@@ -29,6 +30,7 @@ func _initialize() -> void:
 	_resolve = String(arguments.get("resolve", "0")) == "1"
 	_zoom = float(arguments.get("zoom", "0"))
 	_pan = Vector2(float(arguments.get("panx", "0")), float(arguments.get("pany", "0")))
+	_tab = int(arguments.get("tab", "-1"))
 	# In a SceneTree script `root` is the Window itself.
 	root.size = Vector2i(int(arguments.get("width", 1600)), int(arguments.get("height", 900)))
 	var packed: PackedScene = load("res://scenes/main.tscn")
@@ -54,6 +56,8 @@ func _process(_delta: float) -> bool:
 	if _started and _reveal and _main.get("board_view") != null:
 		_main.board_view.reveal_all = true
 		_main.board_view.queue_redraw()
+	if _tab >= 0 and _main.get("left_tabs") != null:
+		_main.left_tabs.current_tab = _tab
 	if _counted < _frames: return false
 	var image := root.get_texture().get_image()
 	image.save_png(_out)

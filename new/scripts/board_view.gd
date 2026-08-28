@@ -491,29 +491,38 @@ func _draw_drag_selection() -> void:
 
 func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 	var center := _cell_center(piece.position, origin, cell)
-	# Edge deployments keep their banners inside the battlefield frame.
-	if int(piece.position.y) >= StrategoGame.BOARD_SIZE - 2:
-		center.y -= cell * 0.22
-	elif int(piece.position.y) <= 1:
-		center.y += cell * 0.22
 	var colors := _player_colors(int(piece.player))
 	var is_selected := int(piece.id) in selected_piece_ids
-	var scale := 1.12 if int(piece.id) == selected_piece_id else (1.03 if is_selected else 0.94)
-	var width := cell * 0.88 * scale
-	var height := cell * 1.12 * scale
-	var top := center - Vector2(width * 0.5, height * 0.55)
+	# Square, so a banner sits inside its grid square instead of overhanging into
+	# the ranks above and below. The pentagon is kept, compressed to fit the
+	# square rather than extending past it.
+	var scale := 1.06 if int(piece.id) == selected_piece_id else (0.99 if is_selected else 0.92)
+	var extent := cell * scale
+	var width := extent
+	var height := extent
+	var top := center - Vector2(width, height) * 0.5
 	var banner := PackedVector2Array([
 		top,
 		top + Vector2(width, 0),
-		top + Vector2(width, height * 0.76),
+		top + Vector2(width, height * 0.72),
 		top + Vector2(width * 0.5, height),
-		top + Vector2(0, height * 0.76),
+		top + Vector2(0, height * 0.72),
 	])
 	var shadow := PackedVector2Array()
 	for point in banner:
 		shadow.append(point + Vector2(cell * 0.06, cell * 0.08))
 	draw_colored_polygon(shadow, Color(0, 0, 0, 0.48))
-	draw_colored_polygon(banner, colors.fill)
+	# When frame art is present it owns the silhouette, so the coloured field is
+	# inset to sit inside it rather than poking through its notched bottom.
+	var framed_art := cell >= 52.0 and _frame_texture(String(piece.weight)) != null
+	if framed_art:
+		var centre_point := top + Vector2(width, height) * 0.5
+		var field := PackedVector2Array()
+		for point in banner:
+			field.append(centre_point + (point - centre_point) * 0.8)
+		draw_colored_polygon(field, colors.fill)
+	else:
+		draw_colored_polygon(banner, colors.fill)
 	_draw_weight_frame(piece, banner, top, width, height, cell, colors)
 	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
 	if can_see_identity:

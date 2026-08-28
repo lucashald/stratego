@@ -57,6 +57,9 @@ var battle_body: RichTextLabel
 var event_panel: PanelContainer
 var left_tabs: TabContainer
 var roster_list: VBoxContainer
+var log_list: VBoxContainer
+var log_box_hidden: VBoxContainer
+var log_entries: Array[Dictionary] = []
 
 var spectator_mode := false
 var replay_view_mode := false
@@ -596,17 +599,138 @@ func _build_event_panel() -> void:
 	roster_list.add_theme_constant_override("separation", 5)
 	roster_scroll.add_child(roster_list)
 
-	var log_box := VBoxContainer.new()
-	log_box.name = "LOG"
-	left_tabs.add_child(log_box)
+	var log_scroll := ScrollContainer.new()
+	log_scroll.name = "LOG"
+	log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left_tabs.add_child(log_scroll)
+	log_list = VBoxContainer.new()
+	log_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	log_list.add_theme_constant_override("separation", 3)
+	log_scroll.add_child(log_list)
+	# The running commentary is kept, hidden, because the settings drawer and
+	# several call sites still write prose to it.
 	history = RichTextLabel.new()
 	history.bbcode_enabled = true
-	history.scroll_active = true
-	history.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	history.add_theme_font_size_override("normal_font_size", 13)
-	log_box.add_child(history)
+	history.visible = false
+	log_box_hidden = VBoxContainer.new()
+	log_box_hidden.visible = false
+	add_child(log_box_hidden)
+	log_box_hidden.add_child(history)
 
 	left_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+
+## Builds the round's log entries from its events. Rows carry a type, the
+## formation they concern, the round, a one-line summary and a detail payload,
+## so filtering and search can be added later without reformatting.
+##
+## Granularity follows the spec: where a formation ended up, and every battle.
+## An impulse in which nothing happened earns no row, and a formation's whole
+## march collapses into a single entry naming its destination rather than one
+## row per square.
+func _rebuild_log(events: Array[Dictionary]) -> void:
+	var marches: Dictionary = {}
+	for index in events.size():
+		var event: Dictionary = events[index]
+		if not _event_is_known_to_viewer(event): continue
+		var action := String(event.get("action", ""))
+		if action == "move":
+			var mover := int(event.get("piece_id", StrategoGame.EMPTY))
+			if mover < 0: continue
+			# Keep only the last step, which is where the formation ended up.
+			marches[mover] = {"index": index, "to": event.get("to", Vector2i.ZERO), "from": marches.get(mover, {}).get("from", event.get("from", Vector2i.ZERO))}
+			continue
+		if action in ["melee", "crossing_battle", "retreat_battle"]:
+			log_entries.append(_battle_entry(event, index))
+		elif action in ["ranged", "ranged_fizzle"]:
+			log_entries.append(_shot_entry(event, index))
+	for mover in marches:
+		var march: Dictionary = marches[mover]
+		if mover >= game.pieces.size(): continue
+		var piece: Dictionary = game.pieces[mover]
+		log_entries.append({
+			"type": "move", "formation": mover, "round": game.round_number,
+			"index": int(march.index), "mine": int(piece.player) == StrategoGame.BLUE,
+			"summary": "%s marched to %s" % [game.piece_display_code(piece), str(march.to)],
+			"detail": "from %s" % str(march.from),
+		})
+	log_entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.index) < int(b.index))
+	_render_log()
+
+
+func _battle_entry(event: Dictionary, index: int) -> Dictionary:
+	var names: Array[String] = []
+	for id in event.get("participants", []):
+		if int(id) >= 0 and int(id) < game.pieces.size():
+			names.append(game.piece_display_code(game.pieces[int(id)]))
+	var winner := int(event.get("winner_id", StrategoGame.EMPTY))
+	var outcome := "bounced" if winner == StrategoGame.EMPTY else "%s won" % game.piece_display_code(game.pieces[winner])
+	return {
+		"type": "battle", "formation": winner, "round": game.round_number, "index": index,
+		"mine": winner >= 0 and winner < game.pieces.size() and int(game.pieces[winner].player) == StrategoGame.BLUE,
+		"summary": "%s at %s" % [" v ".join(names), str(event.get("to", Vector2i.ZERO))],
+		"detail": outcome,
+	}
+
+
+func _shot_entry(event: Dictionary, index: int) -> Dictionary:
+	var shooter := int(event.get("shooter_id", StrategoGame.EMPTY))
+	var fizzled := String(event.get("action", "")) == "ranged_fizzle"
+	var label := "shot fell short" if fizzled else "hit for %d" % int(event.get("defender_damage", 0))
+	return {
+		"type": "fizzle" if fizzled else "shot", "formation": shooter, "round": game.round_number, "index": index,
+		"mine": shooter >= 0 and shooter < game.pieces.size() and int(game.pieces[shooter].player) == StrategoGame.BLUE,
+		"summary": "%s %s" % [game.piece_display_code(game.pieces[shooter]) if shooter >= 0 and shooter < game.pieces.size() else "Archer", label],
+		"detail": str(event.get("to", Vector2i.ZERO)),
+	}
+
+
+const LOG_TINTS := {
+	"move": "#8fa5b8", "battle": "#ffb182", "shot": "#78e2f5", "fizzle": "#7d8794",
+}
+
+
+func _render_log() -> void:
+	if log_list == null: return
+	for child in log_list.get_children(): child.queue_free()
+	# Newest first: the interesting entry is almost always the most recent.
+	for offset in log_entries.size():
+		var entry: Dictionary = log_entries[log_entries.size() - 1 - offset]
+		log_list.add_child(_log_row(entry))
+
+
+func _log_row(entry: Dictionary) -> Control:
+	var row := Button.new()
+	row.custom_minimum_size.y = 38
+	row.focus_mode = Control.FOCUS_NONE
+	row.tooltip_text = String(entry.detail)
+	row.add_theme_stylebox_override("normal", _panel_style(Color("#08131d"), Color("#243440"), 1, 4))
+	row.add_theme_stylebox_override("hover", _panel_style(Color("#12283c"), HUD_BLUE, 1, 4))
+	# Clicking an entry jumps playback to it, which is what makes a single list
+	# serve in place of a separate battle queue.
+	row.pressed.connect(_on_log_row_pressed.bind(int(entry.index)))
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	box.add_theme_constant_override("separation", 0)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(box)
+	var head := Label.new()
+	head.text = "R%d  %s" % [int(entry.round), String(entry.summary)]
+	head.add_theme_font_size_override("font_size", 11)
+	head.add_theme_color_override("font_color", Color(String(LOG_TINTS.get(String(entry.type), "#c9c6bf"))))
+	box.add_child(head)
+	var tail := Label.new()
+	tail.text = String(entry.detail)
+	tail.add_theme_font_size_override("font_size", 10)
+	tail.add_theme_color_override("font_color", Color("#7f8a93"))
+	box.add_child(tail)
+	return row
+
+
+func _on_log_row_pressed(event_index: int) -> void:
+	if not resolution_mode or event_index < 0 or event_index >= resolution_events.size(): return
+	resolution_index = event_index
+	_present_resolution_event()
 
 
 ## One row per formation you command, whether or not it is selected, so the
@@ -926,6 +1050,7 @@ func _resolve_ready_round() -> void:
 	_log_line(("Round %d leftover movement resolved: %d events." if resolving_leftover else "Round %d movement, combat, and ranged attacks resolved: %d events.") % [resolved_round, events.size()], true)
 	for event: Dictionary in events:
 		_log_event(event)
+	_rebuild_log(events)
 	resolution_events = _visible_presentation_events(events)
 	if resolution_events.is_empty():
 		resolution_events.append({"action": "no_contact", "batch": "leftover" if resolving_leftover else "ranged", "combat": false, "result": "no_visible_contact"})
@@ -1674,6 +1799,9 @@ func _log_game_end() -> void:
 
 
 func _clear_logs() -> void:
+	log_entries.clear()
+	if log_list != null:
+		for child in log_list.get_children(): child.queue_free()
 	history.clear()
 	settings_history.clear()
 
