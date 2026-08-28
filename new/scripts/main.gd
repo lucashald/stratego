@@ -610,10 +610,11 @@ func _build_battle_panel() -> void:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	margin.add_child(box)
+	box.add_child(_ornate_header("ACTIVE BATTLE"))
 	battle_title = Label.new()
 	battle_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	battle_title.add_theme_font_size_override("font_size", 19)
-	battle_title.add_theme_color_override("font_color", HUD_BLUE)
+	battle_title.add_theme_font_size_override("font_size", 20)
+	battle_title.add_theme_color_override("font_color", Color("#f3eee5"))
 	battle_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(battle_title)
 	box.add_child(HSeparator.new())
@@ -629,17 +630,27 @@ func _build_battle_panel() -> void:
 	playback_controls.add_theme_constant_override("separation", 4)
 	playback_controls.alignment = BoxContainer.ALIGNMENT_CENTER
 	box.add_child(playback_controls)
-	for definition in [["|<", Callable(self, "_playback_first")], ["<", Callable(self, "_playback_previous")]]:
-		var button := _make_button(String(definition[0]), 44)
-		button.pressed.connect(definition[1])
-		playback_controls.add_child(button)
-	playback_pause_button = _make_button("NEXT", 118)
+	playback_controls.alignment = BoxContainer.ALIGNMENT_CENTER
+	var playback_column := VBoxContainer.new()
+	playback_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	playback_column.add_theme_constant_override("separation", 6)
+	playback_controls.add_child(playback_column)
+	# The contextual action names what pressing it does, so it gets its own row
+	# rather than being squeezed between the step buttons.
+	playback_pause_button = _make_button("NEXT", 0)
+	playback_pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	playback_pause_button.clip_text = true
 	playback_pause_button.add_theme_font_size_override("font_size", 17)
 	playback_pause_button.pressed.connect(_playback_next)
-	playback_controls.add_child(playback_pause_button)
-	var last_button := _make_button(">|", 44)
-	last_button.pressed.connect(_playback_last)
-	playback_controls.add_child(last_button)
+	playback_column.add_child(playback_pause_button)
+	var steps := HBoxContainer.new()
+	steps.add_theme_constant_override("separation", 5)
+	playback_column.add_child(steps)
+	for definition in [["|<", Callable(self, "_playback_first")], ["<", Callable(self, "_playback_previous")], [">", Callable(self, "_playback_next")], [">|", Callable(self, "_playback_last")]]:
+		var button := _make_button(String(definition[0]), 0)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(definition[1])
+		steps.add_child(button)
 
 
 ## The left sidebar fills its reserved region for the whole game. Tabs rather
@@ -1267,7 +1278,9 @@ func _resolution_event_duration(event: Dictionary) -> float:
 func _update_battle_card(event: Dictionary) -> void:
 	var action := String(event.get("action", "event"))
 	var is_battle := bool(event.get("combat", false))
-	battle_title.text = ("ACTIVE BATTLE: %s" if is_battle else "ACTIVE EVENT: %s") % _battle_name(event)
+	# The header already says ACTIVE BATTLE, so this line carries only the name.
+	battle_title.text = _battle_name(event)
+	if not is_battle: battle_title.text = _battle_name(event)
 	if action == "leftover_move":
 		var piece_id := int(event.get("piece_id", StrategoGame.EMPTY))
 		var piece_text := "Formation"
@@ -1276,7 +1289,10 @@ func _update_battle_card(event: Dictionary) -> void:
 			piece_text = "%s\n%s" % [game.player_name(int(piece.player)).to_upper(), game.piece_description(piece)]
 		battle_body.text = "[center][color=#f2b15b][font_size=19]REPOSITION[/font_size][/color]\n\n%s\n\n%s  ->  %s\n\n[color=#efc77c][b]MOVE COMPLETED[/b][/color][/center]" % [piece_text, str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
 		return
-	var content := "[center][color=#8fc4ff][font_size=18]%s[/font_size][/color][/center]\n\n" % _action_label(action)
+	# The header says ACTIVE BATTLE and the title names the event; a headline
+	# that repeats the title is the same words a third time.
+	var headline := _action_label(action)
+	var content := "" if headline == battle_title.text else "[center][color=#8fc4ff][font_size=18]%s[/font_size][/color][/center]\n\n" % headline
 	var ids: Array = event.get("participants", [])
 	if action == "ranged":
 		ids = [int(event.get("shooter_id", StrategoGame.EMPTY)), int(event.get("target_id", StrategoGame.EMPTY))]
@@ -1302,6 +1318,9 @@ func _update_battle_card(event: Dictionary) -> void:
 		content += "D10 roll   [b]%d[/b]%s\nFinal score   [b]%d[/b]\nDamage taken   [b]%d[/b]\nRemaining Strength   [b]%d[/b]\n" % [roll, roll_note, _event_score(event, valid_ids[index], index), _event_damage(event, valid_ids[index], index), int(piece.strength)]
 		if index < valid_ids.size() - 1:
 			content += "\n[center][color=#aaa39a]VERSUS[/color][/center]\n\n"
+	if valid_ids.is_empty():
+		battle_body.text = "[center][color=#aaa39a]%s[/color][/center]" % _result_detail(event, StrategoGame.EMPTY)
+		return
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
 	content += "\n[center][color=#efc77c][b]%s[/b][/color]\n%s[/center]" % [_result_label(event, winner_id), _result_detail(event, winner_id)]
 	battle_body.text = content
