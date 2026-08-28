@@ -34,11 +34,13 @@ const WEIGHT_MEDIUM := "medium"
 const WEIGHT_HEAVY := "heavy"
 const ROLE_BONUS := 3
 
+const PHASE_DEPLOYMENT := "deployment"
 const PHASE_PLANNING := "planning"
 const PHASE_LEFTOVER_PLANNING := "leftover_planning"
 const PHASE_RESOLVING := "resolving"
 const PHASE_GAME_OVER := "game_over"
 const SCENARIO_FOUR_PLAYER := "four_player"
+const SCENARIO_CROSSROADS := "crossroads"
 const SCENARIO_BRIDGE := "bridge"
 const OBJECTIVE_HOLD_SQUARE := "hold_square"
 const OBJECTIVE_ELIMINATE := "eliminate"
@@ -47,6 +49,28 @@ const OBJECTIVE_REACH_AREA := "reach_area"
 const OBJECTIVE_SURVIVE := "survive"
 const SCENARIO_MEETING := "meeting"
 const DEFAULT_HOLD_ROUNDS := 3
+## The deploy phase's zone: how many squares deep from a player's own board
+## edge they may place into, and how far the zone runs sideways from their
+## edge's centreline. Chosen so the four corner zones never touch each other
+## at this depth (halfwidth 6 would make adjacent zones share a cell at the
+## board's quarter points).
+const DEPLOYMENT_ZONE_DEPTH := 4
+const DEPLOYMENT_LATERAL_HALFWIDTH := 5
+## A hand-tuned formation for a 4-deep corner zone, the same philosophy as
+## MEETING_DEPLOYMENT but built from the four-player roster (PIECE_COUNTS: no
+## cavalry heavier or lighter than medium) rather than Meeting's, and too
+## cramped a space to derive by transforming it anyway: the heavy line sits
+## innermost (least travel for the slowest formations), mediums behind them,
+## lights on the flanks at the shallowest rank (most travel, covered fastest),
+## and the flag tucked at the literal edge. Entries are [type, lateral offset
+## from the edge's own centreline, rank inward from the edge; rank 0 is the
+## literal edge].
+const CORNER_DEPLOYMENT := [
+	[HEAVY_INFANTRY, -2, 3], [HEAVY_ARCHER, -1, 3], [HEAVY_ARCHER, 1, 3], [HEAVY_INFANTRY, 2, 3],
+	[MEDIUM_INFANTRY, -4, 2], [MEDIUM_ARCHER, -2, 2], [MEDIUM_CAVALRY, 0, 2], [MEDIUM_ARCHER, 2, 2], [MEDIUM_INFANTRY, 4, 2],
+	[LIGHT_INFANTRY, -3, 1], [LIGHT_ARCHER, 0, 1], [LIGHT_INFANTRY, 3, 1],
+	[FLAG, 0, 0],
+]
 ## Rows between the objective and each army's leading rank.
 const MEETING_FRONT_DISTANCE := 7
 const TERRAIN_OPEN := ""
@@ -163,6 +187,10 @@ var _skirmish_separation := 3
 var _meeting_turn_limit := DEFAULT_BRIDGE_TURN_LIMIT
 var setup_seed := 0
 var replay_rounds: Array[Dictionary] = []
+## Where every piece actually ended up once deployment locked in, piece id to
+## cell. The seed alone reproduces the recommended formation, not whatever a
+## player dragged it to, so replay fidelity needs this recorded separately.
+var deployment_placements: Dictionary = {}
 
 # Compatibility counters retained for the model/training shell.
 var current_player := BLUE
@@ -227,6 +255,7 @@ func setup_empty() -> void:
 	_skirmish_separation = 3
 	setup_seed = 0
 	replay_rounds.clear()
+	deployment_placements.clear()
 	current_player = BLUE
 	ply_count = 0
 	quiet_plies = 0
@@ -339,20 +368,64 @@ func setup_skirmish(seed_value: int = 0, blue_roster: Array = MEETING_ROSTER, re
 	_record_all_sightings()
 
 
-## Crossroads: a 2v2 team battle in the four-lake clearing. Same corner
-## deployment and terrain the four-player melee already uses, but Red+Green and
-## Blue+Yellow are allied on adjacent corners rather than left to fight alone.
-## That pairing is point-symmetric: rotate the board 180 degrees and Team Red
-## becomes Team Blue exactly, so it is as fair as Meeting's centred deployment
-## without needing a bespoke check for it.
+## Maps a corner formation's (lateral offset, rank-from-edge) onto an actual
+## board cell for whichever edge `player` deploys along. Lateral runs along the
+## edge from its own centreline; rank runs inward, 0 at the literal edge.
+func _edge_cell(player: int, lateral: int, rank: int) -> Vector2i:
+	var mid := BOARD_SIZE / 2
+	var depth := rank
+	match player:
+		RED: return Vector2i(mid + lateral, depth)
+		BLUE: return Vector2i(mid + lateral, BOARD_SIZE - 1 - depth)
+		GREEN: return Vector2i(BOARD_SIZE - 1 - depth, mid + lateral)
+		YELLOW: return Vector2i(depth, mid + lateral)
+	return Vector2i(-1, -1)
+
+
+## Every cell a player may deploy into: their own corner's zone, `DEPLOYMENT_
+## ZONE_DEPTH` squares deep and `2 * DEPLOYMENT_LATERAL_HALFWIDTH + 1` wide,
+## clear of the other three corners' zones by construction. Also doubles as
+## that player's fog of war during the deploy phase (see is_position_visible_
+## to) — nobody can see past their own zone to scout an opponent's opening
+## formation, and if a future scenario hides terrain, this is the boundary a
+## player would be shown it inside.
+func deployment_zone_cells(player: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for lateral in range(-DEPLOYMENT_LATERAL_HALFWIDTH, DEPLOYMENT_LATERAL_HALFWIDTH + 1):
+		for rank in DEPLOYMENT_ZONE_DEPTH:
+			var cell := _edge_cell(player, lateral, rank)
+			if is_inside(cell) and not is_blocked_terrain(cell): cells.append(cell)
+	return cells
+
+
+## The realistic default formation, as [type, cell] pairs actually placed on
+## the board. A player who deploys nothing gets exactly this; CORNER_
+## DEPLOYMENT's own comment explains the shape.
+func recommended_deployment(player: int) -> Array:
+	var placements: Array = []
+	for entry: Array in CORNER_DEPLOYMENT:
+		placements.append([String(entry[0]), _edge_cell(player, int(entry[1]), int(entry[2]))])
+	return placements
+
+
+## Crossroads: a 2v2 team battle in the four-lake clearing. Same corner map
+## the four-player melee already uses, but Red+Green and Blue+Yellow are
+## allied on adjacent corners rather than left to fight alone. That pairing is
+## point-symmetric: rotate the board 180 degrees and Team Red becomes Team
+## Blue exactly, so it is as fair as Meeting's centred deployment without
+## needing a bespoke check for it.
 ##
 ## The win condition is the same hold_square primitive Meeting uses. Nothing
 ## about it is 2-player-specific: _check_objectives already loops every active
 ## player and scores by are_allied_players, so either teammate holding the
 ## centre builds the team's streak for free.
+##
+## Every army starts already placed at its recommended formation, then the
+## game sits in PHASE_DEPLOYMENT so a player can override any of it before
+## play begins — see redeploy_piece.
 func setup_crossroads(seed_value: int = 0, hold_rounds: int = DEFAULT_HOLD_ROUNDS, turn_limit: int = 30, use_private_battle_results: bool = true) -> void:
 	setup_empty()
-	scenario = SCENARIO_FOUR_PLAYER
+	scenario = SCENARIO_CROSSROADS
 	configured_player_count = 4
 	private_battle_results = use_private_battle_results
 	apply_lake_terrain()
@@ -362,12 +435,18 @@ func setup_crossroads(seed_value: int = 0, hold_rounds: int = DEFAULT_HOLD_ROUND
 	player_teams[BLUE] = BLUE
 	player_teams[YELLOW] = BLUE
 	for player in players_for_count(4):
-		_place_army(player, _starting_cells(player), _rng)
+		for entry in recommended_deployment(player):
+			add_piece(String(entry[0]), player, entry[1])
 	active_players.assign(players_for_count(4))
 	_sort_active_players()
 	current_player = BLUE
 	add_hold_square_objective(Vector2i(BOARD_SIZE / 2, BOARD_SIZE / 2), hold_rounds, turn_limit)
-	_record_all_sightings()
+	phase = PHASE_DEPLOYMENT
+	# Sightings are recorded once real play starts, not here: every corner's
+	# formation already exists at this point, and each player's own zone-scoped
+	# fog (not the ordinary piece-radius vision) is what should govern what they
+	# can see of it until deployment resolves.
+	_visibility_dirty = true
 
 
 ## Places one army in its battle line. `front_row` is the rank nearest the
@@ -518,6 +597,12 @@ func set_player_team(player: int, team: int) -> void:
 
 func are_allied_players(first: int, second: int) -> bool:
 	return int(player_teams.get(first, first)) == int(player_teams.get(second, second))
+
+
+## Both four-player scenarios play by capture-the-flag and team survival; only
+## the deployment, teams, and objective differ between them.
+func _is_four_corner_scenario() -> bool:
+	return scenario == SCENARIO_FOUR_PLAYER or scenario == SCENARIO_CROSSROADS
 
 
 func piece_at(position: Vector2i) -> Dictionary:
@@ -1226,7 +1311,7 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 
 
 func mark_player_ready(player: int) -> Dictionary:
-	if phase not in [PHASE_PLANNING, PHASE_LEFTOVER_PLANNING] or player not in active_players:
+	if phase not in [PHASE_DEPLOYMENT, PHASE_PLANNING, PHASE_LEFTOVER_PLANNING] or player not in active_players:
 		return {"ok": false, "message": "This player cannot become ready now."}
 	if player not in ready_players: ready_players.append(player)
 	return {"ok": true, "all_ready": all_players_ready()}
@@ -1236,6 +1321,43 @@ func all_players_ready() -> bool:
 	for player in active_players:
 		if player not in ready_players: return false
 	return not active_players.is_empty()
+
+
+## Move one of a player's own formations to another cell inside their
+## deployment zone. Only legal during PHASE_DEPLOYMENT, and only before that
+## player has marked ready — once submitted, a redeploy would silently
+## invalidate a decision the player already committed to.
+func redeploy_piece(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	if phase != PHASE_DEPLOYMENT or player in ready_players:
+		return {"ok": false, "message": "Deployment is locked in."}
+	if piece_id < 0 or piece_id >= pieces.size() or not pieces[piece_id].alive or int(pieces[piece_id].player) != player:
+		return {"ok": false, "message": "That formation is not yours to place."}
+	if target not in deployment_zone_cells(player):
+		return {"ok": false, "message": "That square is outside your deployment zone."}
+	var origin: Vector2i = pieces[piece_id].position
+	if target == origin: return {"ok": true, "action": "redeploy", "piece_id": piece_id, "position": target}
+	if board[target.y][target.x] != EMPTY:
+		return {"ok": false, "message": "Another formation already holds that square."}
+	board[origin.y][origin.x] = EMPTY
+	board[target.y][target.x] = piece_id
+	pieces[piece_id].position = target
+	pieces[piece_id].previous_position = target
+	pieces[piece_id].recent_positions = [target]
+	_visibility_dirty = true
+	return {"ok": true, "action": "redeploy", "piece_id": piece_id, "position": target}
+
+
+## Once every active player has locked in deployment, place the game on its
+## first real round: sightings are recorded now, from wherever pieces actually
+## ended up, rather than at setup against the recommended formation.
+func resolve_deployment() -> bool:
+	if phase != PHASE_DEPLOYMENT or not all_players_ready(): return false
+	for piece: Dictionary in pieces:
+		deployment_placements[piece.id] = _encode_position(piece.position)
+	phase = PHASE_PLANNING
+	ready_players.clear()
+	_record_all_sightings()
+	return true
 
 
 func resolve_round() -> Array[Dictionary]:
@@ -2117,7 +2239,7 @@ func build_replay_document() -> Dictionary:
 			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
 			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
 			"skirmish_turn_limit": _skirmish_turn_limit, "skirmish_separation": _skirmish_separation,
-			"teams": teams,
+			"teams": teams, "deployment": deployment_placements.duplicate(true),
 		},
 		"rounds": replay_rounds.duplicate(true),
 		"terminal": {
@@ -2254,6 +2376,18 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 		replay_game.setup_skirmish(seed, MEETING_ROSTER, MEETING_ROSTER, int(setup.get("skirmish_separation", 3)), int(setup.get("skirmish_turn_limit", 40)), privacy)
 	elif replay_scenario == SCENARIO_FOUR_PLAYER:
 		replay_game.setup_random(seed, int(setup.get("player_count", 4)), privacy)
+	elif replay_scenario == SCENARIO_CROSSROADS:
+		replay_game.setup_crossroads(seed, DEFAULT_HOLD_ROUNDS, 30, privacy)
+		# The seed alone reproduces the recommended formation, not wherever a
+		# player actually dragged pieces to, so recorded deployment is applied
+		# directly and deployment is closed out rather than replayed
+		# interactively.
+		for id_key in setup.get("deployment", {}):
+			var piece_id := int(id_key)
+			if piece_id < 0 or piece_id >= replay_game.pieces.size(): continue
+			replay_game.redeploy_piece(int(replay_game.pieces[piece_id].player), piece_id, _decode_position(setup.deployment[id_key]))
+		for player in replay_game.active_players: replay_game.mark_player_ready(player)
+		replay_game.resolve_deployment()
 	else:
 		return {"ok": false, "message": "The replay uses an unsupported scenario."}
 	replay_game.vision_range = int(setup.get("vision_range", DEFAULT_VISION_RANGE))
@@ -2343,7 +2477,7 @@ func _finish_round() -> void:
 	_check_flag_eliminations()
 	if not game_over: _finish_if_army_destroyed()
 	if not game_over: _check_objectives()
-	if not game_over and scenario == SCENARIO_FOUR_PLAYER: _finish_if_one_team_remains()
+	if not game_over and _is_four_corner_scenario(): _finish_if_one_team_remains()
 	if game_over:
 		phase = PHASE_GAME_OVER
 		return
@@ -2362,7 +2496,7 @@ func bridge_strength_across() -> int:
 
 
 func _check_flag_eliminations() -> void:
-	if scenario != SCENARIO_FOUR_PLAYER: return
+	if not _is_four_corner_scenario(): return
 	var to_eliminate: Array[int] = []
 	for player in active_players:
 		if count_alive_type(player, FLAG) == 0: to_eliminate.append(player)
@@ -2418,6 +2552,12 @@ func _record_piece_move(id: int, from: Vector2i, to: Vector2i) -> void:
 
 func is_position_visible_to(position: Vector2i, player: int) -> bool:
 	if not is_inside(position): return false
+	# Every corner's formation already exists once deployment begins (see
+	# setup_crossroads), so ordinary piece-radius vision would leak a glimpse of
+	# a neighbouring zone. During deployment a player can only see their own
+	# zone, full stop — not the squares nearest whichever formations they
+	# happen to have already placed.
+	if phase == PHASE_DEPLOYMENT: return position in deployment_zone_cells(player)
 	_ensure_visibility_cache()
 	return position in _visible_cells_by_player.get(player, {})
 

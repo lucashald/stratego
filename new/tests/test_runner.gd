@@ -37,6 +37,9 @@ func _run() -> void:
 	_test_withdrawal_preserves_survivors_and_no_collapse()
 	_test_meeting_engagement_hold_objective()
 	_test_deterministic_replay_export()
+	_test_deployment_zone_and_recommended_formation()
+	_test_deployment_fog_and_redeploy()
+	_test_crossroads_replay_round_trip()
 	_test_bot_round_smoke()
 	print("\n%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -767,6 +770,81 @@ func _test_deterministic_replay_export() -> void:
 	tampered.setup = tampered_setup
 	var tampered_result := StrategoGame.run_replay(tampered)
 	_expect(not bool(tampered_result.get("ok", false)), "replay verification rejects altered deterministic input")
+
+
+func _test_deployment_zone_and_recommended_formation() -> void:
+	var game := StrategoGame.new()
+	game.setup_crossroads(4242)
+	_expect(game.phase == StrategoGame.PHASE_DEPLOYMENT, "crossroads opens on a deployment phase, not planning")
+	var all_players: Array = [StrategoGame.RED, StrategoGame.GREEN, StrategoGame.BLUE, StrategoGame.YELLOW]
+	var claimed: Dictionary = {}
+	var collision := false
+	for player in all_players:
+		var zone := game.deployment_zone_cells(player)
+		_expect(zone.size() == (2 * StrategoGame.DEPLOYMENT_LATERAL_HALFWIDTH + 1) * StrategoGame.DEPLOYMENT_ZONE_DEPTH, "%s's deployment zone is the full rectangle, clear of lake terrain" % game.player_name(player))
+		for cell in zone:
+			if cell in claimed and claimed[cell] != player: collision = true
+			claimed[cell] = player
+		for piece: Dictionary in game.pieces:
+			if int(piece.player) == player:
+				_expect(piece.position in zone, "%s's recommended formation stays inside its own zone" % game.player_name(player))
+	_expect(not collision, "no two corners' deployment zones share a cell")
+	_expect(game.count_alive(StrategoGame.RED) == 13 and game.total_strength(StrategoGame.RED) == 80, "the recommended formation is the full roster, not a partial one")
+
+
+func _test_deployment_fog_and_redeploy() -> void:
+	var game := StrategoGame.new()
+	game.setup_crossroads(77)
+	var red_flag := game.find_alive_piece(StrategoGame.RED, StrategoGame.FLAG)
+	_expect(not game.is_piece_visible_to(red_flag, StrategoGame.BLUE), "an opposing corner's formation is invisible during deployment, not just unidentified")
+	_expect(game.is_piece_visible_to(red_flag, StrategoGame.RED), "a player can always see their own deployment")
+	var red_cavalry := game.find_alive_piece(StrategoGame.RED, StrategoGame.HEAVY_CAVALRY)
+	var zone := game.deployment_zone_cells(StrategoGame.RED)
+	var empty_cell: Vector2i = Vector2i(-1, -1)
+	for cell in zone:
+		if game.piece_at(cell).is_empty():
+			empty_cell = cell
+			break
+	var moved := game.redeploy_piece(StrategoGame.RED, int(red_cavalry.id), empty_cell)
+	_expect(bool(moved.get("ok", false)) and game.pieces[red_cavalry.id].position == empty_cell, "redeploying to an open cell inside the zone succeeds")
+	var outside := Vector2i(StrategoGame.BOARD_SIZE / 2, StrategoGame.BOARD_SIZE / 2)
+	var rejected := game.redeploy_piece(StrategoGame.RED, int(red_cavalry.id), outside)
+	_expect(not bool(rejected.get("ok", false)), "redeploying outside the zone is rejected")
+	var blue_infantry := game.find_alive_piece(StrategoGame.BLUE, StrategoGame.HEAVY_INFANTRY)
+	var cross_owner := game.redeploy_piece(StrategoGame.RED, int(blue_infantry.id), empty_cell)
+	_expect(not bool(cross_owner.get("ok", false)), "a player cannot redeploy another player's formation")
+	for player in game.active_players: game.mark_player_ready(player)
+	var locked := game.redeploy_piece(StrategoGame.RED, int(red_cavalry.id), zone[0])
+	_expect(not bool(locked.get("ok", false)), "deployment is locked once every player is ready")
+	_expect(game.resolve_deployment(), "deployment resolves once every player has locked in")
+	_expect(game.phase == StrategoGame.PHASE_PLANNING, "deployment hands off to the ordinary planning phase")
+	_expect(not game.is_piece_visible_to(game.find_alive_piece(StrategoGame.BLUE, StrategoGame.FLAG), StrategoGame.RED), "ordinary fog still hides the far corners once real play begins")
+
+
+func _test_crossroads_replay_round_trip() -> void:
+	var game := StrategoGame.new()
+	game.setup_crossroads(555)
+	var moved_piece := game.find_alive_piece(StrategoGame.YELLOW, StrategoGame.LIGHT_ARCHER)
+	var zone := game.deployment_zone_cells(StrategoGame.YELLOW)
+	var target: Vector2i = zone[zone.size() - 1]
+	if not game.piece_at(target).is_empty(): target = moved_piece.position
+	game.redeploy_piece(StrategoGame.YELLOW, int(moved_piece.id), target)
+	for player in game.active_players: game.mark_player_ready(player)
+	game.resolve_deployment()
+	var bot := StrategoBotPolicy.new()
+	var planning_rng := RandomNumberGenerator.new()
+	planning_rng.seed = 314
+	for round_index in range(4):
+		if game.game_over: break
+		for player in game.active_players.duplicate():
+			bot.plan_round(game, player, planning_rng)
+			game.mark_player_ready(player)
+		game.resolve_round()
+	var document := game.build_replay_document()
+	_expect(document.get("setup", {}).get("deployment", {}).size() == game.pieces.size(), "a crossroads replay records where every formation was actually deployed")
+	var parsed_value: Variant = JSON.parse_string(JSON.stringify(document))
+	var json_result: Dictionary = StrategoGame.run_replay(parsed_value as Dictionary) if parsed_value is Dictionary else {"ok": false}
+	_expect(bool(json_result.get("ok", false)) and String(json_result.get("digest", "")) == game.state_digest(), "a crossroads replay reproduces the exact final state, redeployment included")
 
 
 func _test_bot_round_smoke() -> void:

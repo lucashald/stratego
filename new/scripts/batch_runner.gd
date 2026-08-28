@@ -68,6 +68,12 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)
 	elif scenario == "crossroads": game.setup_crossroads(seed_value)
 	else: game.setup_bridge(seed_value)
+	# Bots accept the recommended formation as-is; nothing here optimizes a
+	# deployment. That is deliberate: it leaves deployment choice as a lever a
+	# human player can use against a bot that never bothers to.
+	if game.phase == StrategoGame.PHASE_DEPLOYMENT:
+		for player in game.active_players: game.mark_player_ready(player)
+		game.resolve_deployment()
 	# One policy per side so the two can hold different assumptions. Beyond two
 	# players --assumeblue is the only profile in play; every bot shares it.
 	var bots: Dictionary = {}
