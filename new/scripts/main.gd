@@ -270,43 +270,91 @@ func _build_view_controls() -> void:
 	row.add_child(help)
 
 
+## The round as six named steps. MARCH and MELEE each carry three dots because
+## there really are three of each and they alternate: the engine resolves moves,
+## then battles, then retreats within *each* impulse. The bar is therefore a
+## legend showing where the current event belongs, not a progress meter, and it
+## is allowed to jump backwards.
+const PHASE_STEPS := [
+	{"name": "ORDERS", "dots": 1},
+	{"name": "MARCH", "dots": 3},
+	{"name": "MELEE", "dots": 3},
+	{"name": "MISSILES", "dots": 1},
+	{"name": "REPOSITION", "dots": 1},
+	{"name": "END TURN", "dots": 1},
+]
+const STEP_ORDERS := 0
+const STEP_MARCH := 1
+const STEP_MELEE := 2
+const STEP_MISSILES := 3
+const STEP_REPOSITION := 4
+const STEP_END_TURN := 5
+
+var phase_step_panels: Array[PanelContainer] = []
+var phase_step_labels: Array[Label] = []
+var phase_step_dots: Array = []
+
+
 func _build_timeline() -> void:
 	timeline_panel = PanelContainer.new()
 	timeline_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	timeline_panel.position = Vector2(-560, -70)
-	timeline_panel.size = Vector2(1120, 60)
+	timeline_panel.position = Vector2(-620, -74)
+	timeline_panel.size = Vector2(1240, 64)
 	timeline_panel.add_theme_stylebox_override("panel", _panel_style(PANEL_BG, HUD_GOLD, 1, 8))
 	add_child(timeline_panel)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 6)
 	timeline_panel.add_child(row)
-	var timeline_title := Label.new()
-	timeline_title.text = "ROUND"
-	timeline_title.custom_minimum_size.x = 78
-	timeline_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	timeline_title.add_theme_font_size_override("font_size", 15)
-	row.add_child(timeline_title)
-	var names := ["IMPULSE 1\nMOVE", "IMPULSE 2\nMOVE", "IMPULSE 3\nMOVE", "BATTLES", "RETREATS", "RANGED\nATTACKS", "LEFTOVER\nMOVEMENT"]
-	for index in names.size():
+	for index in PHASE_STEPS.size():
 		if index > 0:
 			var arrow := Label.new()
 			arrow.text = ">"
-			arrow.add_theme_font_size_override("font_size", 25)
-			arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.45))
+			arrow.add_theme_font_size_override("font_size", 22)
+			arrow.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
 			row.add_child(arrow)
-		var stage := PanelContainer.new()
-		stage.custom_minimum_size = Vector2(106, 44)
-		stage.add_theme_stylebox_override("panel", _timeline_style(false, false))
-		row.add_child(stage)
+		var step: Dictionary = PHASE_STEPS[index]
+		var panel := PanelContainer.new()
+		panel.custom_minimum_size = Vector2(150, 50)
+		panel.add_theme_stylebox_override("panel", _timeline_style(false, false))
+		panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		panel.gui_input.connect(_on_phase_step_clicked.bind(index))
+		row.add_child(panel)
+		var column := VBoxContainer.new()
+		column.alignment = BoxContainer.ALIGNMENT_CENTER
+		column.add_theme_constant_override("separation", 1)
+		panel.add_child(column)
 		var label := Label.new()
-		label.text = names[index]
+		label.text = "%d  %s" % [index + 1, String(step.name)]
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 12)
-		stage.add_child(label)
-		timeline_stages.append(stage)
+		label.add_theme_font_size_override("font_size", 13)
+		column.add_child(label)
+		var dot_row := HBoxContainer.new()
+		dot_row.alignment = BoxContainer.ALIGNMENT_CENTER
+		dot_row.add_theme_constant_override("separation", 5)
+		column.add_child(dot_row)
+		var dots: Array[Label] = []
+		for dot_index in int(step.dots):
+			var dot := Label.new()
+			dot.text = "●"
+			dot.add_theme_font_size_override("font_size", 12)
+			dot.add_theme_color_override("font_color", Color("#3d4a4a"))
+			dot_row.add_child(dot)
+			dots.append(dot)
+		phase_step_panels.append(panel)
+		phase_step_labels.append(label)
+		phase_step_dots.append(dots)
+		timeline_stages.append(panel)
 		timeline_labels.append(label)
+
+
+## END TURN is a control, not just a marker: it resolves whatever is left of the
+## round without stopping, for a player with no orders left to give.
+func _on_phase_step_clicked(event: InputEvent, index: int) -> void:
+	if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+		return
+	if index == STEP_END_TURN:
+		_skip_to_end_of_round()
 
 
 func _build_detail_toast() -> void:
@@ -757,7 +805,13 @@ func _finish_resolution_presentation(active_session: int = -1) -> void:
 	_update_interface()
 	if game.game_over:
 		_log_game_end()
-	elif spectator_mode and not replay_view_mode:
+		return
+	# A reposition phase nobody can act in has nothing to decide, so it does not
+	# stop and ask. Skipping is deferred a frame so the interface settles first.
+	if _phase_has_no_decision() and not spectator_mode and not replay_view_mode:
+		call_deferred("_on_ready_pressed")
+		return
+	if spectator_mode and not replay_view_mode:
 		_run_spectator_round(session_id if active_session < 0 else active_session)
 
 
@@ -958,15 +1012,25 @@ func _action_label(action: String) -> String:
 
 
 func _timeline_index_for_event(event: Dictionary) -> int:
+	return int(_phase_step_for_event(event).step)
+
+
+## Which step owns an event, and which of that step's dots. Retreats resolve as
+## part of the melee batch that caused them, so they report as MELEE rather than
+## a step of their own.
+func _phase_step_for_event(event: Dictionary) -> Dictionary:
 	var action := String(event.get("action", ""))
-	if action in ["melee", "crossing_battle"]: return 3
-	if action in ["retreat", "retreat_battle", "retreat_collision"]: return 4
-	if action == "ranged": return 5
-	if String(event.get("batch", "")) == "leftover": return 6
 	var batch := String(event.get("batch", ""))
+	var impulse := 0
 	if batch.begins_with("impulse_"):
-		return clampi(int(batch.trim_prefix("impulse_")) - 1, 0, 2)
-	return 3
+		impulse = clampi(int(batch.trim_prefix("impulse_")) - 1, 0, 2)
+	if batch == "leftover":
+		return {"step": STEP_REPOSITION, "dot": 0}
+	if action in ["ranged", "ranged_fizzle"]:
+		return {"step": STEP_MISSILES, "dot": 0}
+	if action in ["melee", "crossing_battle", "retreat", "retreat_battle", "retreat_collision", "bounce"]:
+		return {"step": STEP_MELEE, "dot": impulse}
+	return {"step": STEP_MARCH, "dot": impulse}
 
 
 func _on_clear_orders() -> void:
@@ -1128,6 +1192,47 @@ func _playback_last() -> void:
 	_present_resolution_event()
 
 
+## Enter is the single key that moves the round along: it advances one event,
+## crosses a phase boundary, and starts the next round, so a whole turn can be
+## played without reaching for the mouse.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo): return
+	var key := event as InputEventKey
+	if key.keycode not in [KEY_ENTER, KEY_KP_ENTER]: return
+	accept_event()
+	if game.game_over: return
+	if resolution_mode:
+		_playback_next()
+	else:
+		_on_ready_pressed()
+
+
+## Resolves whatever remains of the round without pausing, for a player who has
+## nothing left to decide.
+func _skip_to_end_of_round() -> void:
+	if replay_view_mode or game.game_over: return
+	var guard := 0
+	while guard < 64:
+		guard += 1
+		if resolution_mode:
+			_finish_resolution_presentation()
+			continue
+		if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
+			# Nothing is being ordered, so the reposition step is simply skipped.
+			_on_ready_pressed()
+			continue
+		break
+
+
+## True when a planning phase has no decision in it: nothing the player commands
+## is able to act. Such a phase should not stop and ask.
+func _phase_has_no_decision() -> bool:
+	if game.phase != StrategoGame.PHASE_LEFTOVER_PLANNING: return false
+	for piece: Dictionary in game.pieces:
+		if game.can_receive_leftover_order(StrategoGame.BLUE, int(piece.id)): return false
+	return true
+
+
 func _run_spectator_round(active_session: int) -> void:
 	if active_session != session_id or not spectator_mode or game.game_over or resolution_mode:
 		return
@@ -1185,7 +1290,9 @@ func _update_interface(update_detail: bool = true) -> void:
 		var label: Label = count_labels[player]
 		label.visible = player in game.active_players or player in game.eliminated_players
 		label.text = "%s · %d units · %d Strength" % [game.player_name(player), game.count_alive(player), game.total_strength(player)]
-	ready_button.text = "END LEFTOVER" if leftover_planning else "END PLANNING"
+	# The primary action names the phase it ends, so the button teaches the round
+	# structure rather than saying the same thing throughout.
+	ready_button.text = "END REPOSITION" if leftover_planning else "END ORDERS"
 	ready_button.disabled = not planning or read_only
 	undo_button.disabled = not planning or read_only or not board_view.can_undo_order()
 	cancel_all_button.disabled = not planning or read_only or (not game.has_leftover_orders(StrategoGame.BLUE) if leftover_planning else game.orders_for_player(StrategoGame.BLUE).is_empty())
@@ -1211,10 +1318,21 @@ func _update_interface(update_detail: bool = true) -> void:
 
 
 func _update_timeline(active_index: int) -> void:
-	for index in timeline_stages.size():
+	var reached: Dictionary = {}
+	# Dots fill from the events already played, so an impulse that produced no
+	# battles leaves its MELEE dot hollow rather than compacting the row.
+	for index in mini(resolution_index, resolution_events.size()):
+		var placement := _phase_step_for_event(resolution_events[index])
+		reached["%d:%d" % [int(placement.step), int(placement.dot)]] = true
+	for index in phase_step_panels.size():
 		var completed := (resolution_mode or game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING) and index < active_index
-		timeline_stages[index].add_theme_stylebox_override("panel", _timeline_style(index == active_index, completed))
-		timeline_labels[index].add_theme_color_override("font_color", HUD_BLUE if index == active_index else Color("#c9c6bf"))
+		phase_step_panels[index].add_theme_stylebox_override("panel", _timeline_style(index == active_index, completed))
+		phase_step_labels[index].add_theme_color_override("font_color", HUD_BLUE if index == active_index else Color("#c9c6bf"))
+		var dots: Array = phase_step_dots[index]
+		for dot_index in dots.size():
+			var lit: bool = reached.has("%d:%d" % [index, dot_index])
+			if index == STEP_ORDERS: lit = resolution_mode or game.round_number > 1
+			dots[dot_index].add_theme_color_override("font_color", Color("#6fbf63") if lit else Color("#3d4a4a"))
 
 
 func _update_inspector() -> void:
