@@ -946,10 +946,21 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 	var eligible_ids: Array[int] = []
 	var skipped_for_speed := 0
 	var skipped_for_path := 0
+	var skipped_immobile := 0
 	for piece_id in unique_ids:
-		if piece_id < 0 or piece_id >= pieces.size() or not is_movable(pieces[piece_id]) or int(pieces[piece_id].player) != player:
+		# Ordering a formation that is not yours, or that does not exist, is a
+		# caller error rather than a fact about the battle, so it still fails
+		# the whole call.
+		if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
 			orders[player] = original_orders
-			return {"ok": false, "message": "Every selected formation must be able to move."}
+			return {"ok": false, "message": "Every selected formation must belong to this player."}
+		# Being unable to move is not. A selection that happens to include the
+		# Flag, or a formation ground down to no Strength, is an ordinary thing
+		# to drag a box around, and rejecting the whole order over it meant a
+		# group containing one of them silently did nothing at all.
+		if not is_movable(pieces[piece_id]):
+			skipped_immobile += 1
+			continue
 		var current: Dictionary = original_orders.get(piece_id, {})
 		if not remove_last and planned_movement_reserved(piece_id, current) >= movement_limit_for(pieces[piece_id]):
 			skipped_for_speed += 1
@@ -983,7 +994,7 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 		eligible_ids.append(piece_id)
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
-		return {"ok": false, "count": 0, "skipped": skipped_for_speed + skipped_for_path, "message": "No formations in the selection could take that step."}
+		return {"ok": false, "count": 0, "skipped": skipped_for_speed + skipped_for_path + skipped_immobile, "message": "No formations in the selection could take that step."}
 	# All candidates are installed before validation so a formation line of
 	# equally fast formations can advance together in lockstep - proving any
 	# one member's step clear depends on every other member's step already
@@ -1013,7 +1024,7 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 			orders[player][fastest] = original_orders[fastest]
 		else:
 			orders[player].erase(fastest)
-	var skipped_total := skipped_for_speed + skipped_for_path + skipped_for_conflict
+	var skipped_total := skipped_for_speed + skipped_for_path + skipped_immobile + skipped_for_conflict
 	if remaining.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped_total, "message": "No formations in the selection could take that step."}
@@ -1126,9 +1137,14 @@ func set_group_leftover_step(player: int, piece_ids: Array[int], direction: Vect
 	var eligible_ids: Array[int] = []
 	var skipped_for_speed := 0
 	for piece_id in unique_ids:
-		if piece_id < 0 or piece_id >= pieces.size() or not is_movable(pieces[piece_id]) or int(pieces[piece_id].player) != player:
+		if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
 			orders[player] = original_orders
-			return {"ok": false, "message": "Every selected formation must be able to move."}
+			return {"ok": false, "message": "Every selected formation must belong to this player."}
+		# Skipped, not fatal: see _change_group_paths. A Flag in the selection
+		# must not cost everything else its leftover step.
+		if not is_movable(pieces[piece_id]):
+			skipped_for_speed += 1
+			continue
 		var current: Dictionary = original_orders.get(piece_id, {})
 		var path: Array = current.get("path", []).duplicate()
 		var ranged_target: Vector2i = current.get("ranged_target", Vector2i(-1, -1))

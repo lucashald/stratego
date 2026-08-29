@@ -179,6 +179,36 @@ func _test_group_orders_apply_per_formation() -> void:
 	_expect(edge_game.order_for_piece(edge_id).is_empty(), "the formation that would walk off the map is skipped, not given a broken order")
 	_expect(edge_game.projected_main_destination(safe_id) == Vector2i(3, 1), "a formation blocked by no one else's failure still advances")
 
+	# The Flag cannot move, and neither can a formation ground down to no
+	# Strength, but both are ordinary things to have inside a drag-selection.
+	# Rejecting the whole order over one of them made a group containing one
+	# silently do nothing, on the arrow keys and on click alike, since both
+	# routes come through here.
+	var flag_game := _test_game()
+	var marcher := flag_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	var standard := flag_game.add_piece(StrategoGame.FLAG, StrategoGame.BLUE, Vector2i(6, 5))
+	flag_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var with_flag := flag_game.append_group_order_step(StrategoGame.BLUE, [marcher, standard], Vector2i.UP)
+	_expect(bool(with_flag.ok) and int(with_flag.count) == 1 and int(with_flag.skipped) == 1, "a selection containing the Flag still orders everything in it that can move")
+	_expect(flag_game.projected_main_destination(marcher) == Vector2i(5, 4), "the movable formation in that selection actually advances")
+	_expect(flag_game.order_for_piece(standard).is_empty(), "the Flag itself receives no order")
+
+	var spent_game := _test_game()
+	var healthy := spent_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	var wiped := spent_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(7, 5))
+	spent_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	spent_game.pieces[wiped].strength = 0
+	var with_spent := spent_game.append_group_order_step(StrategoGame.BLUE, [healthy, wiped], Vector2i.UP)
+	_expect(bool(with_spent.ok) and int(with_spent.count) == 1, "a formation with no Strength left is skipped rather than cancelling the group order")
+
+	# Still a hard error: whose formation it is stays a caller mistake, not a
+	# fact about the battle to be worked around.
+	var enemy_game := _test_game()
+	var own := enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	var foreign := enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(9, 9))
+	var mixed := enemy_game.append_group_order_step(StrategoGame.BLUE, [own, foreign], Vector2i.UP)
+	_expect(not bool(mixed.ok) and enemy_game.order_for_piece(own).is_empty(), "a selection containing another player's formation is still refused outright")
+
 	var collision_game := _test_game()
 	var blocking_heavy := collision_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
 	var following_medium := collision_game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
