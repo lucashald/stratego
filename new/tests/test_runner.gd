@@ -44,6 +44,7 @@ func _run() -> void:
 	_test_crossroads_replay_round_trip()
 	_test_bot_omniscient_toggle()
 	_test_bot_round_smoke()
+	_test_llm_client_parsing()
 	print("\n%d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
 
@@ -979,3 +980,30 @@ func _test_bot_round_smoke() -> void:
 	trainer.max_rounds = 4
 	var result := trainer.play_match(bot, StrategoBotPolicy.new(), StrategoGame.RED, 424242)
 	_expect(int(result.rounds) > 0 and int(result.rounds) <= 5, "headless self-play remains bounded under simultaneous orders")
+
+
+func _test_llm_client_parsing() -> void:
+	var body := StrategoLLMClient.build_request_body(
+		[{"role": "user", "content": "orders?"}], "sonnet", 500, 0.4,
+	)
+	_expect(String(body.model) == "sonnet" and int(body.max_tokens) == 500 and not bool(body.stream), "the request body carries the model and asks for a whole response rather than a stream")
+
+	_expect(StrategoLLMClient.extract_content({"choices": [{"message": {"content": "advance"}}]}) == "advance", "the assistant's text is read out of the standard response shape")
+	# Some models leave content empty and put the answer in reasoning_content;
+	# without the fallback those replies read as empty rather than as answers.
+	_expect(StrategoLLMClient.extract_content({"choices": [{"message": {"content": "", "reasoning_content": "hold"}}]}) == "hold", "a reply delivered as reasoning_content is still found")
+	_expect(StrategoLLMClient.extract_content({"choices": []}) == "", "a response with no choices yields no content rather than an error")
+
+	var bare := StrategoLLMClient.extract_json_object('{"posture": "aggressive"}')
+	_expect(String(bare.get("posture", "")) == "aggressive", "a bare JSON object parses")
+	# Models wrap JSON in fences and introduce it with a sentence constantly,
+	# even when instructed not to; throwing the turn away over that would make
+	# LLM factions fail for presentation reasons rather than bad decisions.
+	var fenced := StrategoLLMClient.extract_json_object("Here are my orders:\n```json\n{\"posture\": \"defensive\"}\n```\nHope that helps.")
+	_expect(String(fenced.get("posture", "")) == "defensive", "a JSON object wrapped in prose and code fences is still recovered")
+	var nested := StrategoLLMClient.extract_json_object('{"a": {"b": 2}, "c": 3}')
+	_expect(int(nested.get("c", 0)) == 3, "a nested object is read to its true end, not to the first closing brace")
+	var braced_string: Dictionary = StrategoLLMClient.extract_json_object('{"msg": "deal? {yes}", "ok": true}')
+	_expect(bool(braced_string.get("ok", false)), "a brace inside a string does not truncate the object - alliance chat will contain them")
+	_expect(StrategoLLMClient.extract_json_object("no object here").is_empty(), "prose with no JSON yields an empty result rather than a crash")
+	_expect(StrategoLLMClient.extract_json_object('{"broken": ').is_empty(), "an unterminated object yields an empty result")
