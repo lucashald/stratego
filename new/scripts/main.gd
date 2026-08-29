@@ -10,6 +10,27 @@ var bot := StrategoBotPolicy.new()
 # When set, this army is driven over the MCP bridge instead of by the bot, so a
 # remote opponent can play the real app rather than a headless copy of it.
 var remote_bridge: StrategoMCPBridge = null
+
+## Prose after-action report, written by a model from the round's visible log.
+## Flavour only: it reads the log and writes to the log, and touches no game
+## state, so a model that is slow, unreachable, or absent costs nothing but the
+## report itself.
+const REPORT_ENDPOINT := "http://127.0.0.1:8787/v1"
+const REPORT_MODEL := "sonnet"
+## The local bridge's shared secret, not a credential: start-bridge.ps1 sets
+## the same literal, and it only ever travels over loopback. The environment
+## variable is there so a different bridge key does not need a code change.
+const REPORT_KEY_FALLBACK := "codex-local"
+var llm_client: StrategoLLMClient = null
+var _report_lines: PackedStringArray = []
+var _capturing_report_lines := false
+## request id -> the round it describes. Reports arrive after the round has
+## moved on, so they have to name the round rather than assume the current one.
+var _report_rounds: Dictionary = {}
+## One "unavailable" note per match rather than one per round. A bridge that
+## is not running would otherwise leave an identical complaint every round.
+var _report_failure_logged := false
+
 var rng := RandomNumberGenerator.new()
 var board_view: StrategoBoardView
 var minimap: StrategoBoardView
@@ -41,6 +62,7 @@ var ranged_toggle: CheckButton
 var leftover_toggle: CheckButton
 var privacy_toggle: CheckButton
 var cavalry_leftover_toggle: CheckButton
+var battle_report_toggle: CheckButton
 var count_labels: Dictionary = {}
 var history: RichTextLabel
 var settings_history: RichTextLabel
@@ -105,6 +127,17 @@ func _ready() -> void:
 	_build_interface()
 	start_bridge_game()
 	_start_remote_bridge()
+	llm_client = StrategoLLMClient.new()
+	llm_client.endpoint = REPORT_ENDPOINT
+	llm_client.model = REPORT_MODEL
+	var configured_key := OS.get_environment("STRATEGO_LLM_KEY")
+	llm_client.api_key = configured_key if not configured_key.is_empty() else REPORT_KEY_FALLBACK
+	# Well under the 30s default: this is a flavour line arriving beside a
+	# round the player has already moved past, so a report that has not landed
+	# by now has missed its moment anyway.
+	llm_client.timeout_seconds = 20.0
+	llm_client.request_completed.connect(_on_battle_report_completed)
+	add_child(llm_client)
 
 
 ## Opens the command bridge when launched with --remote, so a second commander
@@ -840,6 +873,7 @@ func _shot_entry(event: Dictionary, index: int) -> Dictionary:
 
 const LOG_TINTS := {
 	"move": "#8fa5b8", "battle": "#ffb182", "shot": "#78e2f5", "fizzle": "#7d8794",
+	"report": "#e8c78a",
 }
 
 
@@ -1056,6 +1090,11 @@ func _build_settings_drawer() -> void:
 	privacy_toggle.text = "Private battle details"
 	privacy_toggle.button_pressed = true
 	box.add_child(privacy_toggle)
+	battle_report_toggle = CheckButton.new()
+	battle_report_toggle.text = "Field reports"
+	battle_report_toggle.button_pressed = true
+	battle_report_toggle.tooltip_text = "After each round's battles, a model narrates what you observed and adds it to the log. Needs the local bridge running on port 8787. Flavour only; it never affects play."
+	box.add_child(battle_report_toggle)
 	cavalry_leftover_toggle = CheckButton.new()
 	cavalry_leftover_toggle.text = "Cavalry always repositions"
 	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. Off by default; applies to the next game you start."
@@ -1314,8 +1353,15 @@ func _resolve_ready_round() -> void:
 	else:
 		events = game.resolve_main_and_ranged()
 	_log_line(("Round %d leftover movement resolved: %d events." if resolving_leftover else "Round %d movement, combat, and ranged attacks resolved: %d events.") % [resolved_round, events.size()], true)
+	# Only the per-event lines are captured, not the header above: the header
+	# is bookkeeping the model would only parrot back.
+	_report_lines.clear()
+	_capturing_report_lines = true
 	for event: Dictionary in events:
 		_log_event(event)
+	_capturing_report_lines = false
+	if not resolving_leftover:
+		_request_battle_report(resolved_round)
 	_rebuild_log(events)
 	resolution_events = _visible_presentation_events(events)
 	# Nothing to look at means nothing to wait on either: a round with no
@@ -2294,9 +2340,72 @@ func _clear_logs() -> void:
 
 
 func _log_line(text_value: String, important: bool = false) -> void:
+	# The battle report is built from the log rather than from the raw events
+	# on purpose. Every event goes through _event_is_known_to_viewer before it
+	# reaches here, so capturing at this point means the report can only ever
+	# describe what the player was actually allowed to see. Handing the raw
+	# events to a model instead would have it narrating enemy movements made
+	# in the fog, turning a flavour feature into an intelligence leak.
+	if _capturing_report_lines:
+		_report_lines.append(text_value)
 	var formatted := ("[color=#f8df9a][b]%s[/b][/color]" if important else "%s") % text_value
 	for target in [history, settings_history]:
 		if target == null:
 			continue
 		target.append_text(formatted + "\n")
 		target.scroll_to_line(maxi(0, target.get_line_count() - 1))
+
+
+## Asks a model to narrate the round from the lines the player just saw. Fired
+## and forgotten: the round carries on immediately and the report is appended
+## whenever it lands.
+func _request_battle_report(round_number: int) -> void:
+	if llm_client == null or not battle_report_toggle.button_pressed:
+		return
+	# A round where nothing was observed has nothing to narrate, and spending a
+	# request to be told so is worse than staying quiet.
+	if _report_lines.is_empty():
+		return
+	var system := (
+		"You write terse after-action reports for a fog-of-war tactical wargame, "
+		+ "addressed to the Blue commander. Use ONLY the observations given. Never "
+		+ "invent units, positions, casualties, or intentions that are not listed - "
+		+ "the commander cannot see the rest of the battlefield and neither can you. "
+		+ "Two or three sentences of plain past-tense prose. No lists, no headings, "
+		+ "no preamble."
+	)
+	var user := "Round %d. Observations:\n%s" % [round_number, "\n".join(_report_lines)]
+	var request_id := llm_client.ask([
+		{"role": "system", "content": system},
+		{"role": "user", "content": user},
+	], {"max_tokens": 220, "temperature": 0.7})
+	_report_rounds[request_id] = round_number
+
+
+func _on_battle_report_completed(request_id: int, ok: bool, content: String, error: String) -> void:
+	if not _report_rounds.has(request_id):
+		return
+	var round_number: int = _report_rounds[request_id]
+	_report_rounds.erase(request_id)
+	if not ok:
+		if not _report_failure_logged:
+			_report_failure_logged = true
+			_log_line("Field reports unavailable (%s). The battle continues without them." % error.strip_edges().left(120))
+		return
+	# Named rather than assumed: by the time this lands the player is usually
+	# already giving the next round's orders.
+	var report := content.strip_edges()
+	_log_line("[i]Field report, round %d:[/i] %s" % [round_number, report])
+	# Also as a row in the LOG tab, which is the log a player actually looks
+	# at. Rows are a fixed height and clip, so the title is a fixed label and
+	# the prose sits in the sub-line, where being cut off reads as a preview
+	# rather than as a broken sentence. The tooltip carries the whole thing,
+	# and so does the settings drawer's full round log.
+	log_entries.append({
+		"type": "report", "formation": StrategoGame.EMPTY, "round": round_number,
+		# Sorts to the end of its own round: the report describes everything
+		# that round, so it belongs after the events it is summarising.
+		"index": 1 << 20, "mine": true,
+		"summary": "Field report", "detail": report,
+	})
+	_render_log()
