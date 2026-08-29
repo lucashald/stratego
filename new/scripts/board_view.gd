@@ -510,6 +510,7 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 	var center := _cell_center(piece.position, origin, cell)
 	var colors := _player_colors(int(piece.player))
 	var is_selected := int(piece.id) in selected_piece_ids
+	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
 	# Square, so a banner sits inside its grid square instead of overhanging into
 	# the ranks above and below. The pentagon is kept, compressed to fit the
 	# square rather than extending past it.
@@ -525,6 +526,48 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		top + Vector2(width * 0.5, height),
 		top + Vector2(0, height * 0.72),
 	])
+	var art := UnitIconCatalog.texture_for_piece(piece) if can_see_identity else null
+	if art != null:
+		_draw_art_piece(piece, art, Rect2(top, Vector2(width, height)), cell, colors)
+	else:
+		_draw_procedural_piece(piece, banner, top, width, height, center, cell, colors, can_see_identity)
+	if int(piece.player) == viewing_player and not game.order_for_piece(int(piece.id)).is_empty():
+		var badge := top + Vector2(width * 0.94, height * 0.04)
+		draw_circle(badge, cell * 0.13, Color("#152315"))
+		draw_arc(badge, cell * 0.13, 0.0, TAU, 24, Color("#91d33f"), 1.5)
+		draw_line(badge + Vector2(-cell * 0.055, 0), badge + Vector2(-cell * 0.01, cell * 0.05), Color("#a8df4c"), 2.0)
+		draw_line(badge + Vector2(-cell * 0.01, cell * 0.05), badge + Vector2(cell * 0.07, -cell * 0.06), Color("#a8df4c"), 2.0)
+
+
+## The normalized texture owns the field, Weight frame and Role emblem. Current
+## Strength and player identity remain live overlays so one Green art set can be
+## shared by every faction without making opposing armies indistinguishable.
+func _draw_art_piece(piece: Dictionary, art: Texture2D, rect: Rect2, cell: float, colors: Dictionary) -> void:
+	var shadow_rect := Rect2(rect.position + Vector2(cell * 0.055, cell * 0.07), rect.size)
+	draw_texture_rect(art, shadow_rect, false, Color(0, 0, 0, 0.48))
+	draw_texture_rect(art, rect, false)
+	_draw_art_strength(piece, rect, cell)
+	var faction_marker := rect.position + Vector2(rect.size.x * 0.12, rect.size.y * 0.13)
+	var marker_radius := maxf(2.0, cell * 0.075)
+	draw_circle(faction_marker, marker_radius, colors.fill)
+	draw_arc(faction_marker, marker_radius, 0.0, TAU, 18, colors.edge, maxf(1.0, cell * 0.025))
+
+
+func _draw_art_strength(piece: Dictionary, rect: Rect2, cell: float) -> void:
+	if piece.type == StrategoGame.FLAG: return
+	var band := Rect2(rect.position + Vector2(0, rect.size.y * 0.56), Vector2(rect.size.x, rect.size.y * 0.27))
+	var hurt := int(piece.strength) < int(piece.max_strength)
+	var tint := Color("#ffd9a8") if hurt else Color.WHITE
+	var numeral := str(int(piece.strength))
+	var glyph := maxi(14, int(cell * 0.38))
+	_draw_centered_text(ThemeDB.fallback_font, numeral, Rect2(band.position + Vector2(0, maxf(1.0, cell * 0.035)), band.size), glyph, Color(0, 0, 0, 0.78))
+	_draw_centered_text(ThemeDB.fallback_font, numeral, band, glyph, tint)
+
+
+## Flags, missing art and visible-but-unidentified enemies retain the old safe
+## representation. In particular, the hidden path never loads a type texture or
+## draws Strength.
+func _draw_procedural_piece(piece: Dictionary, banner: PackedVector2Array, top: Vector2, width: float, height: float, center: Vector2, cell: float, colors: Dictionary, can_see_identity: bool) -> void:
 	var shadow := PackedVector2Array()
 	for point in banner:
 		shadow.append(point + Vector2(cell * 0.06, cell * 0.08))
@@ -541,7 +584,6 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 	else:
 		draw_colored_polygon(banner, colors.fill)
 	_draw_weight_frame(piece, banner, top, width, height, cell, colors)
-	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
 	if can_see_identity:
 		# "HEAVY" and "INFANTRY" cannot fit across a cell at playable zoom: the
 		# font collapses to its minimum and the words turn to mush. The README's
@@ -573,12 +615,6 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		draw_circle(badge_center, cell * 0.14, Color("#121717"))
 		draw_arc(badge_center, cell * 0.14, 0, TAU, 24, Color("#dfd8c7"), 1.2)
 		_draw_centered_text(ThemeDB.fallback_font, "?", Rect2(badge_center - Vector2(cell * 0.13, cell * 0.13), Vector2(cell * 0.26, cell * 0.26)), maxi(7, int(cell * 0.19)), Color.WHITE)
-	if int(piece.player) == viewing_player and not game.order_for_piece(int(piece.id)).is_empty():
-		var badge := top + Vector2(width * 0.94, height * 0.04)
-		draw_circle(badge, cell * 0.13, Color("#152315"))
-		draw_arc(badge, cell * 0.13, 0.0, TAU, 24, Color("#91d33f"), 1.5)
-		draw_line(badge + Vector2(-cell * 0.055, 0), badge + Vector2(-cell * 0.01, cell * 0.05), Color("#a8df4c"), 2.0)
-		draw_line(badge + Vector2(-cell * 0.01, cell * 0.05), badge + Vector2(cell * 0.07, -cell * 0.06), Color("#a8df4c"), 2.0)
 
 
 ## Weight frames as art. One image serves both armies: the coloured field is

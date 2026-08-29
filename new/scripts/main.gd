@@ -1035,13 +1035,12 @@ func _roster_row(piece: Dictionary) -> Control:
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(line)
 
-	var swatch := Label.new()
-	swatch.text = String(piece.weight).substr(0, 1).to_upper() + String(piece.role).substr(0, 1).to_upper()
-	swatch.custom_minimum_size = Vector2(34, 30)
-	swatch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	swatch.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	swatch.add_theme_font_size_override("font_size", 13)
-	swatch.add_theme_stylebox_override("normal", _panel_style(Color("#1b4a86"), _weight_tint(String(piece.weight)), 2, 3))
+	var swatch := TextureRect.new()
+	swatch.texture = UnitIconCatalog.texture_for_piece(piece)
+	swatch.custom_minimum_size = Vector2(38, 38)
+	swatch.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	swatch.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	swatch.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	line.add_child(swatch)
 
 	var text := VBoxContainer.new()
@@ -1638,6 +1637,15 @@ func _battle_side_card(piece: Dictionary, footer: String = "") -> Control:
 func _draw_card_shield(host: Control, piece: Dictionary) -> void:
 	var width := host.size.x
 	var height := host.size.y * 0.94
+	var art := UnitIconCatalog.texture_for_piece(piece)
+	if art != null:
+		host.draw_texture_rect(art, Rect2(Vector2.ZERO, Vector2(width, height)), false)
+		var font := ThemeDB.fallback_font
+		var numeral := str(int(piece.strength))
+		var numeral_width := font.get_string_size(numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		host.draw_string(font, Vector2((width - numeral_width) * 0.5 + 1.0, height * 0.76 + 1.0), numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0, 0, 0, 0.78))
+		host.draw_string(font, Vector2((width - numeral_width) * 0.5, height * 0.76), numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
+		return
 	var banner := PackedVector2Array([
 		Vector2.ZERO, Vector2(width, 0), Vector2(width, height * 0.72),
 		Vector2(width * 0.5, height), Vector2(0, height * 0.72),

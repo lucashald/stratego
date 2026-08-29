@@ -101,10 +101,11 @@ godot --headless --path . --script res://tests/test_runner.gd
 
 The deterministic suite covers setup, fog, delayed weight-based impulse timing, actual movement spending, order rejection, allied and combat bounces, crossing attacks, doubled winner Armor, natural 10s, multiway battles, highest-opponent damage, focus fire, aimed and suppressing Archer fire, overwatch fizzles and their aim cost, leftover melee, blocked retreats, retreat battles, transient sightings, bridge victory, withdrawal, the absence of automatic collapse, replay JSON/file round trips, replay tamper rejection, and four-bot round resolution.
 
-## Piece codes
+## Formation banners
 
-Revealed formations display `weight + role + current Strength`:
-
-- Weight: `L` Light · `M` Medium · `H` Heavy
-- Role: `I` Infantry · `A` Archer · `C` Cavalry
-- Example: `HI8` is Heavy Infantry at Strength 8; `MA3` is Medium Archer reduced to Strength 3.
+Revealed movable formations use the shared Green banner set. The border and
+equipment artwork communicate Weight and Role, while the large live numeral
+shows current Strength. Until the other faction sets are produced, every army
+uses the same Green art with a small faction-colour marker for battlefield
+identification. Hidden enemy identities and Flags retain the information-safe
+procedural banner.
