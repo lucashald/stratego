@@ -887,6 +887,11 @@ func _render_log() -> void:
 
 
 func _log_row(entry: Dictionary) -> Control:
+	# Field reports are prose rather than a one-line result, so they get a row
+	# that grows to fit instead of the fixed-height button every other kind of
+	# entry uses.
+	if String(entry.type) == "report":
+		return _report_row(entry)
 	var row := Button.new()
 	row.custom_minimum_size.y = 38
 	row.focus_mode = Control.FOCUS_NONE
@@ -924,6 +929,63 @@ func _log_row(entry: Dictionary) -> Control:
 	tail.add_theme_color_override("font_color", Color("#7f8a93"))
 	box.add_child(tail)
 	return row
+
+
+## Number of wrapped lines a collapsed field report shows. Enough to see what
+## the round was about without a long report crowding out the entries above it.
+const REPORT_COLLAPSED_LINES := 2
+
+
+## A field report row. PanelContainer rather than the usual Button because a
+## container sizes itself to its contents, which is what lets the wrapped prose
+## set the row's height; the fixed-height button clips instead. Clicking
+## toggles between the opening lines and the whole thing.
+func _report_row(entry: Dictionary) -> Control:
+	var expanded := bool(entry.get("expanded", false))
+	var tint := Color(String(LOG_TINTS.get("report", "#e8c78a")))
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _log_row_style(Color("#08131d"), tint, false))
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.tooltip_text = "Click to collapse." if expanded else "Click to read the full report."
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 6)
+	margin.add_theme_constant_override("margin_right", 4)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 5)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 1)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(box)
+	var head := Label.new()
+	# The caret is the only thing telling a player this row opens, so it says
+	# which way it will go rather than which state it is in.
+	head.text = "R%d  Field report  %s" % [int(entry.round), "▾" if expanded else "▸"]
+	head.add_theme_font_size_override("font_size", 12)
+	head.add_theme_color_override("font_color", tint)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(head)
+	var body := Label.new()
+	body.text = String(entry.detail)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if not expanded:
+		body.max_lines_visible = REPORT_COLLAPSED_LINES
+	body.add_theme_font_size_override("font_size", 11)
+	body.add_theme_color_override("font_color", Color("#a9b4bd"))
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(body)
+	panel.gui_input.connect(func(event: InputEvent) -> void:
+		if not (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT):
+			return
+		# The entry dictionary is the one held in log_entries, so flipping it
+		# here is what makes the open state survive the next rebuild.
+		entry["expanded"] = not bool(entry.get("expanded", false))
+		# Deferred because this runs from inside a child of the very list the
+		# rebuild frees.
+		_render_log.call_deferred()
+	)
+	return panel
 
 
 ## A row keyed by its kind: the accent runs down the left edge so battles and
