@@ -995,43 +995,54 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped_for_speed + skipped_for_path + skipped_immobile, "message": "No formations in the selection could take that step."}
-	# All candidates are installed before validation so a formation line of
-	# equally fast formations can advance together in lockstep - proving any
-	# one member's step clear depends on every other member's step already
-	# being accounted for. That cuts both ways: set_unit_order's collision
-	# check inspects the whole player's plan, not just the candidate it was
-	# called with, so a single sequential pass can fail on a member that
-	# never actually did anything wrong, purely because some other member's
-	# still-unresolved candidate is what the check is really tripping over.
-	# Conflicts are resolved instead by repeatedly probing whether the
-	# current plan is clear and, if not, dropping the fastest remaining
-	# formation still in it - the one asking to arrive earliest - which
-	# matches the same "a faster formation cannot immediately follow a
-	# slower one into a square it has not vacated yet" rule this engine
-	# already applies elsewhere, rather than blaming whichever formation the
-	# loop happens to reach first.
-	var remaining := eligible_ids.duplicate()
+	# Candidates go in one at a time rather than all at once, because
+	# set_unit_order's collision check inspects the whole player's plan, not
+	# just the candidate it was handed. Installing everything up front and
+	# then asking whether the plan is clear only yields one global yes or no,
+	# which cannot say WHICH formation is at fault - and blaming a formation
+	# by some proxy such as "drop the fastest" throws out marches that were
+	# never involved. Adding them individually makes each answer be about
+	# that formation alone.
+	#
+	# Order of installation decides who yields to whom, and both keys matter.
+	# Earliest mover first, because this engine already forbids a faster
+	# formation following a slower one into a square it has not vacated yet,
+	# so the one arriving soonest has to be placed before anything hoping to
+	# follow it. Then furthest along the direction of travel first, so that a
+	# column of equally fast formations installs from its head backwards and
+	# advances in lockstep; installing a follower before its leader would
+	# have it collide with a leader that has not been given its own step yet.
+	var install_order := eligible_ids.duplicate()
+	install_order.sort_custom(func(first: int, second: int) -> bool:
+		var first_impulse := first_movement_impulse_for(pieces[first])
+		var second_impulse := first_movement_impulse_for(pieces[second])
+		if first_impulse != second_impulse:
+			return first_impulse < second_impulse
+		var first_lead: int = pieces[first].position.x * direction.x + pieces[first].position.y * direction.y
+		var second_lead: int = pieces[second].position.x * direction.x + pieces[second].position.y * direction.y
+		return first_lead > second_lead
+	)
+	# Back to what the player already had, so each candidate is judged against
+	# the orders that survived rather than against every hopeful step.
+	orders[player] = original_orders.duplicate(true)
+	var applied_ids: Array[int] = []
 	var skipped_for_conflict := 0
-	while not remaining.is_empty():
-		var probe: Dictionary = candidates[remaining[0]]
-		var probe_result := set_unit_order(player, remaining[0], probe.path, probe.ranged_target, probe.leftover)
-		if bool(probe_result.get("ok", false)):
-			break
-		remaining.sort_custom(func(a, b): return movement_limit_for(pieces[a]) > movement_limit_for(pieces[b]))
-		var fastest: int = remaining.pop_front()
-		skipped_for_conflict += 1
-		if original_orders.has(fastest):
-			orders[player][fastest] = original_orders[fastest]
+	for piece_id in install_order:
+		var candidate: Dictionary = candidates[piece_id]
+		# A rejected order leaves this formation's previous one untouched, so
+		# there is nothing to undo here.
+		if bool(set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover).get("ok", false)):
+			applied_ids.append(piece_id)
 		else:
-			orders[player].erase(fastest)
+			skipped_for_conflict += 1
 	var skipped_total := skipped_for_speed + skipped_for_path + skipped_immobile + skipped_for_conflict
-	if remaining.is_empty():
+	if applied_ids.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped_total, "message": "No formations in the selection could take that step."}
-	var message := "Order applied to %d formation%s." % [remaining.size(), "" if remaining.size() == 1 else "s"]
+	var message := "Order applied to %d formation%s." % [applied_ids.size(), "" if applied_ids.size() == 1 else "s"]
 	if skipped_total > 0:
 		message += " %d skipped." % skipped_total
-	return {"ok": true, "count": remaining.size(), "skipped": skipped_total, "message": message}
+	return {"ok": true, "count": applied_ids.size(), "skipped": skipped_total, "message": message}
 
 
 func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -> int:

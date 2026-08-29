@@ -179,6 +179,32 @@ func _test_group_orders_apply_per_formation() -> void:
 	_expect(edge_game.order_for_piece(edge_id).is_empty(), "the formation that would walk off the map is skipped, not given a broken order")
 	_expect(edge_game.projected_main_destination(safe_id) == Vector2i(3, 1), "a formation blocked by no one else's failure still advances")
 
+	# Select-all on a real deployment and march. Every formation with clear
+	# space ahead must get its order; only the ones sitting directly behind a
+	# slower formation are genuinely blocked. This regressed twice: the
+	# collision check answers for the player's whole plan rather than for one
+	# formation, so attributing a failure to any particular unit by proxy
+	# (the fastest, say) silently threw out marches that had nothing to do
+	# with the conflict, leaving only the heavies.
+	var march := StrategoGame.new()
+	march.setup_meeting(1234, StrategoGame.BLUE, StrategoGame.RED, StrategoGame.DEFAULT_HOLD_ROUNDS, 20, true)
+	var everyone: Array[int] = []
+	for piece: Dictionary in march.pieces:
+		if piece.alive and int(piece.player) == StrategoGame.BLUE and march.is_movable(piece):
+			everyone.append(int(piece.id))
+	var march_result := march.append_group_order_step(StrategoGame.BLUE, everyone, Vector2i.UP)
+	var stuck: Array[int] = []
+	var moving: Array[int] = []
+	for piece_id in everyone:
+		var ahead := march.piece_at(march.pieces[piece_id].position + Vector2i.UP)
+		if march.order_for_piece(piece_id).is_empty(): stuck.append(piece_id)
+		else: moving.append(piece_id)
+		# The real invariant: an empty square ahead means nothing could have
+		# blocked it, so it must have been ordered.
+		if ahead.is_empty():
+			_expect(not march.order_for_piece(piece_id).is_empty(), "a formation with an empty square ahead of it receives the group march order")
+	_expect(bool(march_result.ok) and moving.size() == 9 and stuck.size() == 3, "select-all and march orders every formation except the three penned in behind a slower one")
+
 	# The Flag cannot move, and neither can a formation ground down to no
 	# Strength, but both are ordinary things to have inside a drag-selection.
 	# Rejecting the whole order over one of them made a group containing one
