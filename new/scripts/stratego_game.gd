@@ -945,6 +945,7 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 	var candidates: Dictionary = {}
 	var eligible_ids: Array[int] = []
 	var skipped_for_speed := 0
+	var skipped_for_path := 0
 	for piece_id in unique_ids:
 		if piece_id < 0 or piece_id >= pieces.size() or not is_movable(pieces[piece_id]) or int(pieces[piece_id].player) != player:
 			orders[player] = original_orders
@@ -959,7 +960,15 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 				path.pop_back()
 		else:
 			var previous: Vector2i = pieces[piece_id].position if path.is_empty() else path.back()
-			path.append(previous + direction)
+			var step: Vector2i = previous + direction
+			# Off the map or into blocked terrain is a fact about this one
+			# formation's position, unrelated to anything else in the
+			# selection, so it is skipped here rather than left for the
+			# collision pass below to sort out.
+			if not is_inside(step) or is_blocked_terrain(step):
+				skipped_for_path += 1
+				continue
+			path.append(step)
 		var candidate := {
 			"piece_id": piece_id,
 			"player": player,
@@ -974,19 +983,44 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 		eligible_ids.append(piece_id)
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
-		return {"ok": false, "count": 0, "skipped": skipped_for_speed, "message": "No selected formations have unused movement."}
-	# All candidates are installed before validation so a formation line can
-	# advance into squares vacated by other members of the same selection.
-	for piece_id in eligible_ids:
-		var candidate: Dictionary = candidates[piece_id]
-		var result := set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover)
-		if not bool(result.get("ok", false)):
-			orders[player] = original_orders
-			return {"ok": false, "message": String(result.get("message", "The group order is invalid."))}
-	var message := "Order applied to %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
-	if skipped_for_speed > 0:
-		message += " %d without enough movement skipped." % skipped_for_speed
-	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped_for_speed, "message": message}
+		return {"ok": false, "count": 0, "skipped": skipped_for_speed + skipped_for_path, "message": "No formations in the selection could take that step."}
+	# All candidates are installed before validation so a formation line of
+	# equally fast formations can advance together in lockstep - proving any
+	# one member's step clear depends on every other member's step already
+	# being accounted for. That cuts both ways: set_unit_order's collision
+	# check inspects the whole player's plan, not just the candidate it was
+	# called with, so a single sequential pass can fail on a member that
+	# never actually did anything wrong, purely because some other member's
+	# still-unresolved candidate is what the check is really tripping over.
+	# Conflicts are resolved instead by repeatedly probing whether the
+	# current plan is clear and, if not, dropping the fastest remaining
+	# formation still in it - the one asking to arrive earliest - which
+	# matches the same "a faster formation cannot immediately follow a
+	# slower one into a square it has not vacated yet" rule this engine
+	# already applies elsewhere, rather than blaming whichever formation the
+	# loop happens to reach first.
+	var remaining := eligible_ids.duplicate()
+	var skipped_for_conflict := 0
+	while not remaining.is_empty():
+		var probe: Dictionary = candidates[remaining[0]]
+		var probe_result := set_unit_order(player, remaining[0], probe.path, probe.ranged_target, probe.leftover)
+		if bool(probe_result.get("ok", false)):
+			break
+		remaining.sort_custom(func(a, b): return movement_limit_for(pieces[a]) > movement_limit_for(pieces[b]))
+		var fastest: int = remaining.pop_front()
+		skipped_for_conflict += 1
+		if original_orders.has(fastest):
+			orders[player][fastest] = original_orders[fastest]
+		else:
+			orders[player].erase(fastest)
+	var skipped_total := skipped_for_speed + skipped_for_path + skipped_for_conflict
+	if remaining.is_empty():
+		orders[player] = original_orders
+		return {"ok": false, "count": 0, "skipped": skipped_total, "message": "No formations in the selection could take that step."}
+	var message := "Order applied to %d formation%s." % [remaining.size(), "" if remaining.size() == 1 else "s"]
+	if skipped_total > 0:
+		message += " %d skipped." % skipped_total
+	return {"ok": true, "count": remaining.size(), "skipped": skipped_total, "message": message}
 
 
 func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -> int:
@@ -1116,16 +1150,29 @@ func set_group_leftover_step(player: int, piece_ids: Array[int], direction: Vect
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped_for_speed, "message": "No selected formations have movement left for the leftover phase."}
+	var applied_ids: Array[int] = []
+	var skipped_for_conflict := 0
 	for piece_id in eligible_ids:
 		var candidate: Dictionary = candidates[piece_id]
 		var result := set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover)
-		if not bool(result.get("ok", false)):
-			orders[player] = original_orders
-			return {"ok": false, "message": String(result.get("message", "The group leftover order is invalid."))}
-	var message := "Leftover move set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
-	if skipped_for_speed > 0:
-		message += " %d without enough movement skipped." % skipped_for_speed
-	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped_for_speed, "message": message}
+		if bool(result.get("ok", false)):
+			applied_ids.append(piece_id)
+			continue
+		skipped_for_conflict += 1
+		# As in _change_group_paths: one formation that cannot take this step
+		# does not undo the rest of an otherwise-valid group order.
+		if original_orders.has(piece_id):
+			orders[player][piece_id] = original_orders[piece_id]
+		else:
+			orders[player].erase(piece_id)
+	var skipped_total := skipped_for_speed + skipped_for_conflict
+	if applied_ids.is_empty():
+		orders[player] = original_orders
+		return {"ok": false, "count": 0, "skipped": skipped_total, "message": "No formations in the selection could take that leftover step."}
+	var message := "Leftover move set for %d formation%s." % [applied_ids.size(), "" if applied_ids.size() == 1 else "s"]
+	if skipped_total > 0:
+		message += " %d skipped." % skipped_total
+	return {"ok": true, "count": applied_ids.size(), "skipped": skipped_total, "message": message}
 
 
 func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
@@ -1177,8 +1224,10 @@ func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], directi
 			continue
 		var target: Vector2i = pieces[piece_id].position + direction
 		if not is_inside(target) or is_blocked_terrain(target):
-			orders[player] = original_orders
-			return {"ok": false, "message": "A selected formation would leave the board or enter blocked terrain."}
+			# This one formation's step is invalid; the rest of the selection
+			# may still be fine, so only this formation is skipped.
+			skipped += 1
+			continue
 		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
 		if candidate.is_empty():
 			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
@@ -1188,12 +1237,26 @@ func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], directi
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped, "message": "No selected formations have leftover movement available."}
-	if not _same_player_leftover_orders_are_clear(player):
+	# _same_player_leftover_orders_are_clear only reports whether the whole
+	# player's leftover plan collides somewhere, not which formation is at
+	# fault - the collision could even involve a piece outside this
+	# selection - so a colliding candidate is found by trial removal rather
+	# than by inspection. Same principle as everywhere else in this
+	# function: one formation's conflict should not cost the rest of the
+	# selection its otherwise-valid step.
+	while not _same_player_leftover_orders_are_clear(player) and not eligible_ids.is_empty():
+		var culprit: int = eligible_ids.pop_back()
+		if original_orders.has(culprit):
+			orders[player][culprit] = original_orders[culprit]
+		else:
+			orders[player].erase(culprit)
+		skipped += 1
+	if eligible_ids.is_empty():
 		orders[player] = original_orders
-		return {"ok": false, "message": "Friendly formations would collide during leftover movement."}
+		return {"ok": false, "count": 0, "skipped": skipped, "message": "No formations in the selection could take that leftover step."}
 	var message := "Leftover move set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
 	if skipped > 0:
-		message += " %d exhausted formation%s skipped." % [skipped, "" if skipped == 1 else "s"]
+		message += " %d skipped." % skipped
 	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped, "message": message}
 
 

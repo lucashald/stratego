@@ -13,7 +13,7 @@ func _run() -> void:
 	_test_four_player_fog_framework()
 	_test_private_battle_results()
 	_test_order_paths_and_friendly_rejection()
-	_test_group_orders_are_atomic()
+	_test_group_orders_apply_per_formation()
 	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
@@ -153,7 +153,7 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
 
 
-func _test_group_orders_are_atomic() -> void:
+func _test_group_orders_apply_per_formation() -> void:
 	var game := _test_game()
 	var rear_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
 	var front_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
@@ -173,9 +173,24 @@ func _test_group_orders_are_atomic() -> void:
 	var edge_id := edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 0))
 	var safe_id := edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 2))
 	edge_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
-	var rejected := edge_game.append_group_order_step(StrategoGame.BLUE, [edge_id, safe_id], Vector2i.UP)
-	_expect(not bool(rejected.ok), "a shared order is rejected when any selected formation cannot execute it")
-	_expect(edge_game.order_for_piece(edge_id).is_empty() and edge_game.order_for_piece(safe_id).is_empty(), "a rejected group order leaves every selected formation unchanged")
+	var partial := edge_game.append_group_order_step(StrategoGame.BLUE, [edge_id, safe_id], Vector2i.UP)
+	_expect(bool(partial.ok) and int(partial.count) == 1 and int(partial.skipped) == 1, "a formation that can take the step still receives it even when another selected formation cannot")
+	_expect(edge_game.order_for_piece(edge_id).is_empty(), "the formation that would walk off the map is skipped, not given a broken order")
+	_expect(edge_game.projected_main_destination(safe_id) == Vector2i(3, 1), "a formation blocked by no one else's failure still advances")
+
+	var collision_game := _test_game()
+	var blocking_heavy := collision_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	var following_medium := collision_game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
+	collision_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	# Heavy moves once, in the round's final impulse; Medium moves twice,
+	# starting one impulse earlier. Ordering both forward together asks
+	# Medium to step into Heavy's square before Heavy has actually vacated it
+	# - a genuine timing conflict, not something either formation did wrong -
+	# so Medium's step alone should be the one that does not go through.
+	var blocked := collision_game.append_group_order_step(StrategoGame.BLUE, [blocking_heavy, following_medium], Vector2i.UP)
+	_expect(bool(blocked.ok) and int(blocked.count) == 1 and int(blocked.skipped) == 1, "a formation blocked by another selected formation's timing does not cancel that formation's own valid move")
+	_expect(collision_game.projected_main_destination(blocking_heavy) == Vector2i(5, 4), "the unblocked formation in the pair still gets its order")
+	_expect(collision_game.order_for_piece(following_medium).is_empty(), "the formation that cannot yet make the step is the one left without an order")
 
 
 func _test_planning_order_undo() -> void:
