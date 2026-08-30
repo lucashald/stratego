@@ -1367,13 +1367,22 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 			var position := projected_order_position(int(piece.id), impulse)
 			if position in occupied:
 				var defender := piece_at(position)
-				var other_id := int(occupied[position])
-				var simultaneous_enemy_convergence := false
-				for arrival_impulse in range(1, impulse + 1):
-					if projected_order_position(int(piece.id), arrival_impulse) == position and projected_order_position(other_id, arrival_impulse) == position and projected_order_position(int(piece.id), arrival_impulse - 1) != position and projected_order_position(other_id, arrival_impulse - 1) != position:
-						simultaneous_enemy_convergence = true
-						break
-				if defender.is_empty() or are_allied_players(player, int(defender.player)) or not simultaneous_enemy_convergence:
+				# Two of your own formations may be sent at the same enemy
+				# square whatever speeds they are, because committing a second
+				# wave against a defender the first attack might not beat is a
+				# real decision rather than a mistake to be prevented. This
+				# used to additionally require both attackers to arrive on the
+				# same impulse, which quietly meant only formations of matched
+				# Weight could gang up: a Light and a Heavy sent at one enemy
+				# were rejected outright.
+				#
+				# Staggered arrivals need no special handling here. If the
+				# first attacker wins and takes the square, the follow-up finds
+				# a friendly formation standing there and bounces, which the
+				# resolver already does. If it loses, the follow-up gets its
+				# own fight. An empty or allied destination is still a plain
+				# collision and still refused.
+				if defender.is_empty() or are_allied_players(player, int(defender.player)):
 					clear = false
 					break
 			occupied[position] = piece.id

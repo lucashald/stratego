@@ -14,6 +14,7 @@ func _run() -> void:
 	_test_private_battle_results()
 	_test_order_paths_and_friendly_rejection()
 	_test_group_orders_apply_per_formation()
+	_test_mixed_speed_formations_can_gang_up()
 	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
@@ -152,6 +153,56 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(moved_long_shot.ok), "an Archer that has ordered movement may only declare an adjacent target")
 	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
+
+
+func _test_mixed_speed_formations_can_gang_up() -> void:
+	# Sending two formations at one enemy is a real decision: the second wave
+	# matters precisely because the first attack might lose. The collision
+	# rule used to allow it only when both attackers arrived on the same
+	# impulse, which silently restricted ganging up to formations of matched
+	# Weight - a Light and a Heavy aimed at one enemy were refused.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 10)
+	var fast := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
+	var slow := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	_expect(game.first_movement_impulse_for(game.pieces[fast]) != game.first_movement_impulse_for(game.pieces[slow]), "the two attackers really do arrive on different impulses")
+	_expect(bool(game.set_unit_order(StrategoGame.BLUE, fast, [Vector2i(5, 5)]).get("ok", false)), "the first attacker may be sent at the enemy square")
+	_expect(bool(game.set_unit_order(StrategoGame.BLUE, slow, [Vector2i(5, 5)]).get("ok", false)), "a slower formation may be committed against the same enemy square as a faster one")
+
+	# Two formations converging on an EMPTY square is still an ordinary
+	# collision and must stay refused; the exception is about attacking.
+	var empty_game := _test_game()
+	var one := empty_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
+	var two := empty_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	empty_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 10)
+	empty_game.set_unit_order(StrategoGame.BLUE, one, [Vector2i(5, 5)])
+	_expect(not bool(empty_game.set_unit_order(StrategoGame.BLUE, two, [Vector2i(5, 5)]).get("ok", false)), "two formations still may not be ordered onto the same empty square")
+
+	# The first wave winning leaves its ally bouncing off it, not stacked.
+	var won := _test_game()
+	var beaten := won.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 10)
+	var winner := won.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
+	var follower := won.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	won.set_unit_order(StrategoGame.BLUE, winner, [Vector2i(5, 5)])
+	won.set_unit_order(StrategoGame.BLUE, follower, [Vector2i(5, 5)])
+	won.set_forced_rolls([10, 1, 10, 1])
+	for player in won.active_players: won.mark_player_ready(player)
+	var won_events := won.resolve_main_and_ranged()
+	_expect(not won.pieces[beaten].alive and won.pieces[winner].position == Vector2i(5, 5), "the first attacker takes the square when it wins")
+	_expect(won.pieces[follower].position == Vector2i(6, 5) and _events_with_action(won_events, "bounce").size() == 1, "the follow-up bounces off its own ally rather than stacking on it")
+
+	# The first wave losing is the whole point: the second gets its fight.
+	var lost := _test_game()
+	var defender := lost.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 10)
+	var doomed := lost.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
+	var avenger := lost.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	lost.set_unit_order(StrategoGame.BLUE, doomed, [Vector2i(5, 5)])
+	lost.set_unit_order(StrategoGame.BLUE, avenger, [Vector2i(5, 5)])
+	lost.set_forced_rolls([1, 10, 10, 1])
+	for player in lost.active_players: lost.mark_player_ready(player)
+	var lost_events := lost.resolve_main_and_ranged()
+	_expect(not lost.pieces[doomed].alive, "the first attacker can lose its fight")
+	_expect(_events_with_action(lost_events, "melee").size() == 2 and not lost.pieces[defender].alive and lost.pieces[avenger].position == Vector2i(5, 5), "the second wave then fights the survivor and takes the square")
 
 
 func _test_group_orders_apply_per_formation() -> void:
