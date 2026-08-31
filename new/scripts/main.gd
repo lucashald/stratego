@@ -1118,7 +1118,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_theme_constant_override("h_separation", 6)
 	game_buttons.add_theme_constant_override("v_separation", 6)
 	box.add_child(game_buttons)
-	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["NEW CROSSROADS", Callable(self, "start_crossroads_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")]]:
+	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["NEW CROSSROADS", Callable(self, "start_crossroads_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")], ["CAMPAIGN BATTLE", Callable(self, "start_campaign_battle")]]:
 		var button := _make_button(String(definition[0]), 145)
 		button.pressed.connect(definition[1])
 		game_buttons.add_child(button)
@@ -1253,6 +1253,35 @@ func start_bridge_game() -> void:
 	_clear_logs()
 	_log_line("Bridge battle started. You command the Blue attacker.", true)
 	_log_line("Red may deploy anywhere north of the river; Blue begins on its board edge.")
+	settings_drawer.visible = false
+	_update_interface()
+
+
+## Loads whatever battle the campaign has written to CAMPAIGN_BATTLE_PATH. The
+## campaign is run from outside the game, so this deliberately reads the file
+## fresh every time rather than caching: the next battle appears simply by the
+## file changing.
+const CAMPAIGN_BATTLE_PATH := "res://campaign/current_battle.json"
+
+
+func start_campaign_battle() -> void:
+	var loaded: Dictionary = CampaignScenario.load_file(CAMPAIGN_BATTLE_PATH)
+	if not bool(loaded.get("ok", false)):
+		_log_line(String(loaded.get("message", "Could not read the campaign battle.")), true)
+		return
+	var data: Dictionary = loaded.data
+	selected_scenario = StrategoGame.SCENARIO_SKIRMISH
+	game = StrategoGame.new()
+	var applied: Dictionary = CampaignScenario.apply(game, data)
+	if not bool(applied.get("ok", false)):
+		_log_line("Campaign battle rejected: %s" % String(applied.get("message", "")), true)
+		return
+	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
+	_configure_board(false)
+	_clear_logs()
+	_log_line(String(data.get("name", "Campaign battle")), true)
+	for line in data.get("briefing", []):
+		_log_line(String(line))
 	settings_drawer.visible = false
 	_update_interface()
 

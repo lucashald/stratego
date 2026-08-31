@@ -1,0 +1,19 @@
+{
+  "campaign": "The Ashmere Line",
+  "commander": "Blue",
+  "battle_number": 1,
+  "supply": 2,
+  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns.",
+  "formations": [
+    { "name": "Oakhand",    "type": "HI", "strength": 8, "battles": 0, "history": [] },
+    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 0, "history": [] },
+    { "name": "Marrow",     "type": "MI", "strength": 7, "battles": 0, "history": [] },
+    { "name": "Thistle",    "type": "MI", "strength": 7, "battles": 0, "history": [] },
+    { "name": "Coldbrook",  "type": "LI", "strength": 6, "battles": 0, "history": [] },
+    { "name": "Harrow",     "type": "MA", "strength": 6, "battles": 0, "history": [] },
+    { "name": "Kestrel",    "type": "LA", "strength": 5, "battles": 0, "history": [] },
+    { "name": "Ferrant",    "type": "MC", "strength": 7, "battles": 0, "history": [] },
+    { "name": "Ash",        "type": "LC", "strength": 6, "battles": 0, "history": [] }
+  ],
+  "fallen": []
+}
