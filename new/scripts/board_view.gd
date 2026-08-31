@@ -554,9 +554,15 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 		top + Vector2(width * 0.5, height),
 		top + Vector2(0, height * 0.72),
 	])
-	var art := UnitIconCatalog.texture_for_piece(piece) if can_see_identity else null
+	# An enemy you can see but have not identified still gets its own faction's
+	# cloth, just with a question mark instead of a Role emblem. Weight is
+	# public in this game, so the weight frame goes over the top: without it
+	# the unknown banner would hide something the player is entitled to know.
+	var art := UnitIconCatalog.texture_for_piece(piece) if can_see_identity else UnitIconCatalog.unknown_texture_for(int(piece.player))
 	if art != null:
-		_draw_art_piece(piece, art, Rect2(top, Vector2(width, height)), cell, colors)
+		_draw_art_piece(piece, art, Rect2(top, Vector2(width, height)), cell, colors, can_see_identity)
+		if not can_see_identity:
+			_draw_weight_frame(piece, banner, top, width, height, cell, colors)
 	else:
 		_draw_procedural_piece(piece, banner, top, width, height, center, cell, colors, can_see_identity)
 	if int(piece.player) == viewing_player and not game.order_for_piece(int(piece.id)).is_empty():
@@ -570,11 +576,13 @@ func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
 ## The normalized texture owns the field, Weight frame and Role emblem. Current
 ## Strength and player identity remain live overlays so one Green art set can be
 ## shared by every faction without making opposing armies indistinguishable.
-func _draw_art_piece(piece: Dictionary, art: Texture2D, rect: Rect2, cell: float, colors: Dictionary) -> void:
+func _draw_art_piece(piece: Dictionary, art: Texture2D, rect: Rect2, cell: float, colors: Dictionary, can_see_identity: bool = true) -> void:
 	var shadow_rect := Rect2(rect.position + Vector2(cell * 0.055, cell * 0.07), rect.size)
 	draw_texture_rect(art, shadow_rect, false, Color(0, 0, 0, 0.48))
 	draw_texture_rect(art, rect, false)
-	_draw_art_strength(piece, rect, cell)
+	# Strength is a secret alongside Role, so an unidentified enemy shows none.
+	if can_see_identity:
+		_draw_art_strength(piece, rect, cell)
 	var faction_marker := rect.position + Vector2(rect.size.x * 0.12, rect.size.y * 0.13)
 	var marker_radius := maxf(2.0, cell * 0.075)
 	draw_circle(faction_marker, marker_radius, colors.fill)

@@ -21,6 +21,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 UNIT_CODES = ("li", "mi", "hi", "la", "ma", "ha", "lc", "mc", "hc")
+# Present once a faction has them, absent while it does not, so a set can be
+# normalized before its Flag and unknown-enemy banners exist.
+EXTRA_CODES = ("flag", "unknown")
 CANVAS_SIZE = 512
 PADDING = 20
 ALPHA_THRESHOLD = 2
@@ -83,13 +86,14 @@ def normalize(source: Path, destination: Path, fit: bool = False) -> None:
             raise ValueError(f"{destination}: exterior is not transparent: {corners}")
 
 
-def build_proof(output_dir: Path, destination: Path) -> None:
+def build_proof(output_dir: Path, destination: Path, codes: list[str] | None = None) -> None:
+    codes = list(UNIT_CODES) if codes is None else list(codes)
     previews = (88, 56, 36)
     column_width = 108
     header_height = 30
     row_heights = (112, 80, 60)
     label_width = 50
-    sheet_width = label_width + column_width * len(UNIT_CODES)
+    sheet_width = label_width + column_width * len(codes)
     sheet_height = header_height + sum(row_heights)
     background = (13, 22, 20, 255)
     cell = (67, 82, 52, 255)
@@ -100,14 +104,14 @@ def build_proof(output_dir: Path, destination: Path) -> None:
     draw = ImageDraw.Draw(sheet)
     font = ImageFont.load_default()
 
-    for index, code in enumerate(UNIT_CODES):
+    for index, code in enumerate(codes):
         x = label_width + index * column_width
         draw.text((x + column_width // 2, 10), code.upper(), font=font, fill=gold, anchor="mm")
 
     y = header_height
     for preview_size, row_height in zip(previews, row_heights):
         draw.text((label_width // 2, y + row_height // 2), f"{preview_size}px", font=font, fill=gold, anchor="mm")
-        for index, code in enumerate(UNIT_CODES):
+        for index, code in enumerate(codes):
             x = label_width + index * column_width
             tile_left = x + 6
             tile_top = y + 4
@@ -136,18 +140,24 @@ def main() -> None:
                         help="scale uniformly and pad, instead of stretching to the square box")
     args = parser.parse_args()
 
-    missing = [code for code in UNIT_CODES if not (args.source / f"{code}.png").is_file()]
-    if missing:
+    present = [c for c in UNIT_CODES if (args.source / f"{c}.png").is_file()]
+    missing = [c for c in UNIT_CODES if c not in present]
+    # A faction may legitimately be only its Flag and unknown banner, when the
+    # nine formations were normalized on an earlier run.
+    if missing and present:
         raise SystemExit(f"missing source icons: {', '.join(missing)}")
+    codes = present + [c for c in EXTRA_CODES if (args.source / f"{c}.png").is_file()]
+    if not codes:
+        raise SystemExit(f"no source icons found in {args.source}")
 
-    for code in UNIT_CODES:
+    for code in codes:
         source = args.source / f"{code}.png"
         destination = args.output / f"{code}.png"
         normalize(source, destination, args.fit)
         print(f"normalized {code}: {source} -> {destination}")
 
     if args.proof:
-        build_proof(args.output, args.proof)
+        build_proof(args.output, args.proof, codes)
         print(f"proof sheet: {args.proof}")
 
 

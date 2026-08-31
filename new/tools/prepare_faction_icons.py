@@ -49,6 +49,18 @@ PICKS = {
         "lc": "banner_blue_light_cavalry_horse_cloth_poc_v2.png",
         "mc": "banner_blue_medium_cavalry_lance_cloth_poc_v2.png",
         "hc": "banner_blue_heavy_cavalry_armored_cloth_poc_v2.png",
+        # Flag carries the faction crest and never a Strength numeral.
+        "flag": "blue-standard.png",
+        # Shown for an enemy seen but not identified. One per faction is
+        # enough because Weight is public and the board composites the
+        # weight frame over it, so this must stay free of Role and Strength.
+        "unknown": "banner_blue_unknown_cloth_poc.png",
+    },
+    "green": {
+        # Green's nine formations were normalized before this tool existed and
+        # are left untouched; only the two new slots are prepared here.
+        "flag": "green-standard.png",
+        "unknown": "banner_green_unknown_silk_poc.png",
     },
     "yellow": {
         "li": "banner_yellow_light_infantry_quilted_linen_poc.png",
@@ -60,6 +72,12 @@ PICKS = {
         "lc": "banner_yellow_light_cavalry_quilted_linen_poc.png",
         "mc": "banner_yellow_medium_cavalry_quilted_linen_poc.png",
         "hc": "banner_yellow_heavy_cavalry_quilted_linen_poc.png",
+        # Flag carries the faction crest and never a Strength numeral.
+        "flag": "yellow-standard.png",
+        # Shown for an enemy seen but not identified. One per faction is
+        # enough because Weight is public and the board composites the
+        # weight frame over it, so this must stay free of Role and Strength.
+        "unknown": "banner_yellow_unknown_quilted_linen_poc.png",
     },
     "red": {
         # The older red `_poc` archers were passed over: they carry opaque
@@ -74,6 +92,12 @@ PICKS = {
         "lc": "banner_red_light_cavalry_leather_bright_lighting_v2.png",
         "mc": "banner_red_medium_cavalry_leather_bright_lighting_v2.png",
         "hc": "banner_red_heavy_cavalry_leather_bright_lighting_v2.png",
+        # Flag carries the faction crest and never a Strength numeral.
+        "flag": "red-standard.png",
+        # Shown for an enemy seen but not identified. One per faction is
+        # enough because Weight is public and the board composites the
+        # weight frame over it, so this must stay free of Role and Strength.
+        "unknown": "banner_red_unknown_leather_bright_lighting_poc.png",
     },
 }
 
