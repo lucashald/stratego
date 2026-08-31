@@ -582,7 +582,7 @@ func add_piece(type: String, player: int, position: Vector2i, strength_override:
 		"id": id, "type": type, "player": player, "role": String(definition.role), "weight": weight,
 		"strength": starting_strength, "max_strength": starting_strength, "armor": int(ARMOR_BY_WEIGHT.get(weight, 0)),
 		"position": position, "previous_position": position, "alive": true, "revealed_to": [], "seen_by": [],
-		"round_status": STATUS_READY, "movement_used": 0, "aim_spent": 0, "melee_count": 0, "participated_in_combat": false,
+		"round_status": STATUS_READY, "movement_used": 0, "steps_taken": 0, "aim_spent": 0, "melee_count": 0, "participated_in_combat": false,
 		"main_done": false, "move_count": 0, "recent_positions": [position],
 	})
 	board[position.y][position.x] = id
@@ -863,7 +863,7 @@ func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], 
 	return {"ok": true, "shot_type": SHOT_SHORT if declared_range == 1 else SHOT_LONG}
 
 
-func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1), ranged_target_id: int = -1) -> Dictionary:
+func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1), ranged_target_id: int = -1, strict_friendly: bool = true) -> Dictionary:
 	if phase != PHASE_PLANNING or game_over or player in ready_players:
 		return {"ok": false, "message": "Orders can only be changed during planning."}
 	if piece_id < 0 or piece_id >= pieces.size(): return {"ok": false, "message": "Unknown formation."}
@@ -899,24 +899,24 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 		"ranged_target": ranged_target, "ranged_target_id": ranged_target_id if ranged_target.x >= 0 else -1,
 		"shot_type": shot_type, "leftover": leftover,
 	}
-	if not _same_player_order_is_clear(player, piece_id, candidate):
+	if not _same_player_order_is_clear(player, piece_id, candidate, strict_friendly):
 		return {"ok": false, "message": "Friendly formations would collide on the same impulse."}
 	if player not in orders: orders[player] = {}
 	orders[player][piece_id] = candidate
 	return {"ok": true, "order": candidate.duplicate(true)}
 
 
-func append_order_step(player: int, piece_id: int, step: Vector2i) -> Dictionary:
+func append_order_step(player: int, piece_id: int, step: Vector2i, strict_friendly: bool = true) -> Dictionary:
 	var current := order_for_piece(piece_id)
 	var path: Array = current.get("path", []).duplicate()
 	path.append(step)
-	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)), int(current.get("ranged_target_id", -1)))
+	return set_unit_order(player, piece_id, path, current.get("ranged_target", Vector2i(-1, -1)), current.get("leftover", Vector2i(-1, -1)), int(current.get("ranged_target_id", -1)), strict_friendly)
 
 
-func append_group_order_step(player: int, piece_ids: Array[int], direction: Vector2i) -> Dictionary:
+func append_group_order_step(player: int, piece_ids: Array[int], direction: Vector2i, strict_friendly: bool = true) -> Dictionary:
 	if absi(direction.x) + absi(direction.y) != 1:
 		return {"ok": false, "message": "Group movement must use one cardinal direction."}
-	return _change_group_paths(player, piece_ids, direction, false)
+	return _change_group_paths(player, piece_ids, direction, false, strict_friendly)
 
 
 func pop_order_step(player: int, piece_id: int) -> Dictionary:
@@ -930,7 +930,7 @@ func pop_group_order_step(player: int, piece_ids: Array[int]) -> Dictionary:
 	return _change_group_paths(player, piece_ids, Vector2i.ZERO, true)
 
 
-func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i, remove_last: bool) -> Dictionary:
+func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i, remove_last: bool, strict_friendly: bool = true) -> Dictionary:
 	if phase != PHASE_PLANNING or game_over or player in ready_players:
 		return {"ok": false, "message": "Orders can only be changed during planning."}
 	var unique_ids: Array[int] = []
@@ -1031,7 +1031,7 @@ func _change_group_paths(player: int, piece_ids: Array[int], direction: Vector2i
 		var candidate: Dictionary = candidates[piece_id]
 		# A rejected order leaves this formation's previous one untouched, so
 		# there is nothing to undo here.
-		if bool(set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover).get("ok", false)):
+		if bool(set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover, -1, strict_friendly).get("ok", false)):
 			applied_ids.append(piece_id)
 		else:
 			skipped_for_conflict += 1
@@ -1353,7 +1353,7 @@ func has_leftover_orders(player: int) -> bool:
 	return false
 
 
-func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary) -> bool:
+func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary, strict_friendly: bool = true) -> bool:
 	var old_order: Dictionary = order_for_piece(piece_id)
 	if player not in orders: orders[player] = {}
 	orders[player][piece_id] = candidate
@@ -1367,6 +1367,16 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 			var position := projected_order_position(int(piece.id), impulse)
 			if position in occupied:
 				var defender := piece_at(position)
+				# Permissive callers accept the risk: the square may well be
+				# free by the time the step actually happens, because the
+				# occupant can move, win its fight and advance, or be killed.
+				# Planning-time projection cannot know any of that, and the
+				# resolver already turns a step that does not come off into a
+				# bounce. Bots stay strict - they use this rejection to prune
+				# their own colliding choices.
+				if not strict_friendly:
+					occupied[position] = piece.id
+					continue
 				# Two of your own formations may be sent at the same enemy
 				# square whatever speeds they are, because committing a second
 				# wave against a defender the first attack might not beat is a
@@ -1399,7 +1409,12 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 					clear = false
 					break
 			if not clear: break
-	if clear:
+	# The same relaxation applies to where formations END the round. Planning
+	# projection assumes everyone reaches their destination, so two of your own
+	# finishing on one square looks certain here when it is only likely: the
+	# formation in the way may move off, win its fight and advance, or be
+	# killed. A permissive caller is allowed to find out.
+	if clear and strict_friendly:
 		var leftover_occupied: Dictionary = {}
 		for piece: Dictionary in own_pieces:
 			var order := order_for_piece(int(piece.id))
@@ -1523,10 +1538,19 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 		var proposals: Array[Dictionary] = []
 		for piece: Dictionary in pieces:
 			if not is_movable(piece) or bool(piece.main_done): continue
+			# Indexed by steps actually completed rather than by impulse
+			# arithmetic. A formation turned back by one of its own can try the
+			# same square again on a later impulse, and without this it would
+			# propose the NEXT step instead and skip a square. movement_used is
+			# charged whether or not the step lands, so retries are budgeted by
+			# the same allowance as movement: a Light gets three attempts in
+			# total, however it spends them.
+			if impulse < first_movement_impulse_for(piece): continue
+			if int(piece.movement_used) >= movement_limit_for(piece): continue
 			var path: Array = order_for_piece(int(piece.id)).get("path", [])
-			var step_index := movement_step_index_for_impulse(piece, impulse)
-			if step_index >= 0 and path.size() > step_index:
-				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[step_index], "is_attacker": true, "impulse": impulse})
+			var taken := int(piece.steps_taken)
+			if path.size() > taken:
+				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[taken], "is_attacker": true, "impulse": impulse})
 		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse))
 		_record_all_sightings()
 	last_round_events.append_array(_resolve_ranged_phase())
@@ -1586,6 +1610,7 @@ func _begin_round_state() -> void:
 		if piece.alive:
 			pieces[piece.id].round_status = STATUS_READY
 			pieces[piece.id].movement_used = 0
+			pieces[piece.id].steps_taken = 0
 			pieces[piece.id].aim_spent = 0
 			pieces[piece.id].melee_count = 0
 			pieces[piece.id].participated_in_combat = false
@@ -1657,17 +1682,38 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 		if not pieces[id].alive: continue
 		if piece_at(move.to).is_empty():
 			_place_piece(id, move.to, move.from)
+			pieces[id].steps_taken = int(pieces[id].steps_taken) + 1
 			events.append(_movement_event(id, move.from, move.to, batch_name))
 		else:
 			_place_piece(id, move.from, move.from)
-			_mark_bounced(id, false)
+			# Blocked by one of your own is a queue, not a repulse: the square
+			# may well be free by a later impulse, so the formation keeps its
+			# turn and tries again. Blocked by an enemy ends its round as before.
+			var blocker := piece_at(move.to)
+			_mark_bounced(id, false, not blocker.is_empty() and are_allied_players(int(pieces[id].player), int(blocker.player)))
 			events.append(_bounce_event([id], move.to, batch_name, "occupied_after_resolution"))
 	for collision: Dictionary in allied_collisions:
+		# A formation that was merely bumped into never moved, so its round is
+		# left alone. Marking it bounced set main_done and froze it in place,
+		# which meant a formation ordered up behind a slower one could stop the
+		# very formation it was queueing behind from ever moving.
+		var stationary := int(collision.get("stationary_id", EMPTY))
 		var collision_ids: Array[int] = []
 		for id_value in collision.ids:
 			var id := int(id_value)
 			collision_ids.append(id)
-			_mark_bounced(id, false)
+			if id == stationary:
+				# Jostled rather than repulsed. It still loses its leftover
+				# move, as it always has, but main_done is left alone so it can
+				# take its own later impulse. Setting that was what let a
+				# formation queueing up behind a slower one freeze the very
+				# formation it was waiting on.
+				pieces[id].round_status = STATUS_BOUNCED
+				continue
+			# Retry only when something was standing in the way that may yet
+			# move off. Two formations converging on one square would simply
+			# converge again, so repeating that is pure waste.
+			_mark_bounced(id, false, stationary != EMPTY)
 		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision"))
 	var retreat_intents: Array[Dictionary] = []
 	for battle: Dictionary in battles:
@@ -1993,9 +2039,14 @@ func _bounce_event(ids: Array[int], position: Vector2i, batch_name: String, reas
 	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "to": position, "result": "bounce", "reason": reason}
 
 
-func _mark_bounced(piece_id: int, combat: bool) -> void:
+## `may_retry` leaves the formation eligible to propose the same step again on
+## a later impulse. Only a friendly blocker earns that: an enemy in the way is a
+## repulse and ends the round, but one of your own standing there is a queue
+## that may clear. round_status still becomes BOUNCED either way, so leftover
+## eligibility is unchanged.
+func _mark_bounced(piece_id: int, combat: bool, may_retry: bool = false) -> void:
 	pieces[piece_id].round_status = STATUS_BOUNCED
-	pieces[piece_id].main_done = true
+	pieces[piece_id].main_done = not may_retry
 	if combat: pieces[piece_id].participated_in_combat = true
 
 

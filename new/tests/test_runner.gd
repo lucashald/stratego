@@ -16,6 +16,7 @@ func _run() -> void:
 	_test_group_orders_apply_per_formation()
 	_test_mixed_speed_formations_can_gang_up()
 	_test_march_animation_staggers_by_weight()
+	_test_permissive_orders_and_friendly_retry()
 	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
@@ -154,6 +155,62 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(moved_long_shot.ok), "an Archer that has ordered movement may only declare an adjacent target")
 	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
+
+
+func _test_permissive_orders_and_friendly_retry() -> void:
+	# Order time cannot know whether a square will still be occupied when the
+	# step actually happens: the formation in the way may move off, win its
+	# fight and advance, or be killed. Permissive callers are allowed to find
+	# out, and the resolver turns a step that does not come off into a bounce.
+	var game := _test_game()
+	var follower := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
+	game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	_expect(not bool(game.set_unit_order(StrategoGame.BLUE, follower, [Vector2i(5, 5)], Vector2i(-1, -1), Vector2i(-1, -1), -1, true).get("ok", false)), "a strict caller still refuses a step into a square one of its own holds")
+	_expect(bool(game.set_unit_order(StrategoGame.BLUE, follower, [Vector2i(5, 5)], Vector2i(-1, -1), Vector2i(-1, -1), -1, false).get("ok", false)), "a permissive caller may order that step and accept the risk")
+
+	# The whole army marching forward is the case this exists for. The Mediums
+	# are penned in behind the Heavies at impulse 2 and must bounce, then take
+	# the squares the Heavies vacate at impulse 3.
+	var march := StrategoGame.new()
+	march.setup_meeting(1234, StrategoGame.BLUE, StrategoGame.RED, StrategoGame.DEFAULT_HOLD_ROUNDS, 20, true)
+	var everyone: Array[int] = []
+	var before: Dictionary = {}
+	for piece: Dictionary in march.pieces:
+		if piece.alive and int(piece.player) == StrategoGame.BLUE and march.is_movable(piece):
+			everyone.append(int(piece.id))
+			before[int(piece.id)] = piece.position
+	var ordered := march.append_group_order_step(StrategoGame.BLUE, everyone, Vector2i.UP, false)
+	_expect(bool(ordered.ok) and int(ordered.count) == everyone.size(), "select-all and march now orders every formation, none skipped")
+	for player in march.active_players: march.mark_player_ready(player)
+	march.resolve_main_and_ranged()
+	var advanced := 0
+	for piece_id in everyone:
+		if march.pieces[piece_id].position != before[piece_id]: advanced += 1
+	_expect(advanced == everyone.size(), "every formation in the column actually advances, the penned-in ones by retrying once the square clears")
+
+	# A formation held up by an ENEMY is repulsed, not queued, and its round ends.
+	var enemy_game := _test_game()
+	var blocked := enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
+	var wall := enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	enemy_game.set_unit_order(StrategoGame.BLUE, blocked, [Vector2i(5, 5)], Vector2i(-1, -1), Vector2i(-1, -1), -1, false)
+	for player in enemy_game.active_players: enemy_game.mark_player_ready(player)
+	enemy_game.resolve_main_and_ranged()
+	_expect(enemy_game.pieces[blocked].position == Vector2i(5, 6) and enemy_game.pieces[wall].position == Vector2i(5, 5), "a formation queueing behind one that never moves simply stays put")
+
+	# Being bumped into must not end the stationary formation's own round: that
+	# would let a follower freeze the very formation it is queueing behind.
+	var jostle := _test_game()
+	var nudger := jostle.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6))
+	var leader := jostle.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	jostle.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	jostle.set_unit_order(StrategoGame.BLUE, nudger, [Vector2i(5, 5)], Vector2i(-1, -1), Vector2i(-1, -1), -1, false)
+	jostle.set_unit_order(StrategoGame.BLUE, leader, [Vector2i(5, 4)], Vector2i(-1, -1), Vector2i(-1, -1), -1, false)
+	for player in jostle.active_players: jostle.mark_player_ready(player)
+	jostle.resolve_main_and_ranged()
+	_expect(jostle.pieces[leader].position == Vector2i(5, 4), "a formation bumped into still takes its own later move")
+	_expect(jostle.pieces[nudger].position == Vector2i(5, 5), "and the follower takes the square once it is vacated")
 
 
 func _test_march_animation_staggers_by_weight() -> void:

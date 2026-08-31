@@ -154,7 +154,7 @@ func issue_selected_direction(direction: Vector2i) -> Dictionary:
 	if leftover_mode:
 		result = game.set_group_leftover_step(viewing_player, selected_piece_ids, direction)
 	else:
-		result = game.append_group_order_step(viewing_player, selected_piece_ids, direction)
+		result = game.append_group_order_step(viewing_player, selected_piece_ids, direction, false)
 	if bool(result.get("ok", false)):
 		_record_order_undo(before)
 	order_changed.emit(String(result.get("message", "Group order updated.")))
@@ -1318,7 +1318,7 @@ func _issue_order_to_square(clicked: Vector2i, clicked_piece: Dictionary, silent
 			result = {"ok": false, "message": "Ranged orders are issued to one Archer at a time."}
 		else:
 			var direction: Vector2i = clicked - projected
-			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction)
+			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction, false)
 	elif leftover_mode:
 		result = game.set_leftover_order(viewing_player, selected_piece_id, clicked)
 	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked, int(clicked_piece.id)):
@@ -1326,7 +1326,7 @@ func _issue_order_to_square(clicked: Vector2i, clicked_piece: Dictionary, silent
 		# right-click menu's job.
 		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked, int(clicked_piece.id))
 	else:
-		result = game.append_order_step(viewing_player, selected_piece_id, clicked)
+		result = game.append_order_step(viewing_player, selected_piece_id, clicked, false)
 	var ok := bool(result.get("ok", false))
 	if ok and before != _current_order_snapshot():
 		_record_order_undo(before)
