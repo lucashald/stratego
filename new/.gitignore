@@ -1,0 +1,4 @@
+
+# Python bytecode from the asset tools
+__pycache__/
+*.pyc
