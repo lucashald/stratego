@@ -145,8 +145,22 @@ server.tool(
 );
 
 server.tool(
+  "commit",
+  "Lock in your orders and wait, without resolving. Use this when a human is " +
+  "commanding the other army in the running app: it marks only your side ready " +
+  "and lets the app resolve once they end their own planning, so the battle " +
+  "plays out there with its animation, battle cards and log. end_planning would " +
+  "instead have the bot plan for anyone not yet ready and resolve inside the " +
+  "bridge, which both overrides the human and skips the app's presentation.",
+  {},
+  () => forward("commit", {}),
+);
+
+server.tool(
   "end_planning",
-  "Submit your orders, let the bot plan, and resolve. Returns the event log and the new state.",
+  "Submit your orders, let the bot PLAN FOR EVERY OTHER SIDE, and resolve inside the bridge. " +
+  "Only for solo play against the bot. If a human is commanding another army, use commit " +
+  "instead: this would play their turn for them and skip the app's own resolution.",
   {},
   () => forward("end_planning", {}),
 );
