@@ -36,7 +36,7 @@ def _content_bbox(image: Image.Image) -> tuple[int, int, int, int]:
     return bbox
 
 
-def normalize(source: Path, destination: Path) -> None:
+def normalize(source: Path, destination: Path, fit: bool = False) -> None:
     with Image.open(source) as opened:
         image = opened.convert("RGBA")
 
@@ -44,15 +44,28 @@ def normalize(source: Path, destination: Path) -> None:
     visible = image.crop(bbox)
     target_extent = CANVAS_SIZE - PADDING * 2
 
-    # The banners intentionally share an exact registration box. Source aspect
-    # ratios differ by only a few percent, so the small non-uniform correction
-    # is preferable to visible size changes when textures are swapped.
-    visible = visible.resize(
-        (target_extent, target_extent),
-        resample=Image.Resampling.LANCZOS,
-    )
+    if fit:
+        # Scale uniformly and pad the short side with transparency. The banner
+        # keeps its true proportions, and centres agree, at the cost of sets
+        # whose sources disagree about their shape ending up different widths.
+        # That is the honest presentation of inconsistent art rather than a
+        # per-image stretch that hides it.
+        scale = min(target_extent / visible.width, target_extent / visible.height)
+        size = (max(1, round(visible.width * scale)), max(1, round(visible.height * scale)))
+        visible = visible.resize(size, resample=Image.Resampling.LANCZOS)
+        offset = ((CANVAS_SIZE - size[0]) // 2, (CANVAS_SIZE - size[1]) // 2)
+    else:
+        # Every banner is forced to the same square registration box. Within a
+        # set whose sources agree this is invisible, and it guarantees textures
+        # swap without the banner changing size. Across a set that does not
+        # agree, each image is stretched by a different amount.
+        visible = visible.resize(
+            (target_extent, target_extent),
+            resample=Image.Resampling.LANCZOS,
+        )
+        offset = (PADDING, PADDING)
     normalized = Image.new("RGBA", (CANVAS_SIZE, CANVAS_SIZE), (0, 0, 0, 0))
-    normalized.alpha_composite(visible, (PADDING, PADDING))
+    normalized.alpha_composite(visible, offset)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     normalized.save(destination, format="PNG", optimize=True)
@@ -119,6 +132,8 @@ def main() -> None:
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--proof", type=Path)
+    parser.add_argument("--fit", action="store_true",
+                        help="scale uniformly and pad, instead of stretching to the square box")
     args = parser.parse_args()
 
     missing = [code for code in UNIT_CODES if not (args.source / f"{code}.png").is_file()]
@@ -128,7 +143,7 @@ def main() -> None:
     for code in UNIT_CODES:
         source = args.source / f"{code}.png"
         destination = args.output / f"{code}.png"
-        normalize(source, destination)
+        normalize(source, destination, args.fit)
         print(f"normalized {code}: {source} -> {destination}")
 
     if args.proof:
