@@ -1612,7 +1612,10 @@ func _update_battle_card(event: Dictionary) -> void:
 		var piece_id := int(event.get("piece_id", StrategoGame.EMPTY))
 		var moved: Array[int] = []
 		if piece_id >= 0 and piece_id < game.pieces.size(): moved.append(piece_id)
-		_refresh_battle_cards(moved)
+		# Reposition is movement, not combat. Seeing it happen may disclose a
+		# formation's Weight through its speed, but it must not grant the Role or
+		# Strength that only combat reveals.
+		_refresh_battle_cards(moved, false)
 		for child in battle_stats.get_children(): child.queue_free()
 		battle_body.visible = true
 		battle_body.text = "[center]%s  ->  %s[/center]" % [str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
@@ -1659,7 +1662,7 @@ func _update_battle_card(event: Dictionary) -> void:
 ## One side of a battle as a banner card: the same shield the board draws, the
 ## formation's name, and its army. Two of these facing each other say who is
 ## fighting before a single number has to be read.
-func _battle_side_card(piece: Dictionary, footer: String = "") -> Control:
+func _battle_side_card(piece: Dictionary, footer: String = "", can_see_identity: bool = true) -> Control:
 	var tint: Color = board_view._player_colors(int(piece.player)).edge
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", _panel_style(Color("#0b1620"), Color(tint, 0.55), 1, 6))
@@ -1672,7 +1675,7 @@ func _battle_side_card(piece: Dictionary, footer: String = "") -> Control:
 	margin.add_child(row)
 	var shield := Control.new()
 	shield.custom_minimum_size = Vector2(46, 46)
-	shield.draw.connect(_draw_card_shield.bind(shield, piece))
+	shield.draw.connect(_draw_card_shield.bind(shield, piece, can_see_identity))
 	row.add_child(shield)
 	var column := VBoxContainer.new()
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1685,26 +1688,34 @@ func _battle_side_card(piece: Dictionary, footer: String = "") -> Control:
 	army.add_theme_color_override("font_color", tint)
 	column.add_child(army)
 	var name_label := Label.new()
-	name_label.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+	name_label.text = _card_formation_name(piece, can_see_identity)
 	name_label.add_theme_font_size_override("font_size", 17)
 	name_label.add_theme_color_override("font_color", Color("#f3eee5"))
 	column.add_child(name_label)
 	var starting := Label.new()
-	starting.text = footer if footer != "" else "STARTING STRENGTH  %d" % int(piece.max_strength)
+	starting.text = footer if footer != "" else ("STARTING STRENGTH  %d" % int(piece.max_strength) if can_see_identity else "IDENTITY UNKNOWN")
 	starting.add_theme_font_size_override("font_size", 12)
 	starting.add_theme_color_override("font_color", Color("#a9a294"))
 	column.add_child(starting)
 	return card
 
 
+func _card_formation_name(piece: Dictionary, can_see_identity: bool) -> String:
+	if can_see_identity:
+		return "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
+	return "%s FORMATION" % String(piece.weight).to_upper()
+
+
 ## The board's banner at card size, so the same shape means the same formation
 ## whether you are reading the map or the panel.
-func _draw_card_shield(host: Control, piece: Dictionary) -> void:
+func _draw_card_shield(host: Control, piece: Dictionary, can_see_identity: bool = true) -> void:
 	var width := host.size.x
 	var height := host.size.y * 0.94
-	var art := UnitIconCatalog.texture_for_piece(piece)
+	var art := UnitIconCatalog.texture_for_piece(piece) if can_see_identity else UnitIconCatalog.unknown_texture_for(int(piece.player))
 	if art != null:
 		host.draw_texture_rect(art, Rect2(Vector2.ZERO, Vector2(width, height)), false)
+		if not can_see_identity:
+			return
 		var font := ThemeDB.fallback_font
 		var numeral := str(int(piece.strength))
 		var numeral_width := font.get_string_size(numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
@@ -1723,9 +1734,11 @@ func _draw_card_shield(host: Control, piece: Dictionary) -> void:
 	elif String(piece.weight) == StrategoGame.WEIGHT_HEAVY: rim = Color("#eef3fa")
 	host.draw_polyline(outline, rim, 3.0, true)
 	var font := ThemeDB.fallback_font
-	var role := String(piece.role).substr(0, 1).to_upper()
+	var role := String(piece.role).substr(0, 1).to_upper() if can_see_identity else "?"
 	var role_width := font.get_string_size(role, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
 	host.draw_string(font, Vector2((width - role_width) * 0.5, height * 0.32), role, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#f6eee0"))
+	if not can_see_identity:
+		return
 	var numeral := str(int(piece.strength))
 	var numeral_width := font.get_string_size(numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x
 	host.draw_string(font, Vector2((width - numeral_width) * 0.5, height * 0.72), numeral, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
@@ -1750,11 +1763,12 @@ func _draw_swords(host: Control) -> void:
 
 
 ## Rebuild the facing cards for however many formations the event involves.
-func _refresh_battle_cards(ids: Array[int]) -> void:
+func _refresh_battle_cards(ids: Array[int], reveal_participants: bool = true) -> void:
 	for child in battle_cards.get_children(): child.queue_free()
 	for index in ids.size():
 		if index > 0: battle_cards.add_child(_battle_swords())
-		battle_cards.add_child(_battle_side_card(game.pieces[ids[index]]))
+		var piece: Dictionary = game.pieces[ids[index]]
+		battle_cards.add_child(_battle_side_card(piece, "", reveal_participants or _piece_identity_is_visible(piece)))
 
 
 ## A head-to-head grid, laid out so every number in the damage calculation is on
@@ -1982,6 +1996,10 @@ func _on_examine_requested(piece_id: int) -> void:
 	if board_view != null: board_view.clear_selection()
 	_update_inspector()
 	var piece: Dictionary = game.pieces[piece_id]
+	if not _piece_identity_is_visible(piece):
+		_log_line("%s formation: identity unknown." % game.player_name(int(piece.player)), true)
+		detail_label.text = "%s formation · identity unknown" % String(piece.weight).capitalize()
+		return
 	var role := String(piece.role)
 	var weight := String(piece.weight)
 	var role_note: String = {
@@ -1989,8 +2007,7 @@ func _on_examine_requested(piece_id: int) -> void:
 		StrategoGame.ROLE_CAVALRY: "+%d battle score when attacking." % StrategoGame.ROLE_BONUS,
 		StrategoGame.ROLE_ARCHER: "No melee bonus; may shoot during the ranged phase.",
 	}.get(role, "")
-	var known := game.is_piece_visible_to(piece, board_view.viewing_player)
-	var strength := "Strength %d/%d." % [int(piece.strength), int(piece.max_strength)] if known else "Strength unknown."
+	var strength := "Strength %d/%d." % [int(piece.strength), int(piece.max_strength)]
 	_log_line("%s: %s %s. Movement %d, Armor %d. %s %s" % [
 		String(piece.type), weight.capitalize(), role.capitalize(),
 		game.movement_limit_for(piece), int(piece.armor), strength, role_note,
@@ -2284,7 +2301,7 @@ func _formation_detail(piece: Dictionary) -> String:
 ## be very little, and showing that emptiness is itself informative.
 func _show_examined(piece: Dictionary) -> void:
 	inspector_title.text = "%s %s" % [game.player_name(int(piece.player)).to_upper(), "FORMATION"]
-	if game.is_piece_revealed_to(piece, StrategoGame.BLUE) or int(piece.player) == StrategoGame.BLUE:
+	if _piece_identity_is_visible(piece):
 		inspector_title.text = "%s %s" % [String(piece.weight).to_upper(), String(piece.role).to_upper()]
 		inspector_stats.text = _formation_detail(piece)
 		inspector_order.text = "Examined · %s" % game.player_name(int(piece.player))
@@ -2293,6 +2310,12 @@ func _show_examined(piece: Dictionary) -> void:
 
 Fighting it reveals its Role, Weight and current Strength. Watching it move reveals its Weight, since speed follows from it."
 	inspector_order.text = "Examined · identity unknown"
+
+
+func _piece_identity_is_visible(piece: Dictionary) -> bool:
+	if piece.is_empty() or game == null:
+		return false
+	return (board_view != null and board_view.reveal_all) or game.game_over or game.is_piece_revealed_to(piece, StrategoGame.BLUE)
 
 
 ## The selection as banner cards. A long selection is summarised rather than
@@ -2306,7 +2329,12 @@ func _refresh_inspector_cards() -> void:
 	for index in mini(ids.size(), SELECTION_CARD_LIMIT):
 		var piece_id := int(ids[index])
 		if piece_id < 0 or piece_id >= game.pieces.size(): continue
-		inspector_cards.add_child(_battle_side_card(game.pieces[piece_id], _order_footer(piece_id)))
+		var piece: Dictionary = game.pieces[piece_id]
+		var can_see_identity := _piece_identity_is_visible(piece)
+		# Enemy orders are secret too. An examined unidentified formation gets a
+		# neutral footer rather than inheriting the player's order-summary card.
+		var footer := _order_footer(piece_id) if int(piece.player) == StrategoGame.BLUE else ("IDENTITY UNKNOWN" if not can_see_identity else "")
+		inspector_cards.add_child(_battle_side_card(piece, footer, can_see_identity))
 	if ids.size() > SELECTION_CARD_LIMIT:
 		var more := Label.new()
 		more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

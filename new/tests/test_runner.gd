@@ -32,6 +32,8 @@ func _run() -> void:
 	_test_ranged_focus_fire_is_simultaneous()
 	_test_archer_loss_blocks_shot_and_win_allows_it()
 	_test_leftover_is_a_separate_order_phase()
+	_test_reposition_keeps_unidentified_formations_secret()
+	_test_leftover_contingent_friendly_square_order()
 	_test_leftover_allows_second_melee_only_after_win()
 	_test_cavalry_always_leftover_toggle()
 	_test_phase_has_no_decision_ignores_idle_formations()
@@ -751,6 +753,50 @@ func _test_leftover_is_a_separate_order_phase() -> void:
 	var events := game.resolve_leftover_phase()
 	_expect(_events_with_action(events, "move").size() == 1 and game.pieces[mover].position == Vector2i(4, 2), "ending the leftover phase resolves its simultaneous movement")
 	_expect(game.phase == StrategoGame.PHASE_PLANNING and game.round_number == 2, "the next planning round starts only after leftover movement finishes")
+
+
+func _test_reposition_keeps_unidentified_formations_secret() -> void:
+	var game := _test_game()
+	var enemy_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(4, 4), 7)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 7), 8)
+	for player in game.active_players: game.mark_player_ready(player)
+	game.resolve_main_and_ranged()
+	_expect(game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING, "identity regression reaches the reposition phase")
+	_expect(not game.is_piece_revealed_to(game.pieces[enemy_id], StrategoGame.BLUE), "the visible enemy entering reposition is still unidentified")
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	_expect(not presenter._piece_identity_is_visible(game.pieces[enemy_id]), "the reposition presenter preserves the engine's hidden identity")
+	_expect(presenter._card_formation_name(game.pieces[enemy_id], false) == "LIGHT FORMATION", "a hidden reposition card omits Role and Strength-bearing identity")
+	presenter.free()
+
+
+func _test_leftover_contingent_friendly_square_order() -> void:
+	var battle_game := _test_game()
+	var guard := battle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var follow_up := battle_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(5, 6), 10)
+	var second_follow_up := battle_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var attacker := battle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	battle_game.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
+	var contingent_order := battle_game.set_leftover_order(StrategoGame.BLUE, follow_up, Vector2i(5, 5))
+	_expect(bool(contingent_order.ok), "reposition accepts a contingent move into a stationary friendly formation's square")
+	_expect(bool(battle_game.set_leftover_order(StrategoGame.BLUE, second_follow_up, Vector2i(5, 5)).ok), "multiple friendly follow-ups may converge because multiway fights are allowed")
+	battle_game.set_leftover_order(StrategoGame.RED, attacker, Vector2i(5, 5))
+	battle_game.set_forced_rolls([5, 4, 3, 2])
+	for player in battle_game.active_players: battle_game.mark_player_ready(player)
+	var battle_events := battle_game.resolve_leftover_phase()
+	var melee_events := _events_with_action(battle_events, "melee")
+	_expect(melee_events.size() == 1 and melee_events[0].participants.size() == 4, "the defender, friendly follow-ups, and enemy arrival resolve as one multiway fight")
+
+	var bounce_game := _test_game()
+	var surviving_guard := bounce_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var follower := bounce_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(5, 6), 10)
+	bounce_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 10)
+	bounce_game.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
+	_expect(bool(bounce_game.set_leftover_order(StrategoGame.BLUE, follower, Vector2i(5, 5)).ok), "the same contingent order is legal when the defender may survive")
+	for player in bounce_game.active_players: bounce_game.mark_player_ready(player)
+	var bounce_events := bounce_game.resolve_leftover_phase()
+	_expect(_events_with_action(bounce_events, "melee").is_empty() and _events_with_action(bounce_events, "bounce").size() == 1, "without an enemy arrival, the friendly formations simply bounce")
+	_expect(bounce_game.pieces[surviving_guard].position == Vector2i(5, 5) and bounce_game.pieces[follower].position == Vector2i(5, 6), "the defender holds while the follower stays in its original square")
 
 
 func _test_leftover_allows_second_melee_only_after_win() -> void:

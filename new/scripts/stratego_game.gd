@@ -1305,9 +1305,23 @@ func _same_player_leftover_orders_are_clear(player: int) -> bool:
 		var planned: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
 		if _eligible_for_leftover(piece) and planned.x >= 0 and are_adjacent(piece.position, planned):
 			target = planned
-		if target in destinations:
+		if target not in destinations:
+			destinations[target] = []
+		destinations[target].append(piece)
+	for target in destinations:
+		var contenders: Array = destinations[target]
+		if contenders.size() < 2:
+			continue
+		var has_stationary_defender := false
+		for contender: Dictionary in contenders:
+			if contender.position == target:
+				has_stationary_defender = true
+				break
+		# Any number of friendly follow-ups may enter a square their own
+		# stationary formation currently defends. Enemy arrivals turn that into
+		# an ordinary multiway battle; without an enemy, everyone bounces.
+		if not has_stationary_defender:
 			return false
-		destinations[target] = piece.id
 	for first_index in own_pieces.size():
 		for second_index in range(first_index + 1, own_pieces.size()):
 			var first: Dictionary = own_pieces[first_index]
