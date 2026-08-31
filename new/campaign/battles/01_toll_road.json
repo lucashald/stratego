@@ -1,0 +1,36 @@
+{
+  "name": "Battle 1 — The Toll Road",
+  "briefing": [
+    "Ashmere's grain road runs north through the gap at Oxfell. For two seasons a company out of Vare has been taxing it, and this morning they are drawn up across it in the open, which means they intend to be seen.",
+    "Nine formations answer to you. Hold the crossing at the centre of the gap for three consecutive rounds and the road is yours.",
+    "They have nine as well. Their commander has not met you before."
+  ],
+  "turn_limit": 22,
+  "private_battle_results": true,
+  "terrain": { "lakes": true, "open": [[10, 10]] },
+  "objective": { "kind": "hold", "square": [10, 10], "rounds": 3 },
+  "armies": {
+    "blue": [
+      { "name": "Oakhand",    "type": "HI", "at": [9, 17],  "strength": 8 },
+      { "name": "Stonewatch", "type": "HI", "at": [11, 17], "strength": 8 },
+      { "name": "Marrow",     "type": "MI", "at": [8, 18],  "strength": 7 },
+      { "name": "Thistle",    "type": "MI", "at": [12, 18], "strength": 7 },
+      { "name": "Coldbrook",  "type": "LI", "at": [10, 18], "strength": 6 },
+      { "name": "Harrow",     "type": "MA", "at": [10, 17], "strength": 6 },
+      { "name": "Kestrel",    "type": "LA", "at": [9, 19],  "strength": 5 },
+      { "name": "Ferrant",    "type": "MC", "at": [12, 17], "strength": 7 },
+      { "name": "Ash",        "type": "LC", "at": [8, 17],  "strength": 6 }
+    ],
+    "red": [
+      { "name": "Vare First",   "type": "HI", "at": [9, 3],  "strength": 8 },
+      { "name": "Vare Second",  "type": "HI", "at": [11, 3], "strength": 8 },
+      { "name": "Toll-taker",   "type": "MI", "at": [8, 2],  "strength": 7 },
+      { "name": "Gatewright",   "type": "MI", "at": [12, 2], "strength": 7 },
+      { "name": "Scrip",        "type": "LI", "at": [10, 2], "strength": 6 },
+      { "name": "Reeve",        "type": "MA", "at": [10, 3], "strength": 6 },
+      { "name": "Tally",        "type": "LA", "at": [9, 1],  "strength": 5 },
+      { "name": "Coin",         "type": "MC", "at": [12, 3], "strength": 7 },
+      { "name": "Whistle",      "type": "LC", "at": [8, 3],  "strength": 6 }
+    ]
+  }
+}
