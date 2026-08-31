@@ -38,7 +38,7 @@ PICKS = {
         "hi": "banner_yellow_heavy_infantry_quilted_linen_poc.png",
         "la": "banner_yellow_light_archer_quilted_linen_poc.png",
         "ma": "banner_yellow_medium_archer_crossbow_quilted_linen_v2.png",
-        "ha": "banner_yellow_heavy_archer_quilted_linen_poc.png",
+        "ha": "banner_yellow_heavy_archer_realistic_catapult_v2.png",
         "lc": "banner_yellow_light_cavalry_quilted_linen_poc.png",
         "mc": "banner_yellow_medium_cavalry_quilted_linen_poc.png",
         "hc": "banner_yellow_heavy_cavalry_quilted_linen_poc.png",
