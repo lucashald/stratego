@@ -59,7 +59,6 @@ var withdraw_button: Button
 var export_replay_button: Button
 var replay_last_button: Button
 var ranged_toggle: CheckButton
-var leftover_toggle: CheckButton
 var privacy_toggle: CheckButton
 var cavalry_leftover_toggle: CheckButton
 var battle_report_toggle: CheckButton
@@ -1143,10 +1142,6 @@ func _build_settings_drawer() -> void:
 	ranged_toggle.button_pressed = true
 	ranged_toggle.toggled.connect(_on_ranged_toggled)
 	box.add_child(ranged_toggle)
-	leftover_toggle = CheckButton.new()
-	leftover_toggle.text = "Set leftover move"
-	leftover_toggle.toggled.connect(_on_leftover_toggled)
-	box.add_child(leftover_toggle)
 	privacy_toggle = CheckButton.new()
 	privacy_toggle.text = "Private battle details"
 	privacy_toggle.button_pressed = true
@@ -1942,19 +1937,6 @@ func _on_replay_last() -> void:
 
 func _on_ranged_toggled(enabled: bool) -> void:
 	board_view.prefer_ranged = enabled
-	if enabled and leftover_toggle.button_pressed:
-		leftover_toggle.button_pressed = false
-	board_view.queue_redraw()
-
-
-func _on_leftover_toggled(enabled: bool) -> void:
-	board_view.leftover_mode = enabled
-	if enabled and ranged_toggle.button_pressed:
-		ranged_toggle.button_pressed = false
-	group_move_title.text = "SET REPOSITION MOVE" if enabled else "MOVE SELECTION"
-	group_move_title.add_theme_color_override("font_color", Color("#f2b15b") if enabled else HUD_BLUE)
-	detail_label.text = "Leftover mode: choose one direction for every selected formation with unused movement." if enabled else "Main movement mode restored."
-	_update_inspector()
 	board_view.queue_redraw()
 
 
@@ -2166,9 +2148,9 @@ func _update_interface(update_detail: bool = true) -> void:
 	export_replay_button.disabled = resolution_mode or replay_view_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_GAME_OVER]
 	replay_last_button.disabled = not FileAccess.file_exists(LAST_REPLAY_PATH)
 	ranged_toggle.disabled = not main_planning or read_only
-	leftover_toggle.set_pressed_no_signal(leftover_planning)
-	leftover_toggle.disabled = true
-	leftover_toggle.tooltip_text = "Leftover movement becomes available after battles and ranged attacks resolve."
+	# The phase owns this outright. There used to be a checkbox here, but it
+	# was permanently disabled and driven from the phase, so it showed state
+	# while looking like a control.
 	board_view.leftover_mode = leftover_planning
 	board_view.prefer_ranged = main_planning and ranged_toggle.button_pressed
 	board_view.interaction_enabled = (planning or deploying) and not read_only
