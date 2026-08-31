@@ -1423,6 +1423,7 @@ func _resolve_ready_round() -> void:
 	_capturing_report_lines = false
 	if not resolving_leftover:
 		_request_battle_report(resolved_round)
+	board_view.begin_march(_march_steps_from(events))
 	_rebuild_log(events)
 	resolution_events = _visible_presentation_events(events)
 	# Nothing to look at means nothing to wait on either: a round with no
@@ -1440,6 +1441,46 @@ func _resolve_ready_round() -> void:
 	_update_interface()
 	if spectator_mode or (no_visible_events and not replay_view_mode):
 		_play_resolution(session_id)
+
+
+## Movement for the march animation. Main-phase moves are deliberately absent
+## from _visible_presentation_events, which is why the board used to jump: they
+## are not click-through moments. They are still the round's motion, so they are
+## collected separately here.
+##
+## Visibility uses the same gate as the log. If the engine marked a move visible
+## to this player then it is theirs to watch, origin included; Weight is public
+## on sight in this game and movement timing states it anyway. Moves the viewer
+## was never shown are simply left out, and those formations appear already
+## standing on their new square.
+func _march_steps_from(events: Array[Dictionary]) -> Array:
+	var steps: Array = []
+	for event: Dictionary in events:
+		if not _event_is_known_to_viewer(event):
+			continue
+		var batch := String(event.get("batch", ""))
+		if not batch.begins_with("impulse_"):
+			continue
+		var impulse := int(batch.substr(8))
+		if impulse <= 0:
+			continue
+		var action := String(event.get("action", ""))
+		if action == "move":
+			steps.append({
+				"piece_id": int(event.get("piece_id", StrategoGame.EMPTY)), "impulse": impulse,
+				"from": event.get("from", Vector2i(-1, -1)), "to": event.get("to", Vector2i(-1, -1)),
+				"bounce": false,
+			})
+		elif action == "bounce":
+			# A bounce moves nobody, so without this the order simply appears to
+			# have been ignored. The lunge is what says "this was tried".
+			for id_value in event.get("participants", []):
+				steps.append({
+					"piece_id": int(id_value), "impulse": impulse,
+					"from": Vector2i(-1, -1), "to": event.get("to", Vector2i(-1, -1)),
+					"bounce": true,
+				})
+	return steps
 
 
 func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary]:

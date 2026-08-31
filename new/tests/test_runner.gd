@@ -15,6 +15,7 @@ func _run() -> void:
 	_test_order_paths_and_friendly_rejection()
 	_test_group_orders_apply_per_formation()
 	_test_mixed_speed_formations_can_gang_up()
+	_test_march_animation_staggers_by_weight()
 	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
@@ -153,6 +154,58 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(moved_long_shot.ok), "an Archer that has ordered movement may only declare an adjacent target")
 	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
+
+
+func _test_march_animation_staggers_by_weight() -> void:
+	# The march exists to make the impulse system visible: Weight decides which
+	# impulse a formation starts on, and that timing is why a faster formation
+	# cannot follow a slower one into a square it has not vacated. If every
+	# formation slid at once the animation would be prettier and say nothing.
+	var game := _test_game()
+	var light := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4))
+	var heavy := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(7, 4))
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var view := StrategoBoardView.new()
+	view.game = game
+	# Both have already arrived; the animation rewinds them and walks forward.
+	view.begin_march([
+		{"piece_id": light, "impulse": 1, "from": Vector2i(5, 5), "to": Vector2i(5, 4), "bounce": false},
+		{"piece_id": heavy, "impulse": 3, "from": Vector2i(7, 5), "to": Vector2i(7, 4), "bounce": false},
+	])
+	_expect(view.march_in_progress(), "issuing visible movement starts a march")
+
+	var cell := 64.0
+	# Halfway through the first beat: the Light is under way, the Heavy has not
+	# stirred and so is still drawn a full square back from where it now stands.
+	view._march_started_msec = Time.get_ticks_msec() - int(view.MARCH_BEAT_MSEC * 0.5)
+	var light_early := view._march_offset(light, cell)
+	var heavy_early := view._march_offset(heavy, cell)
+	_expect(light_early.length() > 0.0 and light_early.length() < cell, "the faster formation is part way through its step on the first beat")
+	_expect(is_equal_approx(heavy_early.y, cell), "the slower formation has not moved yet and is still drawn a whole square behind")
+
+	# A beat later the order reverses: the Light has arrived and holds still
+	# while the Heavy makes its move.
+	view._march_started_msec = Time.get_ticks_msec() - int(view.MARCH_BEAT_MSEC * 1.5)
+	var light_late := view._march_offset(light, cell)
+	var heavy_late := view._march_offset(heavy, cell)
+	_expect(light_late == Vector2.ZERO, "a formation that has finished its step sits still on later beats")
+	_expect(heavy_late.length() > 0.0 and heavy_late.length() < cell, "the slower formation moves on its own later beat")
+
+	# A bounce ends where it began, so it must return to zero rather than leave
+	# the formation parked inside the square it was refused.
+	var bounce_game := _test_game()
+	var refused := bounce_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5))
+	bounce_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
+	var bounce_view := StrategoBoardView.new()
+	bounce_view.game = bounce_game
+	bounce_view.begin_march([{"piece_id": refused, "impulse": 1, "from": Vector2i(5, 5), "to": Vector2i(5, 4), "bounce": true}])
+	bounce_view._march_started_msec = Time.get_ticks_msec() - int(bounce_view.MARCH_BEAT_MSEC * 0.5)
+	var lunge := bounce_view._march_offset(refused, cell)
+	_expect(lunge.length() > 0.0 and lunge.length() < cell, "a bounced formation visibly lunges at the square it was refused")
+	bounce_view._march_started_msec = Time.get_ticks_msec() - int(bounce_view.MARCH_BEAT_MSEC * 0.999)
+	_expect(bounce_view._march_offset(refused, cell).length() < cell * 0.02, "the bounced formation returns to its own square by the end of the beat")
+	view.free()
+	bounce_view.free()
 
 
 func _test_mixed_speed_formations_can_gang_up() -> void:

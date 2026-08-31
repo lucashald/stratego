@@ -34,6 +34,31 @@ var combat_event: Dictionary = {}
 var combat_started_msec := 0
 var combat_duration_msec := 1600
 var combat_hold := false
+
+## Movement animation. A round resolves all at once, so by the time anything is
+## drawn every formation already stands on its final square. Rather than track a
+## second copy of the board, this rewinds each formation visually and walks it
+## forward again, as a pixel offset applied to the one point _draw_piece derives
+## everything else from. Game state, hit testing, fog and selection keep using
+## the real cell throughout, so the animation cannot desync from the rules.
+##
+## The beats are the engine's own movement impulses, which is the point: Weight
+## decides which impulse a formation starts on, and that timing is why a faster
+## formation cannot follow a slower one into a square it has not vacated yet.
+## Played out, that rule becomes something you watch rather than something you
+## have to be told.
+const MARCH_BEAT_MSEC := 380.0
+## How far into the contested square a bounced formation lunges before being
+## turned back, as a fraction of a cell.
+const BOUNCE_LUNGE := 0.42
+
+# piece_id -> Array of {beat:int, from:Vector2i, to:Vector2i, bounce:bool}
+var _march_steps: Dictionary = {}
+# The impulse numbers that actually carried movement, in order. An impulse with
+# nothing in it is skipped rather than played as an empty beat.
+var _march_beats: Array[int] = []
+var _march_started_msec := 0
+var _march_active := false
 var zoom_level := 1.0
 var pan_offset := Vector2.ZERO
 var min_zoom := 0.9
@@ -507,7 +532,10 @@ func _draw_drag_selection() -> void:
 
 
 func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
-	var center := _cell_center(piece.position, origin, cell)
+	# Every other measurement in this function hangs off this one point, so the
+	# march offset is applied here and nowhere else: the art path, the
+	# procedural path and the order badge all inherit it for free.
+	var center := _cell_center(piece.position, origin, cell) + _march_offset(int(piece.id), cell)
 	var colors := _player_colors(int(piece.player))
 	var is_selected := int(piece.id) in selected_piece_ids
 	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
@@ -782,11 +810,115 @@ func _draw_vignette(origin: Vector2, side: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	if _march_active:
+		# One extra beat of grace so the final impulse finishes easing into
+		# place instead of snapping on the last frame.
+		var total := (_march_beats.size() + 1) * MARCH_BEAT_MSEC
+		if Time.get_ticks_msec() - _march_started_msec >= total:
+			cancel_march()
+		else:
+			queue_redraw()
 	if combat_event.is_empty() or combat_hold:
 		return
 	if Time.get_ticks_msec() - combat_started_msec >= combat_duration_msec:
 		combat_event.clear()
 	queue_redraw()
+
+
+## Starts the march. `steps` is the round's visible movement, each entry
+## {piece_id, impulse, from, to, bounce}; ordering and chaining are worked out
+## here so callers only have to filter for what the viewer may see.
+func begin_march(steps: Array) -> void:
+	_march_steps.clear()
+	_march_beats.clear()
+	_march_active = false
+	if steps.is_empty() or overview_mode:
+		return
+	var impulses: Array[int] = []
+	for step in steps:
+		var impulse := int(step.get("impulse", 0))
+		if impulse > 0 and impulse not in impulses:
+			impulses.append(impulse)
+	if impulses.is_empty():
+		return
+	impulses.sort()
+	_march_beats = impulses
+	# Steps are chained per formation in impulse order, so a formation that
+	# moves twice in a round walks its whole path, and a bounce late in the
+	# round lunges from wherever the earlier steps left it rather than from the
+	# square it started the round on.
+	var ordered := steps.duplicate()
+	ordered.sort_custom(func(a, b): return int(a.get("impulse", 0)) < int(b.get("impulse", 0)))
+	var running: Dictionary = {}
+	for step in ordered:
+		var piece_id := int(step.get("piece_id", StrategoGame.EMPTY))
+		if piece_id < 0 or piece_id >= game.pieces.size():
+			continue
+		var bounce := bool(step.get("bounce", false))
+		var from: Vector2i = running.get(piece_id, step.get("from", Vector2i(-1, -1)))
+		if from.x < 0:
+			from = game.pieces[piece_id].position
+		var to: Vector2i = step.get("to", from)
+		if not _march_steps.has(piece_id):
+			_march_steps[piece_id] = []
+		_march_steps[piece_id].append({
+			"beat": _march_beats.find(int(step.get("impulse", 0))),
+			"from": from, "to": to, "bounce": bounce,
+		})
+		# A bounce ends where it began; only a real move advances the formation.
+		running[piece_id] = from if bounce else to
+	_march_started_msec = Time.get_ticks_msec()
+	_march_active = true
+	queue_redraw()
+
+
+func march_in_progress() -> bool:
+	return _march_active
+
+
+func cancel_march() -> void:
+	_march_active = false
+	_march_steps.clear()
+	_march_beats.clear()
+	queue_redraw()
+
+
+## Where a formation should appear right now, as a pixel offset from the square
+## it actually occupies. Zero once its own steps are behind it, which is why a
+## formation that has finished moving simply sits still while slower ones are
+## still crossing the board.
+func _march_offset(piece_id: int, cell: float) -> Vector2:
+	if not _march_active or not _march_steps.has(piece_id):
+		return Vector2.ZERO
+	var steps: Array = _march_steps[piece_id]
+	if steps.is_empty():
+		return Vector2.ZERO
+	var elapsed := float(Time.get_ticks_msec() - _march_started_msec)
+	var beat := int(elapsed / MARCH_BEAT_MSEC)
+	var progress := clampf((elapsed - beat * MARCH_BEAT_MSEC) / MARCH_BEAT_MSEC, 0.0, 1.0)
+	# Ease out: formations leave briskly and settle, rather than sliding at a
+	# constant speed like a cursor.
+	var eased := 1.0 - pow(1.0 - progress, 3.0)
+	var visual := Vector2(steps[0].from)
+	for step: Dictionary in steps:
+		var step_beat := int(step.beat)
+		if step_beat < beat:
+			if not bool(step.bounce):
+				visual = Vector2(step.to)
+		elif step_beat == beat:
+			var from_point := Vector2(step.from)
+			var to_point := Vector2(step.to)
+			if bool(step.bounce):
+				# Out and back inside one beat: the formation commits, is
+				# refused, and returns. A bounce otherwise animates as nothing
+				# at all, which reads as the order having been ignored.
+				visual = from_point.lerp(to_point, sin(progress * PI) * BOUNCE_LUNGE)
+			else:
+				visual = from_point.lerp(to_point, eased)
+			break
+		else:
+			break
+	return (visual - Vector2(game.pieces[piece_id].position)) * cell
 
 
 func show_combat(event: Dictionary) -> void:
