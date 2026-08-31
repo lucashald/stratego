@@ -17,6 +17,7 @@ func _run() -> void:
 	_test_mixed_speed_formations_can_gang_up()
 	_test_march_animation_staggers_by_weight()
 	_test_permissive_orders_and_friendly_retry()
+	_test_ranged_combat_reveals_both_parties()
 	_test_planning_order_undo()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
@@ -155,6 +156,39 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	_expect(not bool(moved_long_shot.ok), "an Archer that has ordered movement may only declare an adjacent target")
 	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
+
+
+func _test_ranged_combat_reveals_both_parties() -> void:
+	# Trading fire identifies both sides, exactly as meeting in melee does.
+	# Without it a ranged duel could run a whole match with neither side ever
+	# learning what it was shooting at.
+	var game := _test_game()
+	var shooter := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(5, 5), 10)
+	var target := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 10)
+	_expect(not game.is_piece_revealed_to(game.pieces[shooter], StrategoGame.BLUE), "the Archer starts unidentified to its target")
+	_expect(not game.is_piece_revealed_to(game.pieces[target], StrategoGame.RED), "and the target starts unidentified to the Archer")
+	game.set_unit_order(StrategoGame.RED, shooter, [], Vector2i(5, 4), Vector2i(-1, -1), target)
+	for player in game.active_players: game.mark_player_ready(player)
+	var events := game.resolve_main_and_ranged()
+	_expect(_events_with_action(events, "ranged").size() == 1, "the shot resolves as a ranged event")
+	_expect(game.is_piece_revealed_to(game.pieces[shooter], StrategoGame.BLUE), "shooting reveals the Archer to the formation it fired on")
+	_expect(game.is_piece_revealed_to(game.pieces[target], StrategoGame.RED), "being shot reveals the target to the Archer that fired")
+
+	# A shot that kills still identifies the shooter, the way a melee that
+	# kills still identifies the winner. The witness matters: identity is
+	# recorded on the shot but only readable while that player still has
+	# someone able to see the Archer, so without a survivor this would pass
+	# for the wrong reason.
+	var lethal := _test_game()
+	var sniper := lethal.add_piece(StrategoGame.HEAVY_ARCHER, StrategoGame.RED, Vector2i(5, 5), 10)
+	var victim := lethal.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 1)
+	lethal.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	lethal.set_unit_order(StrategoGame.RED, sniper, [], Vector2i(5, 4), Vector2i(-1, -1), victim)
+	lethal.set_forced_rolls([10])
+	for player in lethal.active_players: lethal.mark_player_ready(player)
+	lethal.resolve_main_and_ranged()
+	_expect(not lethal.pieces[victim].alive, "the shot destroys a weak enough target")
+	_expect(lethal.is_piece_revealed_to(lethal.pieces[sniper], StrategoGame.BLUE), "a killing shot still gives the Archer away")
 
 
 func _test_permissive_orders_and_friendly_retry() -> void:

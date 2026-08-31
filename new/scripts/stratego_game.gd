@@ -1989,6 +1989,13 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 			"defender_damage": int(shot.resolution.defender_damage), "result": "ranged_destroyed" if not pieces[target_id].alive else "ranged_hit",
 			"known_to": _battle_viewers_for_ids([shooter_id, target_id]),
 		}
+		# Trading fire identifies both parties, exactly as meeting in melee
+		# does. An Archer that looses a shot has given itself away, and whoever
+		# it hit has been seen closely enough to be named. Without this a
+		# ranged duel could run all match with neither side learning what it
+		# was shooting at, which melee never allows.
+		for id in [shooter_id, target_id]:
+			for viewer in event.known_to: reveal_piece_to(id, viewer)
 		battle_history.append(event.duplicate(true))
 		events.append(event)
 	# A shot that found nothing still happened, and the aim point is still gone.
