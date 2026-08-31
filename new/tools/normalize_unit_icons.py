@@ -15,6 +15,7 @@ Usage from the ``new`` project directory::
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -71,7 +72,12 @@ def normalize(source: Path, destination: Path, fit: bool = False) -> None:
     normalized.alpha_composite(visible, offset)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    normalized.save(destination, format="PNG", optimize=True)
+    # Staged write then swap. Saving straight over a path that a previous run
+    # in the same session opened fails intermittently on Windows, and which
+    # file it picks moves around, so never write the final name directly.
+    staged = destination.with_name(destination.name + ".staged")
+    normalized.save(staged, format="PNG", optimize=True)
+    os.replace(staged, destination)
 
     with Image.open(destination) as check:
         if check.size != (CANVAS_SIZE, CANVAS_SIZE):
@@ -128,7 +134,10 @@ def build_proof(output_dir: Path, destination: Path, codes: list[str] | None = N
         y += row_height
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    sheet.save(destination, format="PNG", optimize=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staged = destination.with_name(destination.name + ".staged")
+    sheet.save(staged, format="PNG", optimize=True)
+    os.replace(staged, destination)
 
 
 def main() -> None:

@@ -21,6 +21,8 @@ the banner survives.
 from __future__ import annotations
 
 import argparse
+import math
+import os
 from collections import deque
 from pathlib import Path
 
@@ -110,10 +112,14 @@ PICKS = {
 # how close the banner's own colour sits to it, which is only knowable per
 # image.
 TOLERANCES = (8, 12, 16, 20, 26, 32, 40)
-# A banner is a pentagon on a square canvas, so roughly an eighth of its own
-# box is legitimately empty below the point. Past this the fill has crossed
-# into the cloth.
-MAX_INTERIOR_HOLES = 0.16
+# A banner is a pentagon on a square canvas, so a sixth or so of its own box is
+# legitimately empty below the point, and a deeper notch costs a little more.
+# Past this the fill has crossed into the cloth. Set at 0.20 rather than nearer
+# the pentagon figure because a banner keying correctly at 16.3% was being
+# rejected by a third of a percent and falling through to the full-bleed path,
+# which bakes the backdrop in; the cases that genuinely need catching run to
+# 25% and beyond, so the margin costs nothing.
+MAX_INTERIOR_HOLES = 0.20
 
 
 def key_exterior(image: Image.Image, tolerance: int) -> Image.Image:
@@ -183,11 +189,85 @@ def key_best(image: Image.Image) -> tuple[Image.Image, int]:
     return best
 
 
+def cloth_median(keyed: Image.Image) -> np.ndarray:
+    """The banner's own colour, per channel.
+
+    Taken over solidly opaque pixels only. Emblem and border are a minority of
+    a banner, so the median lands on cloth without having to segment it.
+    """
+    array = np.asarray(keyed)
+    solid = array[array[..., 3] > 200][..., :3].astype(np.float32)
+    if solid.size == 0:
+        return np.array([128.0, 128.0, 128.0], dtype=np.float32)
+    return np.median(solid, axis=0)
+
+
+def match_to(keyed: Image.Image, source: np.ndarray, target: np.ndarray) -> Image.Image:
+    """Pull one banner's cloth onto the faction's shade.
+
+    A gamma curve per channel rather than a multiply: it puts the median
+    exactly on target while pinning 0 and 255, so a metal border or a pale
+    emblem cannot be blown out or crushed by the correction. Alpha is
+    untouched.
+    """
+    array = np.asarray(keyed).astype(np.float32)
+    out = array.copy()
+    for channel in range(3):
+        current = float(np.clip(source[channel] / 255.0, 0.004, 0.996))
+        wanted = float(np.clip(target[channel] / 255.0, 0.004, 0.996))
+        gamma = math.log(wanted) / math.log(current)
+        normalized = np.clip(array[..., channel] / 255.0, 0.0, 1.0)
+        out[..., channel] = np.power(normalized, gamma) * 255.0
+    out[..., 3] = array[..., 3]
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
+
+
+def match_existing(folder: Path, faction: str) -> None:
+    """Pull an already-prepared set onto one shade, leaving its alpha alone.
+
+    For art that was keyed before this tool existed, or by hand: there is
+    nothing to re-key, only exposure drift between renders to reconcile.
+    """
+    paths = sorted(folder.glob("*.png"))
+    if not paths:
+        raise SystemExit(f"no source icons in {folder}")
+    # Read through a context manager and keep only the converted copy: PIL
+    # loads lazily, so leaving the handles open would make saving back over
+    # these same paths fail on Windows.
+    images: dict[str, Image.Image] = {}
+    for path in paths:
+        with Image.open(path) as opened:
+            images[path.stem] = opened.convert("RGBA")
+    medians = {stem: cloth_median(image) for stem, image in images.items()}
+    target = np.median(np.stack(list(medians.values())), axis=0)
+    print(f"faction shade target RGB {target.astype(int)}")
+    for stem, image in images.items():
+        before = medians[stem]
+        matched = match_to(image, before, target)
+        after = cloth_median(matched)
+        # Write beside the original and swap it in. Saving straight over a path
+        # this run still holds an image for fails intermittently on Windows,
+        # and which file trips it moves around, so replace rather than
+        # overwrite.
+        final = folder / f"{stem}.png"
+        staged = folder / f"{stem}.matched.png"
+        matched.save(staged)
+        os.replace(staged, final)
+        print(f"{faction}/{stem}.png  shade {before.astype(int)} -> {after.astype(int)}  "
+              f"moved {float(np.abs(after - before).max()):.0f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--faction", required=True, choices=sorted(PICKS))
     parser.add_argument("--assets", default="assets")
+    parser.add_argument("--match-only", action="store_true",
+                        help="shade-match the existing source set in place, without re-keying it")
     args = parser.parse_args()
+
+    if args.match_only:
+        match_existing(Path(args.assets) / "unit_icons" / "source" / args.faction, args.faction)
+        return
 
     assets = Path(args.assets)
     destination = assets / "unit_icons" / "source" / args.faction
@@ -195,6 +275,7 @@ def main() -> None:
 
     aspects: list[float] = []
     full_bleed: list[str] = []
+    prepared: list[tuple] = []
     for code, filename in PICKS[args.faction].items():
         source = assets / filename
         if not source.exists():
@@ -219,9 +300,30 @@ def main() -> None:
         elif any(value > 2 for value in corners):
             raise SystemExit(f"{filename}: exterior not removed, corner alpha {corners}")
         aspects.append((box[2] - box[0]) / (box[3] - box[1]))
-        keyed.save(destination / f"{code}.png")
         holes, _ = _interior_holes(keyed)
-        print(f"{args.faction}/{code}.png  <- {filename}  (tol {tolerance}, holes {holes:.0%})")
+        prepared.append((code, filename, keyed, tolerance, holes))
+
+    # Second pass. The renders were generated separately and drift in exposure,
+    # badly enough in some sets that one banner is half the brightness of
+    # another in the same army, which reads as two different cloths rather than
+    # one faction. The target is the set's own median, so the correction is a
+    # consensus of the banners rather than an outside choice, and a set that is
+    # already consistent barely moves.
+    medians = {code: cloth_median(image) for code, _, image, _, _ in prepared}
+    target = np.median(np.stack(list(medians.values())), axis=0)
+    print(f"faction shade target RGB {target.astype(int)}")
+    for code, filename, keyed, tolerance, holes in prepared:
+        before = medians[code]
+        matched = match_to(keyed, before, target)
+        after = cloth_median(matched)
+        shift = float(np.abs(after - before).max())
+        # Same staged write as match_existing: saving straight over a path while
+        # this run still holds images fails intermittently on Windows.
+        staged = destination / f"{code}.staged.png"
+        matched.save(staged)
+        os.replace(staged, destination / f"{code}.png")
+        print(f"{args.faction}/{code}.png  <- {filename}  (tol {tolerance}, holes {holes:.0%}, "
+              f"shade {before.astype(int)} -> {after.astype(int)}, moved {shift:.0f})")
 
     # The normalizer stretches every banner into one shared registration box, so
     # sources that disagree about their own proportions each get a different
