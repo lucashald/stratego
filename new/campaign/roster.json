@@ -1,19 +1,23 @@
 {
   "campaign": "The Ashmere Line",
   "commander": "Blue",
-  "battle_number": 1,
+  "battle_number": 2,
   "supply": 2,
   "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns.",
   "formations": [
-    { "name": "Oakhand",    "type": "HI", "strength": 8, "battles": 0, "history": [] },
-    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 0, "history": [] },
-    { "name": "Marrow",     "type": "MI", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Thistle",    "type": "MI", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Coldbrook",  "type": "LI", "strength": 6, "battles": 0, "history": [] },
-    { "name": "Harrow",     "type": "MA", "strength": 6, "battles": 0, "history": [] },
-    { "name": "Kestrel",    "type": "LA", "strength": 5, "battles": 0, "history": [] },
-    { "name": "Ferrant",    "type": "MC", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Ash",        "type": "LC", "strength": 6, "battles": 0, "history": [] }
+    { "name": "Oakhand",    "type": "HI", "strength": 5, "battles": 1, "history": ["Battle 1 — The Toll Road: won a straight fight against Gatewright."] },
+    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 1, "history": ["Battle 1 — The Toll Road: never engaged. The fight never reached her side of the line."] },
+    { "name": "Marrow",     "type": "MI", "strength": 5, "battles": 1, "history": ["Battle 1 — The Toll Road: caught alongside Ferrant when Toll-taker broke both of them at once. Marrow got clear; Ferrant did not."] },
+    { "name": "Thistle",    "type": "MI", "strength": 3, "battles": 1, "history": ["Battle 1 — The Toll Road: cut down the same Toll-taker that had broken Ferrant and Marrow, then beat Scrip in the same round. The two hardest fights of the battle, back to back."] },
+    { "name": "Coldbrook",  "type": "LI", "strength": 6, "battles": 1, "history": ["Battle 1 — The Toll Road: reached the field and never took a wound."] },
+    { "name": "Harrow",     "type": "MA", "strength": 6, "battles": 1, "history": ["Battle 1 — The Toll Road: two shots, two hits — chipped Whistle, then killed Coin outright."] },
+    { "name": "Kestrel",    "type": "LA", "strength": 0, "battles": 1, "history": [] },
+    { "name": "Ferrant",    "type": "MC", "strength": 0, "battles": 1, "history": [] },
+    { "name": "Ash",        "type": "LC", "strength": 0, "battles": 1, "history": [] }
   ],
-  "fallen": []
+  "fallen": [
+    { "name": "Kestrel", "type": "LA", "battle": "Battle 1 — The Toll Road", "detail": "Lost a duel with Tally over the crossing." },
+    { "name": "Ferrant", "type": "MC", "battle": "Battle 1 — The Toll Road", "detail": "Fought three separate melees in one battle — beat Reeve, retreated once, beat Reeve again, beat Toll-taker, beat Tally — before Toll-taker's line finally brought her down in the fourth. No formation in the campaign has yet matched that." },
+    { "name": "Ash", "type": "LC", "battle": "Battle 1 — The Toll Road", "detail": "Lost the three-way scrum for the crossing to Coin." }
+  ]
 }

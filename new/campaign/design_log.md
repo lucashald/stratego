@@ -44,4 +44,9 @@ time. A single battle can be fun for reasons that do not generalise.
 
 ## Findings so far
 
-_Nothing yet. Battle 1 is unplayed._
+**Battle 1 played, debrief pending.** Blue held the crossing at round 7 of 22,
+losing 3 of 9 formations against Red's 7 of 9 — fast and lopsided for a
+mirrored army. Played against the bot rather than me, since I hit a usage
+limit mid-battle, so it isn't yet the clean commander-vs-commander baseline
+the battle was meant to be. Full outcome in `battles/01_toll_road.md`; nothing
+gets promoted from there to here until we've actually talked about it.
