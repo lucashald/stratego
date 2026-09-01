@@ -2460,6 +2460,7 @@ func build_replay_document() -> Dictionary:
 			"private_battle_results": private_battle_results, "vision_range": vision_range,
 			"bridge_attacker": bridge_attacker, "bridge_defender": bridge_defender,
 			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
+			"cavalry_always_leftover": cavalry_always_leftover,
 			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
 			"skirmish_turn_limit": _skirmish_turn_limit, "skirmish_separation": _skirmish_separation,
 			"teams": teams, "deployment": deployment_placements.duplicate(true),
@@ -2532,7 +2533,13 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		orders[player][piece_id] = candidate
 		candidates.append(candidate)
 	for candidate: Dictionary in candidates:
-		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover, int(candidate.ranged_target_id))
+		# Not strict: a recorded order is a fact, not a proposal to validate.
+		# It already happened, however permissively the UI accepted it - the
+		# board issues orders permissively precisely because a square a
+		# friendly formation holds may clear before the step comes off, and
+		# replay's job is to reproduce what was submitted, not to re-judge it
+		# under a stricter rule than was actually in force.
+		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover, int(candidate.ranged_target_id), false)
 		if not bool(result.get("ok", false)):
 			orders.clear()
 			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
@@ -2622,6 +2629,10 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 		replay_game.resolve_deployment()
 	else:
 		return {"ok": false, "message": "The replay uses an unsupported scenario."}
+	# A toggle, not part of any one scenario's setup, so every setup_* branch
+	# above would otherwise leave it at its default regardless of what was
+	# actually in effect when the match was played.
+	replay_game.cavalry_always_leftover = bool(setup.get("cavalry_always_leftover", false))
 	replay_game.vision_range = int(setup.get("vision_range", DEFAULT_VISION_RANGE))
 	for team_value in setup.get("teams", []):
 		if team_value is Array and team_value.size() == 2:
