@@ -1,6 +1,6 @@
 # Battle 3 — The Fen Road
 
-Scenario: `battles/03_fen_road.json` · Replay: _pending_
+Scenario: `battles/03_fen_road.json` · Replay: `replays/03_fen_road.json`
 
 ## Intent, written before play
 
@@ -88,3 +88,54 @@ result — Ferrant's remounted survivors, and the entire supply pool spent on th
 The cost is a roster with no bows and no second body, going into a battle where
 both of those absences can be felt. That the choice pays for itself or doesn't is
 part of what this battle answers.
+
+## Outcome
+
+**Red won. Round 3. Army destroyed.** Both Blue formations dead: Distraint wore
+Stonewatch down and broke against her in a bounce, both destroyed; Ember and
+Outrider destroyed each other in the same exchange. Red lost Distraint and
+Outrider (2 of 4) and kept Warrant and Quarrel — but wiped the Ashmere Line
+entirely.
+
+Played against the bot, not against a commanded Red. It still ended in three
+rounds, which is the whole indictment: even a scoring function wins this
+scenario trivially.
+
+## Debrief — a design failure, recorded as a real defeat
+
+Per the commander: no do-over. The scenario was broken, but the deaths stand.
+
+**The scenario was not winnable.** Three mistakes, all mine, compounding:
+
+1. **No standoff distance.** The pursuit started four rows behind and moves 3–4×
+   Stonewatch's speed. First contact was round 1. The "withdrawal" never had a
+   chance to be a withdrawal — it was an ambush with extra steps.
+2. **No chokepoint where it mattered.** The marsh gap was too wide and too far
+   forward to force the pursuit to engage one at a time, so four fast formations
+   swarmed two (one of them slow) in the open. A lone Heavy Infantry, however
+   strong on defence, is taken apart by three attackers a round.
+3. **I misread the combat model, backwards.** I built it believing an HI 8 anchor
+   was untouchable by cavalry. In fact cavalry's +3 charge and infantry's +3
+   brace *cancel*, so Stonewatch wins most 1-on-1 defences on her Strength — the
+   danger was never the duel, it was the swarm. I designed against the wrong
+   threat and got the standoff and the chokepoint both wrong as a result.
+
+**And I never verified it.** Ashweir was played bot-vs-bot before handover; this
+was not. Shipping an unverified scenario after explicitly saying the bot can't
+run a pursuit was the process failure underneath the design failure.
+
+**The recruitment economy is the deeper cause.** Blue arrived at the Fen Road with
+two formations because a *won* battle had funded only one Strength-4 unit. Even a
+perfectly-built withdrawal is a coin-flip with a force that thin. The scenario is
+what failed on the day; the economy is what made the scenario a knife-edge to
+begin with. Both are now design-log findings.
+
+## Design log entries this earns
+
+Promoted to `design_log.md`:
+- Verify winnability before handover — bot-vs-bot at minimum — especially for a
+  scenario whose tension depends on a commanded opponent.
+- A withdrawal needs standoff distance and a real chokepoint, or the slow side is
+  simply run down. Speed differential without terrain is not a battle.
+- A won battle must fund a viable rebuild. One S4 unit after a victory is a
+  punishment for winning and it cascaded into an unwinnable next battle.

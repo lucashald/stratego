@@ -1,11 +1,19 @@
 # Handoff: the campaign ("The Ashmere Line")
 
-Status as of 2026-09-01. Battles 1 and 2 are played and debriefed. Battle 2
-(Ashweir Bridge) was **won, pyrrhically** — Blue held the bridge to the turn
-limit but lost six of seven formations. The campaign is now in an **aftermath /
-rebuild phase** before Battle 3, and the roster is a single survivor
-(Stonewatch) plus a supply pool. The in-world story now lives in
-`campaign/chronicle.md`.
+Status as of 2026-09-01. Battles 1–3 are played and debriefed. The **Ashmere Line
+is annihilated** — Battle 3 (The Fen Road) was an unwinnable scenario (design
+failure, recorded honestly) that the commander ruled stands as a real defeat: no
+do-over. Blue has **zero formations left**. The campaign does not rebuild Blue; it
+continues as the wider war against Vare under a **new faction**, pending the
+commander's choice of which. The in-world story is in `campaign/chronicle.md`
+(chapters I–V close the Ashmere Line).
+
+**Decision pending with the commander:** raise a fresh Blue levy to defend the
+homeland, or switch to Green (proposed: the Marchwood — fast, skirmish/ambush) or
+Yellow (proposed: Halgate — rich, small, elite/heavy). Recommendation given:
+switch, because permadeath just cost the whole cast and a Blue-2.0 cheapens it,
+and the war-spreads framing answers the campaign's now-central question ("can
+anyone stop Vare?"). Faction identity and first battle are unbuilt until chosen.
 
 ## The premise
 
@@ -127,19 +135,21 @@ and skips the app's own presentation/animation. `commit` was added to
 
 ## Outstanding
 
-- **Play Battle 3 — The Fen Road.** Built, validated, and loaded to
-  `current_battle.json`. Files: `battles/03_fen_road.{json,md}`. A fighting
-  withdrawal: Blue (Stonewatch HI 8 + Ember MC 4) retreats south to a muster
-  (`reach` [4,17,12,3], strength 8) before a fast Vare pursuit (Outrider LI,
-  Warrant + Distraint LC, Quarrel LA) runs them down (`survive` until round 14).
-  14-round window on purpose — the tight-clock fix from Ashweir. **Claude
-  commands Red**; the bot can't run a real pursuit, so a bot-vs-bot verify run
-  under-threatens and isn't a balance check. Two tuning dials if it plays wrong:
-  Blue's start line (row 8) and the window. See the intent doc's "what I expect
-  to go wrong."
-- **Recruitment/rebuild choice: made.** Bring back the horse. Whole supply pool
-  spent remounting Ferrant's riders as Ember (MC 4). Cost: no bows, no second
-  body — both felt on the Fen Road. Supply now 0.
+- **The faction decision (above) is the next thing.** Nothing else proceeds until
+  the commander picks Blue-again / Green / Yellow. Then: build that faction's
+  starting roster with a *properly-sized* army (see the recruitment-economy
+  finding — do not repeat the two-formation mistake), give it an identity, and
+  design its first battle against Vare.
+- **`current_battle.json` still holds the broken Fen Road** — replace it when the
+  next battle is built; don't hand it to anyone as-is.
+- **Recruitment economy is now a rule** (`roster.json` → `rules.recruitment_economy`):
+  a won battle must fund a viable rebuild. Apply it to the new faction's starting
+  strength and to every future between-battle supply.
+- **Verify winnability (bot-vs-bot) before handover.** This is the process fix from
+  the Fen Road and it is not optional going forward.
+- Standing engine gaps unchanged: veteran-reroll engine hook, between-battle
+  Strength-gain mechanic, and the bot chokepoint/pursuit weaknesses in
+  `bot_policy.gd` (it cannot run a pursuit either — Fen Road confirmed).
 - **Veteran reroll is now a written rule** (`roster.json` → `rules.veteran_reroll`),
   awarded to Stonewatch, but **GM-applied only — no engine support**. Building the
   engine hook (let the app offer a reroll on a veteran's combat die) is still

@@ -110,3 +110,42 @@ produced a story branch neither would alone. (Battle 2)
 finally defined in `roster.json` → `rules.veteran_reroll` and awarded to Stonewatch
 for holding the bridge alone: one reroll per battle, GM-applied, no engine support
 yet. Engine hook remains a separate task. (Battle 2)
+
+**Verify a scenario is winnable before handing it over.** The Fen Road (Battle 3)
+shipped without a bot-vs-bot check and turned out to be unwinnable — Blue's two
+formations were destroyed in three rounds. Ashweir was verified before play and
+was fair; the Fen Road was not verified and was not. Non-negotiable from here:
+every scenario gets at least one bot-vs-bot resolution before a human plays it,
+and a scenario whose fairness depends on a commanded opponent gets extra scrutiny,
+not less. (Battle 3)
+
+**A withdrawal needs standoff distance and a real chokepoint, or it is just a
+footrace the slow side loses.** With Heavy Infantry at 1 square/round and cavalry
+at 3–4, a pursuit in the open always catches the anchor. The Fen Road gave Blue
+neither a head start nor terrain that forced the pursuit to engage one at a time,
+so four fast formations swarmed two. The withdrawal/pursuit objective pair is
+still effectively untested, because the one attempt was broken. (Battle 3)
+
+**Combat roles, recorded because I got them backwards:** attacking Cavalry gets
++3 (charge); defending Infantry gets +3 (brace); defending Cavalry gets +3;
+attacking Infantry gets +0. So charge and brace cancel in Cavalry-attacks-Infantry
+— Heavy Infantry wins most 1-on-1 *defences* on Strength, and its real weakness is
+being attacked by several formations in one round, not any single matchup.
+Infantry should defend, never attack cavalry. (Battle 3)
+
+**A won battle must fund a viable rebuild.** The rebuild after Ashweir Bridge — a
+victory — allowed one Strength-4 Medium Cavalry, which put two formations on the
+Fen Road against four. A campaign that leaves the winner unable to field a real
+force is punishing victory, and it cascaded directly into an unwinnable battle.
+Supply from a battle must scale to the outcome and the losses so a costly win
+still fields an army. This is now a standing rule (`roster.json` →
+`rules.recruitment_economy`). (Battle 3)
+
+## The turning point
+
+Battles 1–3 are the fall of the Ashmere Line: it won at the Toll Road, won at
+Ashweir Bridge at ruinous cost, and was annihilated on the Fen Road. Permanent
+death was honoured all the way to an empty roster — Blue is gone, not rebuilt. The
+campaign continues as the wider war against Vare, taken up by a new power. The
+open question the Line leaves behind is the spine of what follows: a frontier
+could *beat* Vare and still lose to arithmetic — can anyone actually stop them?

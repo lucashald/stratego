@@ -1,0 +1,823 @@
+{
+  "battle_history": [
+    {
+      "action": "melee",
+      "batch": "leftover",
+      "capped_rolls": {
+        "0": 1,
+        "4": 5
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "0": 7,
+        "4": 4
+      },
+      "known_to": [
+        1,
+        0
+      ],
+      "ok": true,
+      "outcomes": {
+        "0": "lost",
+        "4": "won"
+      },
+      "participants": [
+        4,
+        0
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "0": 1,
+        "4": 10
+      },
+      "result": "win",
+      "role_bonuses": {
+        "0": 3,
+        "4": 3
+      },
+      "scores": {
+        "0": 4,
+        "4": 8
+      },
+      "to": "(10, 10)",
+      "winner_id": 4,
+      "winner_team": 1
+    },
+    {
+      "action": "melee",
+      "batch": "impulse_1",
+      "capped_rolls": {
+        "0": 1,
+        "4": 1
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "0": 2,
+        "4": 4
+      },
+      "known_to": [
+        1,
+        0
+      ],
+      "ok": true,
+      "outcomes": {
+        "0": "destroyed",
+        "4": "destroyed"
+      },
+      "participants": [
+        4,
+        0
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "0": 5,
+        "4": 7
+      },
+      "result": "bounce",
+      "role_bonuses": {
+        "0": 3,
+        "4": 3
+      },
+      "scores": {
+        "0": 4,
+        "4": 4
+      },
+      "to": "(10, 11)",
+      "winner_id": -1,
+      "winner_team": -1
+    },
+    {
+      "action": "melee",
+      "batch": "impulse_3",
+      "capped_rolls": {
+        "1": 4,
+        "2": 5
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "1": 7,
+        "2": 7
+      },
+      "known_to": [
+        0,
+        1
+      ],
+      "ok": true,
+      "outcomes": {
+        "1": "destroyed",
+        "2": "destroyed"
+      },
+      "participants": [
+        1,
+        2
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "1": 9,
+        "2": 5
+      },
+      "result": "win",
+      "role_bonuses": {
+        "1": 3,
+        "2": 3
+      },
+      "scores": {
+        "1": 7,
+        "2": 8
+      },
+      "to": "(10, 10)",
+      "winner_id": 2,
+      "winner_team": 1
+    }
+  ],
+  "final_state_digest": "c1f5eacda11e44f5834ea470241789aa48c992527d04afd0edb7f12520bb8d4b",
+  "format": "wego-formations-replay",
+  "rounds": [
+    {
+      "final_state_digest": "88c11f4806cc4564940aa4fa0c6523ab00b285a3cd6bf9a956f890c79b50b478",
+      "leftover_event_digest": "998c7bd5aab26508d6622e50b70831bce10276bb4d2be79f45cef0c68134b114",
+      "leftover_orders": [
+        {
+          "piece_id": 3,
+          "player": 1,
+          "target": [
+            10,
+            6
+          ]
+        },
+        {
+          "piece_id": 4,
+          "player": 1,
+          "target": [
+            11,
+            7
+          ]
+        },
+        {
+          "piece_id": 5,
+          "player": 1,
+          "target": [
+            10,
+            5
+          ]
+        },
+        {
+          "piece_id": 1,
+          "player": 0,
+          "target": [
+            9,
+            11
+          ]
+        }
+      ],
+      "leftover_rolls": [],
+      "main_event_digest": "8e566340f9673c99b8cc9e2d81e8a64645b58c7ffffc21bae261b3ef87afe2b9",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ],
+            [
+              10,
+              7
+            ]
+          ],
+          "piece_id": 2,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              8,
+              5
+            ],
+            [
+              9,
+              5
+            ],
+            [
+              10,
+              5
+            ]
+          ],
+          "piece_id": 3,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              12,
+              5
+            ],
+            [
+              12,
+              6
+            ],
+            [
+              11,
+              6
+            ]
+          ],
+          "piece_id": 4,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              4
+            ]
+          ],
+          "piece_id": 5,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 0,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              9,
+              9
+            ],
+            [
+              9,
+              10
+            ]
+          ],
+          "piece_id": 1,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [],
+      "main_state_digest": "75012514000e19c3da9159a960e5c066eed0b0c61da3aac1fd0010a619652929",
+      "round": 1
+    },
+    {
+      "final_state_digest": "0ab368d413de7a01addc380603230dfe94ec87a825e9b84761f2c87f47272306",
+      "leftover_event_digest": "d367264106a0fe82a46bf19459942c00033a7eee1fe5a5e627398b2cffba0d07",
+      "leftover_orders": [
+        {
+          "piece_id": 2,
+          "player": 1,
+          "target": [
+            10,
+            9
+          ]
+        },
+        {
+          "piece_id": 3,
+          "player": 1,
+          "target": [
+            10,
+            8
+          ]
+        },
+        {
+          "piece_id": 4,
+          "player": 1,
+          "target": [
+            10,
+            10
+          ]
+        },
+        {
+          "piece_id": 5,
+          "player": 1,
+          "target": [
+            10,
+            7
+          ]
+        }
+      ],
+      "leftover_rolls": [
+        10,
+        1
+      ],
+      "main_event_digest": "b560568d5092840fb19ba1e83be909f3c48a915f07bfb8503b5178a9d7d6a7d9",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              8
+            ]
+          ],
+          "piece_id": 2,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              7
+            ]
+          ],
+          "piece_id": 3,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              11,
+              8
+            ],
+            [
+              11,
+              9
+            ],
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 4,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              6
+            ]
+          ],
+          "piece_id": 5,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              10
+            ]
+          ],
+          "piece_id": 0,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [],
+      "main_state_digest": "9a2c0746ae0c2caa063408e130f8bb38b2bd4314d3b585c883728a1ef6a3c3b0",
+      "round": 2
+    },
+    {
+      "final_state_digest": "c1f5eacda11e44f5834ea470241789aa48c992527d04afd0edb7f12520bb8d4b",
+      "leftover_event_digest": "3cb616ef4b0023b7916e434128c4bb8208da0bd231093debaf7f459203a360e0",
+      "leftover_orders": [
+        {
+          "piece_id": 3,
+          "player": 1,
+          "target": [
+            10,
+            10
+          ]
+        },
+        {
+          "piece_id": 5,
+          "player": 1,
+          "target": [
+            10,
+            9
+          ]
+        }
+      ],
+      "leftover_rolls": [],
+      "main_event_digest": "4fa1c03050cc044537436dd27594d65c6289e0195f71c39d23d8958eb70869a3",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              10
+            ]
+          ],
+          "piece_id": 2,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 3,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              11
+            ]
+          ],
+          "piece_id": 4,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              8
+            ]
+          ],
+          "piece_id": 5,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              12
+            ]
+          ],
+          "piece_id": 0,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              9,
+              10
+            ],
+            [
+              10,
+              10
+            ]
+          ],
+          "piece_id": 1,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [
+        7,
+        5,
+        9,
+        5
+      ],
+      "main_state_digest": "67dd3f1e12eced9e8f5aac9fa7aa60459c7f4b0a6d188174cb82ad4071502adf",
+      "round": 3
+    }
+  ],
+  "setup": {
+    "bridge_attacker": 0,
+    "bridge_defender": 1,
+    "bridge_strength_target": 20,
+    "bridge_turn_limit": 20,
+    "campaign_battle": {
+      "armies": {
+        "blue": [
+          {
+            "at": [
+              10,
+              8
+            ],
+            "name": "Stonewatch",
+            "strength": 8,
+            "type": "HI"
+          },
+          {
+            "at": [
+              9,
+              8
+            ],
+            "name": "Ember",
+            "strength": 4,
+            "type": "MC"
+          }
+        ],
+        "red": [
+          {
+            "at": [
+              10,
+              4
+            ],
+            "name": "Outrider",
+            "strength": 5,
+            "type": "LI"
+          },
+          {
+            "at": [
+              8,
+              4
+            ],
+            "name": "Warrant",
+            "strength": 5,
+            "type": "LC"
+          },
+          {
+            "at": [
+              12,
+              4
+            ],
+            "name": "Distraint",
+            "strength": 5,
+            "type": "LC"
+          },
+          {
+            "at": [
+              10,
+              3
+            ],
+            "name": "Quarrel",
+            "strength": 4,
+            "type": "LA"
+          }
+        ]
+      },
+      "briefing": [
+        "Vare did not wait for Ashmere to become an army again. They knew exactly how thin the Line had been left, and they sent riders to catch it while it was one heavy and a handful of remounted survivors.",
+        "The muster ground is south, down the Fen Road, past the marsh at the neck. Reach it and the Line lives to be rebuilt. Fail to, and there will be nothing left to rebuild.",
+        "Stonewatch cannot be hurried — she moves at a wall's pace. Ember can outrun anything on the field, and has to spend every length of it buying the road for someone slower.",
+        "Vare's column is fast, and it has a bow. Ashmere has none this time. You cannot answer their arrows. You can only get out from under them."
+      ],
+      "name": "Battle 3 — The Fen Road",
+      "objective": {
+        "also": {
+          "kind": "survive",
+          "reason": "ran_them_down",
+          "side": "red",
+          "until_round": 14
+        },
+        "area": [
+          4,
+          17,
+          12,
+          3
+        ],
+        "kind": "reach",
+        "reason": "withdrew_to_the_muster",
+        "side": "blue",
+        "strength": 8
+      },
+      "private_battle_results": true,
+      "terrain": {
+        "water": [
+          [
+            0,
+            12
+          ],
+          [
+            1,
+            12
+          ],
+          [
+            2,
+            12
+          ],
+          [
+            3,
+            12
+          ],
+          [
+            4,
+            12
+          ],
+          [
+            5,
+            12
+          ],
+          [
+            6,
+            12
+          ],
+          [
+            7,
+            12
+          ],
+          [
+            12,
+            12
+          ],
+          [
+            13,
+            12
+          ],
+          [
+            14,
+            12
+          ],
+          [
+            15,
+            12
+          ],
+          [
+            16,
+            12
+          ],
+          [
+            17,
+            12
+          ],
+          [
+            18,
+            12
+          ],
+          [
+            19,
+            12
+          ]
+        ]
+      },
+      "turn_limit": 14
+    },
+    "cavalry_always_leftover": true,
+    "deployment": {
+
+    },
+    "meeting_hold_rounds": 3,
+    "meeting_turn_limit": 20,
+    "player_count": 2,
+    "private_battle_results": true,
+    "scenario": "campaign",
+    "seed": 0,
+    "skirmish_separation": 3,
+    "skirmish_turn_limit": 40,
+    "teams": [
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "vision_range": 4
+  },
+  "terminal": {
+    "end_reason": "army_destroyed",
+    "game_over": true,
+    "winner": 1,
+    "withdrawal_player": -1
+  },
+  "version": 3
+}

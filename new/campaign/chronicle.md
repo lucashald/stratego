@@ -176,5 +176,64 @@ Ember rides to buy her that road. It is a bitter first outing for a formation
 made of people who remember being the last thing between an enemy and someone
 slower. It is also the only thing they were ever going to be asked to do.
 
-*(Battle 3 — The Fen Road: built, loaded, and waiting. Its intent is written in
-`battles/03_fen_road.md`; its telling will be here when it's fought.)*
+## V. The Fen Road, and the end of the Line
+
+There was no road.
+
+That is the honest telling. The muster ground was south, but the Fen Road never
+became a retreat — it became the place the Ashmere Line was caught. Vare's riders
+were faster than anything Ashmere had left and there was open ground between the
+Line and safety, which is another way of saying there was open ground between the
+Line and the horsemen. Stonewatch moved at the pace of a wall. Walls do not
+outrun cavalry.
+
+Distraint reached her first and did not stop reaching her. A single Heavy
+Infantry formation, however hard, is a thing three riders take apart if it has
+nowhere to set its back and no one to set its back with. Stonewatch — who at the
+Toll Road never fought, who at Ashweir held a bridge alone and came home without a
+wound — was worn down in the open in the space of three rounds and broke at last
+with Distraint breaking against her, the two of them destroyed in the same
+instant. She had a veteran's reroll in her pocket, earned for the bridge, and
+never got the single fight where refusing one bad die would have saved her. There
+was no such fight. There was only being surrounded.
+
+Ember did the one thing left to do that meant anything. Ferrant's riders,
+remounted and one battle old, went into Outrider — the man who rode Harrow down at
+the bridge — and took him with them, both formations destroyed together. It did
+not turn the battle. Nothing was going to turn the battle. But it closed the one
+account the campaign had kept open since the Toll Road: Ferrant's survivors, on
+the last day of their second life, killed the man who killed the archer who had
+covered them. The thread that ran from Ferrant to Harrow to Ember ends there, tied
+off, in a lost battle, which is the only place it was ever going to end.
+
+Round three. The Line was gone. Every formation that had ever ridden or marched
+under Ashmere's name — Kestrel, Ferrant, Ash, Oakhand, Marrow, Thistle, Coldbrook,
+Harrow, Wren, Stonewatch, Ember — was on the ground between the marsh and a muster
+that never mustered.
+
+They won at the Toll Road and won at Ashweir Bridge and it did not matter, because
+the thing that beat them in the end was not a better army. It was arithmetic. A
+frontier line wins its battles and loses formations it cannot replace, and a
+garrison-state loses its battles and calls up more, and if nothing changes the
+shape of that exchange then the line holds, and holds, and then one day it is a
+single Heavy Infantry formation on an open road with horsemen closing, and it is
+over. Ashmere was never going to be stopped from winning. It was only ever going
+to be outlasted.
+
+So the Ashmere Line is a chronicle now and not an army. It held the frontier for
+three battles and broke on the third, and everything it bought — the time, the
+warning, the two bloody noses it gave Vare — it bought for someone else, because
+there is no one left of Ashmere to spend it on.
+
+Vare's tide is loose in the interior now, past the last line that stood in its
+way. Word of it will reach the Marchwood in the west inside a week, and the
+weighmen of Halgate in the south not long after. They will hear that a smaller,
+poorer people fought the toll-men to a standstill twice and died doing it, and
+that the toll-men did not stop coming.
+
+The question the Ashmere Line could not answer, it leaves to whoever picks up the
+war: **the frontier could beat Vare and still lose. Can anyone actually stop
+them?**
+
+*(The Line's story is finished. What comes next is a different banner. See the
+handoff and the design log; the next chronicle chapter opens under a new colour.)*
