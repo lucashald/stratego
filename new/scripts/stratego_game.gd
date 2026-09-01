@@ -45,6 +45,7 @@ const SCENARIO_BRIDGE := "bridge"
 const OBJECTIVE_HOLD_SQUARE := "hold_square"
 const OBJECTIVE_ELIMINATE := "eliminate"
 const SCENARIO_SKIRMISH := "skirmish"
+const SCENARIO_CAMPAIGN := "campaign"
 const OBJECTIVE_REACH_AREA := "reach_area"
 const OBJECTIVE_SURVIVE := "survive"
 const SCENARIO_MEETING := "meeting"
@@ -152,6 +153,10 @@ const LAKES := [
 
 var board: Array = []
 var terrain: Dictionary = {}
+## The raw scenario description CampaignScenario.apply() was built from, kept
+## so a replay of a campaign battle can be reconstructed exactly rather than
+## falling back to a generic scenario with the wrong army in it.
+var campaign_battle_data: Dictionary = {}
 var objectives: Array[Dictionary] = []
 var pieces: Array[Dictionary] = []
 var active_players: Array[int] = []
@@ -2458,6 +2463,7 @@ func build_replay_document() -> Dictionary:
 			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
 			"skirmish_turn_limit": _skirmish_turn_limit, "skirmish_separation": _skirmish_separation,
 			"teams": teams, "deployment": deployment_placements.duplicate(true),
+			"campaign_battle": campaign_battle_data.duplicate(true),
 		},
 		"rounds": replay_rounds.duplicate(true),
 		"terminal": {
@@ -2592,6 +2598,14 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 		replay_game.setup_meeting(seed, BLUE, RED, int(setup.get("meeting_hold_rounds", DEFAULT_HOLD_ROUNDS)), int(setup.get("meeting_turn_limit", DEFAULT_BRIDGE_TURN_LIMIT)), privacy)
 	elif replay_scenario == SCENARIO_SKIRMISH:
 		replay_game.setup_skirmish(seed, MEETING_ROSTER, MEETING_ROSTER, int(setup.get("skirmish_separation", 3)), int(setup.get("skirmish_turn_limit", 40)), privacy)
+	elif replay_scenario == SCENARIO_CAMPAIGN:
+		# A campaign battle has no fixed roster to fall back on - the whole
+		# point is that the armies are whatever survived the last one - so the
+		# scenario description itself travels with the replay rather than
+		# being reduced to a seed and a few numbers.
+		var campaign_result := CampaignScenario.apply(replay_game, setup.get("campaign_battle", {}))
+		if not bool(campaign_result.get("ok", false)):
+			return campaign_result
 	elif replay_scenario == SCENARIO_FOUR_PLAYER:
 		replay_game.setup_random(seed, int(setup.get("player_count", 4)), privacy)
 	elif replay_scenario == SCENARIO_CROSSROADS:

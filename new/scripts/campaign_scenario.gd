@@ -38,7 +38,10 @@ static func load_file(path: String) -> Dictionary:
 ## campaign follow one formation across several battles.
 static func apply(game: StrategoGame, data: Dictionary) -> Dictionary:
 	game.setup_empty()
-	game.scenario = StrategoGame.SCENARIO_SKIRMISH
+	game.scenario = StrategoGame.SCENARIO_CAMPAIGN
+	# Kept verbatim so a replay reconstructs this exact battle - army, ground
+	# and objective - rather than a generic scenario standing in for it.
+	game.campaign_battle_data = data.duplicate(true)
 	game.configured_player_count = 2
 	game.private_battle_results = bool(data.get("private_battle_results", true))
 	game.player_teams[StrategoGame.BLUE] = StrategoGame.BLUE

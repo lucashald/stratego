@@ -187,6 +187,7 @@ func _build_interface() -> void:
 	board_view.examine_requested.connect(_on_examine_requested)
 	board_view.selection_changed.connect(_on_selection_changed)
 	board_view.zoom_changed.connect(_on_zoom_changed)
+	board_view.view_changed.connect(_on_board_view_changed)
 	board_view.undo_availability_changed.connect(_on_undo_availability_changed)
 	add_child(board_view)
 	_build_objective_panel()
@@ -214,6 +215,7 @@ func _fit_to_board_region(control: Control) -> void:
 
 func _on_window_resized() -> void:
 	if board_view != null: board_view.queue_redraw()
+	if minimap != null: minimap.queue_redraw()
 
 
 ## One framed strip across the reserved top region, replacing the three panels
@@ -348,7 +350,10 @@ func _build_minimap() -> void:
 	minimap = StrategoBoardView.new()
 	minimap.overview_mode = true
 	minimap.interaction_enabled = false
-	minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	minimap.overview_target = board_view
+	minimap.mouse_filter = Control.MOUSE_FILTER_STOP
+	minimap.mouse_default_cursor_shape = Control.CURSOR_CROSS
+	minimap.tooltip_text = "Click or drag to centre the battlefield view here."
 	minimap.custom_minimum_size = Vector2(0, 170)
 	minimap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(minimap)
@@ -1270,7 +1275,7 @@ func start_campaign_battle() -> void:
 		_log_line(String(loaded.get("message", "Could not read the campaign battle.")), true)
 		return
 	var data: Dictionary = loaded.data
-	selected_scenario = StrategoGame.SCENARIO_SKIRMISH
+	selected_scenario = StrategoGame.SCENARIO_CAMPAIGN
 	game = StrategoGame.new()
 	var applied: Dictionary = CampaignScenario.apply(game, data)
 	if not bool(applied.get("ok", false)):
@@ -2025,6 +2030,11 @@ func _on_zoom_changed(percent: int) -> void:
 		zoom_label.text = "%d%%" % percent
 
 
+func _on_board_view_changed() -> void:
+	if minimap != null:
+		minimap.queue_redraw()
+
+
 func _on_undo_availability_changed(_available: bool) -> void:
 	if undo_button != null:
 		undo_button.disabled = spectator_mode or replay_view_mode or resolution_mode or not board_view.can_undo_order()
@@ -2221,6 +2231,7 @@ func _battle_title() -> String:
 		StrategoGame.SCENARIO_MEETING: "Battle of Oakfield",
 		StrategoGame.SCENARIO_SKIRMISH: "Skirmish",
 		StrategoGame.SCENARIO_CROSSROADS: "The Crossroads",
+		StrategoGame.SCENARIO_CAMPAIGN: String(game.campaign_battle_data.get("name", "Campaign Battle")),
 	}
 	return "%s  ·  Round %d" % [String(name_by_scenario.get(game.scenario, "Battle")), game.round_number]
 
