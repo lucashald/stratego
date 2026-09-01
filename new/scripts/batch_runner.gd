@@ -27,7 +27,7 @@ var assume_blue: Dictionary = {}
 var assume_red: Dictionary = {}
 var side_wins: Dictionary = {}
 var team_wins: Dictionary = {}
-var cavalry_always_leftover := false
+var cavalry_always_leftover := true
 ## -1 (StrategoGame.DRAW) means no cheater: an ordinary symmetric run. Set by
 ## --cheater blue|red.
 var cheater_side := StrategoGame.DRAW
@@ -47,7 +47,7 @@ func _initialize() -> void:
 	# after fully spending its main-phase movement. A/B this against a plain
 	# run of the same seeds to see whether it closes Heavy Cavalry's arrival
 	# gap in Meeting.
-	cavalry_always_leftover = String(arguments.get("cavalryleftover", "0")) == "1"
+	cavalry_always_leftover = String(arguments.get("cavalryleftover", "1")) == "1"
 	# --w key=value,key=value overrides bot weights, for isolating one feature.
 	if arguments.has("w"):
 		for pair in String(arguments.w).split(",", false):

@@ -1158,7 +1158,8 @@ func _build_settings_drawer() -> void:
 	box.add_child(battle_report_toggle)
 	cavalry_leftover_toggle = CheckButton.new()
 	cavalry_leftover_toggle.text = "Cavalry always repositions"
-	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. Off by default; applies to the next game you start."
+	cavalry_leftover_toggle.button_pressed = true
+	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. On by default; applies to the next game you start."
 	box.add_child(cavalry_leftover_toggle)
 	var counts := VBoxContainer.new()
 	counts.add_theme_constant_override("separation", 2)
@@ -1267,6 +1268,11 @@ func start_bridge_game() -> void:
 ## fresh every time rather than caching: the next battle appears simply by the
 ## file changing.
 const CAMPAIGN_BATTLE_PATH := "res://campaign/current_battle.json"
+const CAMPAIGN_REPORT_PATH := "res://campaign/last_battle_report.json"
+const CAMPAIGN_REPLAY_PATH := "res://campaign/last_battle_replay.json"
+## Formation name -> engine piece id, kept for the length of the battle so the
+## report written when it ends can use the names the scenario gave them.
+var campaign_piece_ids: Dictionary = {}
 
 
 func start_campaign_battle() -> void:
@@ -1282,6 +1288,7 @@ func start_campaign_battle() -> void:
 		_log_line("Campaign battle rejected: %s" % String(applied.get("message", "")), true)
 		return
 	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
+	campaign_piece_ids = applied.get("piece_ids", {})
 	_configure_board(false)
 	_clear_logs()
 	_log_line(String(data.get("name", "Campaign battle")), true)
@@ -1289,6 +1296,22 @@ func start_campaign_battle() -> void:
 		_log_line(String(line))
 	settings_drawer.visible = false
 	_update_interface()
+
+
+## Writes the report and the verifiable replay the moment a campaign battle
+## ends, both under campaign/ where a project browser or the next session can
+## simply find them - no export click to remember, and nothing to reconstruct
+## afterward from orders and dice, since the report is built from combat the
+## engine already computed rather than replayed.
+func _save_campaign_battle_record() -> void:
+	var report := CampaignScenario.build_battle_report(game, campaign_piece_ids)
+	var report_file := FileAccess.open(CAMPAIGN_REPORT_PATH, FileAccess.WRITE)
+	if report_file != null:
+		report_file.store_string(JSON.stringify(report, "  "))
+		report_file.close()
+	var replay_result: Dictionary = game.save_replay(CAMPAIGN_REPLAY_PATH)
+	_log_line("Battle record saved: %s and %s" % [CAMPAIGN_REPORT_PATH, CAMPAIGN_REPLAY_PATH]
+		if bool(replay_result.get("ok", false)) else "Battle report saved; replay could not be: %s" % String(replay_result.get("message", "")), true)
 
 
 func start_meeting_game() -> void:
@@ -2490,6 +2513,8 @@ func _log_game_end() -> void:
 		_log_line("Battle ended without a sole winner: %s." % game.end_reason.replace("_", " "), true)
 	else:
 		_log_line("%s wins by %s." % [game.player_name(game.winner), game.end_reason.replace("_", " ")], true)
+	if game.scenario == StrategoGame.SCENARIO_CAMPAIGN:
+		_save_campaign_battle_record()
 
 
 func _clear_logs() -> void:

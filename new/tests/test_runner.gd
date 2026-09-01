@@ -841,6 +841,9 @@ func _test_leftover_allows_second_melee_only_after_win() -> void:
 
 func _test_cavalry_always_leftover_toggle() -> void:
 	var off_game := _test_game()
+	# The default flipped to true after playtesting, so "off" has to be said
+	# explicitly now rather than relied on as the starting state.
+	off_game.cavalry_always_leftover = false
 	var hc_off := off_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
 	off_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
 	off_game.set_unit_order(StrategoGame.BLUE, hc_off, [Vector2i(8, 5)])

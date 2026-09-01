@@ -186,7 +186,12 @@ var private_battle_results := true
 ## - a Heavy Cavalry formation that already spent its one point of main
 ## movement can still take the leftover move, rather than being permanently
 ## excluded from it the moment it moves at all.
-var cavalry_always_leftover := false
+# Cavalry may take a leftover move even after using its full main-phase
+# movement, same fight-outcome rules as everyone else. On by default: playtesting
+# found heavies routinely arrive too late to matter in a fast-moving fight, and
+# this is the one lever that gives the slowest, hardest-hitting Role a way to
+# actually reach the fight in time.
+var cavalry_always_leftover := true
 var vision_range := DEFAULT_VISION_RANGE
 var bridge_attacker := BLUE
 var bridge_defender := RED
@@ -255,7 +260,7 @@ func setup_empty() -> void:
 	last_eliminated_player = DRAW
 	last_elimination_reason = ""
 	private_battle_results = true
-	cavalry_always_leftover = false
+	cavalry_always_leftover = true
 	vision_range = DEFAULT_VISION_RANGE
 	bridge_attacker = BLUE
 	bridge_defender = RED
@@ -2467,6 +2472,10 @@ func build_replay_document() -> Dictionary:
 			"campaign_battle": campaign_battle_data.duplicate(true),
 		},
 		"rounds": replay_rounds.duplicate(true),
+		# Every combat this match already produced, kept inline rather than
+		# left implicit in the orders and dice. Reading what happened should
+		# not require a second engine to replay the match and recompute it.
+		"battle_history": battle_history.duplicate(true),
 		"terminal": {
 			"game_over": game_over, "winner": winner, "end_reason": end_reason,
 			"withdrawal_player": withdrawing_player,
