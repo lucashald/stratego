@@ -1,7 +1,6 @@
 # Battle 2 — Ashweir Bridge
 
-Scenario: `battles/02_ashweir_bridge.json` (not yet written — Blue's final
-roster depends on the recruitment choice below) · Replay: _pending_
+Scenario: `battles/02_ashweir_bridge.json` · Replay: _pending_
 
 ## Intent, written before play
 
@@ -65,23 +64,21 @@ probing before committing the main body, feeding the bottleneck in a
 considered order rather than however the roster happens to be listed. Still
 not adversarial toward the player personally, but no longer naive.
 
-## The recruitment choice — Lucas's call, not mine
+## The recruitment choice
 
-Blue lost every fast formation at the Toll Road: Kestrel (Light Archer),
-Ferrant (Medium Cavalry), and Ash (Light Cavalry) are all gone. What's left —
-Oakhand, Stonewatch, Marrow, Thistle, Coldbrook, Harrow — is entirely
-infantry and one Medium Archer. Nothing left in the roster can scout, screen,
-or reach a flank quickly.
+**Light Archer, chosen.** Wren joins the roster — the archer the fight in
+front of Blue actually rewards, at the cost of leaving cavalry as the one
+piece the roster still doesn't have. That's a deliberate trade for this
+battle over the long run of the campaign, and worth watching whether it
+reads as a mistake once Blue needs to reach somewhere fast again rather than
+hold in place.
 
-Supply affords one recruit. Two ways to spend it:
+## The battle
 
-1. **A Light Cavalry troop.** Restores speed and a screening presence. At a
-   chokepoint battle this is arguably the wrong tool — there's nowhere to
-   flank on a single bridge — but it's insurance for whatever Battle 3 turns
-   out to be, and cavalry is the piece the roster is missing entirely.
-2. **A Light Archer.** A second ranged formation, doubling up with Harrow on
-   the one thing that actually dominates a narrow bridgehead: shooting into a
-   bottleneck the enemy has to walk through. Weaker long-term flexibility,
-   stronger fit for the specific fight in front of you.
-
-Tell me which, and Ashweir Bridge gets written.
+Full roster deployed, terrain built, played once bot-vs-bot before being
+handed over to confirm it actually resolves rather than deadlocking or
+breaking: Vare forced the crossing at round 14 of a 28-round window, losing
+4 of 11 formations to do it and leaving Blue at 5 of 7. Neither a curbstomp
+nor a stalemate — a real fight either side could plausibly have won,
+which is what a fair chokepoint battle should look like before a human sits
+down to either side of it.
