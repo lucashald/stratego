@@ -192,6 +192,23 @@ var private_battle_results := true
 # this is the one lever that gives the slowest, hardest-hitting Role a way to
 # actually reach the fight in time.
 var cavalry_always_leftover := true
+## Experimental, off by default: when a melee's top score is tied and one of
+## the tied formations is the defender (not the one that moved into the
+## square), the defender wins instead of the tie bouncing everyone off with
+## no result. A genuine three-or-more-way tie, or a tie among formations that
+## are all attackers, still bounces regardless - this only resolves the
+## specific case of an attacker matching the defender's score exactly.
+var defender_wins_ties := false
+## Experimental, off by default: narrower than defender_wins_ties. Only
+## resolves a tie in the defender's favor when the tied attacker is Cavalry -
+## "braced against the charge." Cavalry-attacks-Infantry is the one matchup
+## where both sides' role bonuses are identical (+3 each) and so cancel,
+## leaving a tie a pure coin flip with no defensive edge at all; this fixes
+## just that case. Infantry-attacks-Infantry (where the attacker already has
+## no bonus) and every other matchup are untouched. Composable with, but
+## independent from, defender_wins_ties - if both are on, defender_wins_ties
+## already covers this case and this flag adds nothing further.
+var defender_resists_charge_ties := false
 var vision_range := DEFAULT_VISION_RANGE
 var bridge_attacker := BLUE
 var bridge_defender := RED
@@ -373,8 +390,15 @@ func setup_skirmish(seed_value: int = 0, blue_roster: Array = MEETING_ROSTER, re
 	player_teams[BLUE] = BLUE
 	player_teams[RED] = RED
 	_seed_rng(seed_value)
-	var middle := BOARD_SIZE / 2
-	var blue_row := clampi(middle + (_skirmish_separation + 1) / 2, 0, BOARD_SIZE - 1)
+	# Split around the board's true centre, (BOARD_SIZE - 1) / 2.0, not the
+	# integer-truncated BOARD_SIZE / 2 - that truncation was already half a
+	# cell off, and adding (separation + 1) / 2 on top of it compounded into a
+	# full extra cell favouring Blue at every odd separation (the default is
+	# 3), which turned out to be strong enough to decide ~90% of games on its
+	# own regardless of army composition. This form keeps blue_row - red_row
+	# exactly equal to separation while splitting the leftover as evenly as
+	# integer rows allow.
+	var blue_row := clampi((BOARD_SIZE - 1 + _skirmish_separation) / 2, 0, BOARD_SIZE - 1)
 	var red_row := clampi(blue_row - _skirmish_separation, 0, BOARD_SIZE - 1)
 	_place_roster(BLUE, blue_roster, _back_rank_deployment(blue_row), _rng)
 	_place_roster(RED, red_roster, _back_rank_deployment(red_row), _rng)
@@ -1710,34 +1734,24 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 			events.append(_movement_event(id, move.from, move.to, batch_name))
 		else:
 			_place_piece(id, move.from, move.from)
-			# Blocked by one of your own is a queue, not a repulse: the square
-			# may well be free by a later impulse, so the formation keeps its
-			# turn and tries again. Blocked by an enemy ends its round as before.
+			# This was movement congestion, not a fight. It can end or delay the
+			# current path, but it never imposes the combat-tie penalty.
 			var blocker := piece_at(move.to)
-			_mark_bounced(id, false, not blocker.is_empty() and are_allied_players(int(pieces[id].player), int(blocker.player)))
+			_mark_returned(id, not blocker.is_empty() and are_allied_players(int(pieces[id].player), int(blocker.player)))
 			events.append(_bounce_event([id], move.to, batch_name, "occupied_after_resolution"))
 	for collision: Dictionary in allied_collisions:
-		# A formation that was merely bumped into never moved, so its round is
-		# left alone. Marking it bounced set main_done and froze it in place,
-		# which meant a formation ordered up behind a slower one could stop the
-		# very formation it was queueing behind from ever moving.
+		# Friendly congestion carries no round-status penalty. A stationary
+		# formation keeps its own path; a mover may retry only when it queued
+		# behind that stationary formation. Converging movers stop this path so
+		# they do not repeat the same collision on every remaining impulse.
 		var stationary := int(collision.get("stationary_id", EMPTY))
 		var collision_ids: Array[int] = []
 		for id_value in collision.ids:
 			var id := int(id_value)
 			collision_ids.append(id)
 			if id == stationary:
-				# Jostled rather than repulsed. It still loses its leftover
-				# move, as it always has, but main_done is left alone so it can
-				# take its own later impulse. Setting that was what let a
-				# formation queueing up behind a slower one freeze the very
-				# formation it was waiting on.
-				pieces[id].round_status = STATUS_BOUNCED
 				continue
-			# Retry only when something was standing in the way that may yet
-			# move off. Two formations converging on one square would simply
-			# converge again, so repeating that is pure waste.
-			_mark_bounced(id, false, stationary != EMPTY)
+			_mark_returned(id, stationary != EMPTY)
 		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision"))
 	var retreat_intents: Array[Dictionary] = []
 	for battle: Dictionary in battles:
@@ -1781,6 +1795,35 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 			top_ids.append(id)
 			top_teams[_team_for_piece(id)] = true
 	var unique_winner_id := top_ids[0] if top_ids.size() == 1 else EMPTY
+	if unique_winner_id == EMPTY and defender_wins_ties and top_ids.size() > 1:
+		# Resolves only the specific case this rule is about: an attacker's
+		# roll exactly matching the defender's. A tie among several attackers,
+		# or among several defenders in a multi-way fight, is still genuinely
+		# ambiguous and still bounces - this never invents a winner where the
+		# tie itself does not point to one.
+		var defenders_among_top: Array[int] = []
+		for id in top_ids:
+			if not bool(_participant_for(id, participants).get("is_attacker", false)):
+				defenders_among_top.append(id)
+		if defenders_among_top.size() == 1:
+			unique_winner_id = defenders_among_top[0]
+	if unique_winner_id == EMPTY and defender_resists_charge_ties and top_ids.size() > 1:
+		# Narrower cousin of the block above: only resolves the tie when the
+		# defender is unique among the top scorers AND the attacker(s) tied
+		# with them are all Cavalry - the "braced against the charge" case
+		# where both sides' role bonuses cancel and a tie is otherwise a pure
+		# coin flip. Leaves every other tie (including Infantry-vs-Infantry)
+		# exactly as ambiguous as it already was.
+		var defenders_among_top2: Array[int] = []
+		var all_attackers_are_cavalry := true
+		for id in top_ids:
+			var participant := _participant_for(id, participants)
+			if bool(participant.get("is_attacker", false)):
+				if pieces[id].role != ROLE_CAVALRY: all_attackers_are_cavalry = false
+			else:
+				defenders_among_top2.append(id)
+		if defenders_among_top2.size() == 1 and all_attackers_are_cavalry:
+			unique_winner_id = defenders_among_top2[0]
 	var damage_by_id: Dictionary = {}
 	for target_id in participant_ids:
 		var opposing_score := -1
@@ -1803,8 +1846,8 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		if not occupant.is_empty() and int(occupant.id) in participant_ids: board[contested.y][contested.x] = EMPTY
 	var retreats: Array[Dictionary] = []
 	var outcomes: Dictionary = {}
+	var winning_team := _team_for_piece(unique_winner_id) if unique_winner_id != EMPTY else (int(top_teams.keys()[0]) if top_teams.size() == 1 else -1)
 	if unique_winner_id != EMPTY:
-		var winner_team := _team_for_piece(unique_winner_id)
 		for id in participant_ids:
 			if not pieces[id].alive:
 				outcomes[id] = "destroyed"
@@ -1812,9 +1855,9 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 				outcomes[id] = STATUS_WON
 				pieces[id].round_status = STATUS_WON
 				pieces[id].main_done = true
-			elif _team_for_piece(id) == winner_team:
-				outcomes[id] = STATUS_BOUNCED
-				_mark_bounced(id, true)
+			elif _team_for_piece(id) == winning_team:
+				outcomes[id] = "returned"
+				_mark_returned(id)
 				_place_bouncer(id, _participant_for(id, participants).from)
 			else:
 				outcomes[id] = STATUS_LOST
@@ -1823,25 +1866,38 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		if pieces[unique_winner_id].alive:
 			var winner_participant := _participant_for(unique_winner_id, participants)
 			_place_piece(unique_winner_id, winner_participant.to if crossing else contested, winner_participant.from)
-	else:
+	elif winning_team >= 0:
+		# Several allied formations may tie for their side's best score. Their
+		# side still won the battle, so enemies lose and retreat; the tied allies
+		# simply cannot stack on the square and return without a status penalty.
 		for id in participant_ids:
 			if not pieces[id].alive:
 				outcomes[id] = "destroyed"
-			elif _team_for_piece(id) in top_teams:
-				outcomes[id] = STATUS_BOUNCED
-				_mark_bounced(id, true)
+			elif _team_for_piece(id) == winning_team:
+				outcomes[id] = "returned"
+				_mark_returned(id)
 				_place_bouncer(id, _participant_for(id, participants).from)
 			else:
 				outcomes[id] = STATUS_LOST
 				_mark_lost(id)
 				retreats.append(_retreat_intent(id, _participant_for(id, participants), participants, scores, crossing))
+	else:
+		# Only a highest-score tie spanning opposing teams has a bounce penalty.
+		# Nobody won, so every surviving participant returns and is done.
+		for id in participant_ids:
+			if not pieces[id].alive:
+				outcomes[id] = "destroyed"
+			else:
+				outcomes[id] = STATUS_BOUNCED
+				_mark_bounced(id, true)
+				_place_bouncer(id, _participant_for(id, participants).from)
 	var event := {
 		"ok": true, "action": "crossing_battle" if crossing else "melee", "batch": batch_name, "combat": true,
 		"ranged": false, "crossing": crossing, "to": contested, "participants": participant_ids.duplicate(),
 		"scores": scores.duplicate(true), "raw_rolls": raw_rolls.duplicate(true), "damage": damage_by_id.duplicate(true),
 		"role_bonuses": role_bonuses.duplicate(true), "capped_rolls": capped_rolls.duplicate(true),
-		"outcomes": outcomes.duplicate(true), "winner_id": unique_winner_id,
-		"result": "win" if unique_winner_id != EMPTY else "bounce", "known_to": _battle_viewers_for_ids(participant_ids),
+		"outcomes": outcomes.duplicate(true), "winner_id": unique_winner_id, "winner_team": winning_team,
+		"result": "win" if unique_winner_id != EMPTY else ("team_win" if winning_team >= 0 else "bounce"), "known_to": _battle_viewers_for_ids(participant_ids),
 	}
 	for id in participant_ids:
 		for viewer in event.known_to: reveal_piece_to(id, viewer)
@@ -2070,15 +2126,19 @@ func _bounce_event(ids: Array[int], position: Vector2i, batch_name: String, reas
 	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "to": position, "result": "bounce", "reason": reason}
 
 
-## `may_retry` leaves the formation eligible to propose the same step again on
-## a later impulse. Only a friendly blocker earns that: an enemy in the way is a
-## repulse and ends the round, but one of your own standing there is a queue
-## that may clear. round_status still becomes BOUNCED either way, so leftover
-## eligibility is unchanged.
+## The only penalized bounce: a highest-score tie spanning opposing teams.
+## Movement congestion and friendly returns use _mark_returned instead.
 func _mark_bounced(piece_id: int, combat: bool, may_retry: bool = false) -> void:
 	pieces[piece_id].round_status = STATUS_BOUNCED
 	pieces[piece_id].main_done = not may_retry
 	if combat: pieces[piece_id].participated_in_combat = true
+
+
+## Return a formation to where it came from without applying the opposing-tie
+## penalty. It may retry a queued movement step, or stop its current main path
+## while retaining any later ranged/reposition options its budget allows.
+func _mark_returned(piece_id: int, may_retry: bool = false) -> void:
+	pieces[piece_id].main_done = not may_retry
 
 
 func _mark_lost(piece_id: int) -> void:

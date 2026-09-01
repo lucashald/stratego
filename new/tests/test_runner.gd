@@ -19,11 +19,13 @@ func _run() -> void:
 	_test_permissive_orders_and_friendly_retry()
 	_test_ranged_combat_reveals_both_parties()
 	_test_planning_order_undo()
+	_test_minimap_navigation_centres_main_view()
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_crossing_battle_both_attack()
 	_test_tie_is_a_bounce()
+	_test_defender_wins_ties_toggle()
 	_test_winner_doubles_armor()
 	_test_natural_ten_always_chips()
 	_test_multiway_unique_winner()
@@ -69,6 +71,27 @@ func _test_game() -> StrategoGame:
 	game.setup_empty()
 	game.scenario = "test"
 	return game
+
+
+func _test_minimap_navigation_centres_main_view() -> void:
+	var main_view := StrategoBoardView.new()
+	main_view.size = Vector2(1000, 800)
+	main_view.zoom_level = 2.0
+	main_view.center_on_board_point(Vector2(15, 5))
+	var main_geometry := main_view._board_geometry()
+	var centred_pixel := Vector2(main_geometry.origin) + Vector2(15, 5) * float(main_geometry.cell)
+	_expect(centred_pixel.is_equal_approx(main_view.size * 0.5), "minimap navigation centres the chosen board point in the main view")
+
+	var minimap_view := StrategoBoardView.new()
+	minimap_view.size = Vector2(200, 180)
+	minimap_view.overview_target = main_view
+	var overview_geometry := minimap_view._overview_geometry()
+	var overview_middle := Vector2(overview_geometry.origin) + Vector2(overview_geometry.side, overview_geometry.side) * 0.5
+	_expect(minimap_view._overview_board_point(overview_middle).is_equal_approx(Vector2(10, 10)), "the minimap centre maps to the battlefield centre")
+	var visible_board := minimap_view._overview_viewport_board_rect()
+	_expect(visible_board.has_point(Vector2(15, 5)) and visible_board.size.x < StrategoGame.BOARD_SIZE, "the minimap viewport frame tracks the zoomed main view")
+	main_view.free()
+	minimap_view.free()
 
 
 func _ready_and_resolve(game: StrategoGame, rolls: Array[int] = []) -> Array[Dictionary]:
@@ -533,7 +556,7 @@ func _test_allied_collision_bounces_without_combat() -> void:
 	_expect(bounces.size() == 1 and not bool(bounces[0].combat), "different-player allies collide as a non-combat bounce")
 	_expect(game.pieces[red_id].position == Vector2i(1, 2) and game.pieces[green_id].position == Vector2i(3, 2), "allied collision returns both formations to their previous squares")
 	_expect(game.pieces[red_id].strength == 8 and game.pieces[green_id].strength == 8, "allied collision deals no damage")
-	_expect(not bool(game.pieces[red_id].participated_in_combat) and game.pieces[red_id].round_status == StrategoGame.STATUS_BOUNCED, "non-combat bounce is distinct from combat participation and loss")
+	_expect(not bool(game.pieces[red_id].participated_in_combat) and game.pieces[red_id].round_status == StrategoGame.STATUS_READY, "non-combat congestion carries no bounce-status penalty")
 	var stationary_game := _test_game()
 	var moving_id := stationary_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(1, 1), 8)
 	var stationary_id := stationary_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(2, 1), 8)
@@ -541,7 +564,7 @@ func _test_allied_collision_bounces_without_combat() -> void:
 	stationary_game.set_player_team(StrategoGame.GREEN, 4)
 	stationary_game.set_unit_order(StrategoGame.RED, moving_id, [Vector2i(2, 1)])
 	_ready_and_resolve(stationary_game)
-	_expect(stationary_game.pieces[moving_id].round_status == StrategoGame.STATUS_BOUNCED and stationary_game.pieces[stationary_id].round_status == StrategoGame.STATUS_BOUNCED, "a stationary allied participant is also done for the round after the collision")
+	_expect(stationary_game.pieces[moving_id].round_status == StrategoGame.STATUS_READY and stationary_game.pieces[stationary_id].round_status == StrategoGame.STATUS_READY, "neither the mover nor stationary ally receives a round-status penalty")
 
 
 func _test_crossing_battle_both_attack() -> void:
@@ -568,6 +591,43 @@ func _test_tie_is_a_bounce() -> void:
 	_expect(battle.result == "bounce" and int(battle.winner_id) == StrategoGame.EMPTY, "equal battle scores produce no winner")
 	_expect(game.pieces[attacker_id].position == Vector2i(1, 1) and game.pieces[defender_id].position == Vector2i(2, 1), "combat tie returns everyone to their previous square")
 	_expect(game.pieces[attacker_id].round_status == StrategoGame.STATUS_BOUNCED and game.pieces[defender_id].round_status == StrategoGame.STATUS_BOUNCED, "tied units are bounced, not marked as losers")
+
+
+func _test_defender_wins_ties_toggle() -> void:
+	# Off by default, so the existing bounce behaviour is untouched unless a
+	# caller explicitly opts in.
+	var off_game := _test_game()
+	var off_attacker := off_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
+	off_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	off_game.set_unit_order(StrategoGame.RED, off_attacker, [Vector2i(2, 1)])
+	var off_events := _ready_and_resolve(off_game, [2, 2])
+	_expect(_events_with_action(off_events, "melee")[0].result == "bounce", "the toggle defaults off - a tie still bounces without it")
+
+	# On: the exact same tie now resolves to the defender.
+	var on_game := _test_game()
+	var on_game_attacker := on_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
+	var on_game_defender := on_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	on_game.defender_wins_ties = true
+	on_game.set_unit_order(StrategoGame.RED, on_game_attacker, [Vector2i(2, 1)])
+	var on_events := _ready_and_resolve(on_game, [2, 2])
+	var on_battle := _events_with_action(on_events, "melee")[0]
+	_expect(on_battle.result == "win" and int(on_battle.winner_id) == on_game_defender, "with the toggle on, a tie resolves to the defender rather than bouncing")
+	_expect(on_game.pieces[on_game_defender].position == Vector2i(2, 1) and String(on_game.pieces[on_game_defender].round_status) == StrategoGame.STATUS_WON, "the defender is treated as an ordinary winner: holds the square, marked won")
+	_expect(not on_game.pieces[on_game_attacker].alive or on_game.pieces[on_game_attacker].strength < 10, "the attacker takes a loser's damage from winning armor, same as any other tie-break loss")
+
+	# A genuine three-way tie is still ambiguous even with the toggle on: two
+	# attackers tying each other, with the defender not part of the top score
+	# at all, has no defender among the tied formations to award it to.
+	var messy_game := _test_game()
+	messy_game.defender_wins_ties = true
+	var first_attacker := messy_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
+	var second_attacker := messy_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.GREEN, Vector2i(3, 1), 10)
+	var messy_defender := messy_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
+	messy_game.set_unit_order(StrategoGame.RED, first_attacker, [Vector2i(2, 1)])
+	messy_game.set_unit_order(StrategoGame.GREEN, second_attacker, [Vector2i(2, 1)])
+	var messy_events := _ready_and_resolve(messy_game, [6, 6, 1])
+	_expect(_events_with_action(messy_events, "melee")[0].result == "bounce", "two attackers tying each other still bounces - the rule only awards a tie the defender is actually part of")
+	_expect(messy_game.pieces[first_attacker].round_status == StrategoGame.STATUS_BOUNCED and messy_game.pieces[second_attacker].round_status == StrategoGame.STATUS_BOUNCED and messy_game.pieces[messy_defender].round_status == StrategoGame.STATUS_BOUNCED, "an opposing top-score tie penalizes every surviving participant because no side won")
 
 
 func _test_winner_doubles_armor() -> void:
@@ -605,8 +665,18 @@ func _test_multiway_unique_winner() -> void:
 	var battle := _events_with_action(events, "melee")[0]
 	_expect(int(battle.winner_id) == first_id, "a unique highest scorer wins a multiway contested square")
 	_expect(game.pieces[first_id].position == Vector2i(2, 2), "unique friendly leader occupies the contested square")
-	_expect(game.pieces[second_id].position == Vector2i(2, 3) and game.pieces[second_id].round_status == StrategoGame.STATUS_BOUNCED, "friendly non-winning attacker bounces")
+	_expect(game.pieces[second_id].position == Vector2i(2, 3) and game.pieces[second_id].round_status == StrategoGame.STATUS_READY, "friendly non-winning attacker returns without a bounce-status penalty")
 	_expect(game.pieces[defender_id].position == Vector2i(3, 2) and game.pieces[defender_id].round_status == StrategoGame.STATUS_LOST, "opposing multiway loser retreats")
+	var support_game := _test_game()
+	var leader := support_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
+	var support := support_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(2, 3), 10)
+	support_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 10)
+	support_game.set_unit_order(StrategoGame.RED, leader, [Vector2i(2, 2)])
+	support_game.set_unit_order(StrategoGame.RED, support, [Vector2i(2, 2)], Vector2i(2, 1))
+	support_game.set_forced_rolls([7, 4, 4, 3])
+	for player in support_game.active_players: support_game.mark_player_ready(player)
+	support_game.resolve_main_and_ranged()
+	_expect(support_game.pieces[support].round_status == StrategoGame.STATUS_READY and support_game.can_receive_leftover_order(StrategoGame.RED, support), "a friendly combat return remains eligible for later actions when movement remains")
 
 
 func _test_multiway_friendly_leader_tie() -> void:
@@ -616,10 +686,11 @@ func _test_multiway_friendly_leader_tie() -> void:
 	var defender_id := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 10)
 	game.set_unit_order(StrategoGame.RED, first_id, [Vector2i(2, 2)])
 	game.set_unit_order(StrategoGame.RED, second_id, [Vector2i(2, 2)])
-	_ready_and_resolve(game, [5, 5, 3])
+	var events := _ready_and_resolve(game, [5, 5, 3])
 	_expect(game.pieces[first_id].position == Vector2i(1, 2) and game.pieces[second_id].position == Vector2i(2, 3), "same-side tied leaders bounce after beating the enemy")
 	_expect(game.piece_at(Vector2i(2, 2)).is_empty(), "same-side tied leaders leave the contested square empty")
 	_expect(game.pieces[defender_id].position == Vector2i(3, 2), "enemy still retreats when tied friendly leaders beat it")
+	_expect(_events_with_action(events, "melee")[0].result == "team_win" and game.pieces[first_id].round_status == StrategoGame.STATUS_READY and game.pieces[second_id].round_status == StrategoGame.STATUS_READY, "an allied top-score tie is a team win with no bounce-status penalty")
 
 
 func _test_multiway_damage_uses_highest_opponent() -> void:
@@ -814,6 +885,8 @@ func _test_leftover_allows_second_melee_only_after_win() -> void:
 	var presentation_input: Array[Dictionary] = [{"action": "move", "batch": "leftover", "piece_id": leftover_mover, "visible_to": [StrategoGame.BLUE], "combat": false}]
 	var presented_leftovers: Array[Dictionary] = presenter._visible_presentation_events(presentation_input)
 	_expect(presented_leftovers.size() == 1 and presented_leftovers[0].action == "leftover_move", "ordinary leftover movement appears in the click-through resolution review")
+	var congestion_input: Array[Dictionary] = [{"action": "bounce", "batch": "leftover", "participants": [leftover_mover], "known_to": [StrategoGame.BLUE], "combat": false}]
+	_expect(presenter._visible_presentation_events(congestion_input).is_empty(), "non-combat congestion is skipped during click-through review")
 	presenter.free()
 	var group_game := _test_game()
 	var exhausted_heavy := group_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6))
@@ -1157,7 +1230,7 @@ func _test_deterministic_replay_export() -> void:
 	var json_result: Dictionary = StrategoGame.run_replay(parsed_value as Dictionary) if parsed_value is Dictionary else {"ok": false}
 	_expect(bool(json_result.get("ok", false)), "a JSON round trip replays without deterministic divergence")
 	_expect(String(json_result.get("digest", "")) == game.state_digest(), "replay reconstructs the exact final authoritative state")
-	var replay_path := "user://replays/automated-round-trip.json"
+	var replay_path := "res://../replays/automated-round-trip.json"
 	var save_result := game.save_replay(replay_path)
 	var load_result := StrategoGame.load_replay_document(replay_path)
 	var file_result: Dictionary = StrategoGame.run_replay(load_result.get("document", {})) if bool(load_result.get("ok", false)) else {"ok": false}

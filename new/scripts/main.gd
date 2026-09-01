@@ -3,7 +3,8 @@ extends Control
 const HUD_BLUE := Color("#79b9ff")
 const HUD_GOLD := Color("#c9a25e")
 const PANEL_BG := Color(0.035, 0.055, 0.095, 0.96)
-const LAST_REPLAY_PATH := "user://replays/last_replay.json"
+const REPLAY_DIRECTORY := "res://../replays"
+const LAST_REPLAY_PATH := REPLAY_DIRECTORY + "/last_replay.json"
 
 var game := StrategoGame.new()
 var bot := StrategoBotPolicy.new()
@@ -1542,7 +1543,9 @@ func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary
 			continue
 		var action := String(event.get("action", ""))
 		var is_leftover_move := action == "move" and String(event.get("batch", "")) == "leftover"
-		if bool(event.get("combat", false)) or action in ["bounce", "retreat", "retreat_collision"] or is_leftover_move:
+		# Pure movement congestion still animates and remains in the log/replay,
+		# but it has no lasting penalty and does not need a click-through card.
+		if bool(event.get("combat", false)) or action in ["retreat", "retreat_collision"] or is_leftover_move:
 			var presentation_event := event.duplicate(true)
 			if is_leftover_move:
 				presentation_event.action = "leftover_move"
@@ -1876,6 +1879,8 @@ func _event_damage(event: Dictionary, piece_id: int, index: int) -> int:
 func _result_label(event: Dictionary, winner_id: int) -> String:
 	if winner_id >= 0 and winner_id < game.pieces.size():
 		return "RESULT: %s WINS" % game.player_name(int(game.pieces[winner_id].player)).to_upper()
+	if String(event.get("result", "")) == "team_win":
+		return "RESULT: ALLIED SIDE WINS"
 	return "RESULT: %s" % String(event.get("result", "bounce")).replace("_", " ").to_upper()
 
 
@@ -1885,7 +1890,9 @@ func _result_detail(event: Dictionary, winner_id: int) -> String:
 	if winner_id >= 0:
 		return "Opposing formations retreat; winner may continue"
 	if String(event.get("result", "")) == "bounce":
-		return "No unique winner; tied leaders bounce"
+		return "Opposing sides tied; every surviving participant returns and is done"
+	if String(event.get("result", "")) == "team_win":
+		return "Opposing formations retreat; tied allies return without a status penalty"
 	return "No formation controls the contested square"
 
 
@@ -1953,7 +1960,7 @@ func _on_withdraw() -> void:
 
 func _on_export_replay() -> void:
 	var stamp := Time.get_datetime_string_from_system(false, false).replace(":", "-").replace("T", "_")
-	var timestamped_path := "user://replays/wego-replay-%s.json" % stamp
+	var timestamped_path := "%s/wego-replay-%s.json" % [REPLAY_DIRECTORY, stamp]
 	var result: Dictionary = game.save_replay(timestamped_path)
 	if not bool(result.get("ok", false)):
 		detail_label.text = String(result.get("message", "Replay export failed."))

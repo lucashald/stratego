@@ -28,6 +28,8 @@ var assume_red: Dictionary = {}
 var side_wins: Dictionary = {}
 var team_wins: Dictionary = {}
 var cavalry_always_leftover := true
+var defender_wins_ties := false
+var defender_resists_charge_ties := false
 ## -1 (StrategoGame.DRAW) means no cheater: an ordinary symmetric run. Set by
 ## --cheater blue|red.
 var cheater_side := StrategoGame.DRAW
@@ -48,6 +50,13 @@ func _initialize() -> void:
 	# run of the same seeds to see whether it closes Heavy Cavalry's arrival
 	# gap in Meeting.
 	cavalry_always_leftover = String(arguments.get("cavalryleftover", "1")) == "1"
+	# --defenderties 1 makes an exact melee tie resolve to the defender instead
+	# of bouncing everyone off with no result. Off by default; run the same
+	# seeds with and without it to see what the rule actually changes.
+	defender_wins_ties = String(arguments.get("defenderties", "0")) == "1"
+	# --chargeties 1: narrower cousin - only resolves a tie to the defender
+	# when the tied attacker(s) are all Cavalry. Independent of --defenderties.
+	defender_resists_charge_ties = String(arguments.get("chargeties", "0")) == "1"
 	# --w key=value,key=value overrides bot weights, for isolating one feature.
 	if arguments.has("w"):
 		for pair in String(arguments.w).split(",", false):
@@ -194,6 +203,8 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	elif scenario == "crossroads": game.setup_crossroads(seed_value)
 	else: game.setup_bridge(seed_value)
 	game.cavalry_always_leftover = cavalry_always_leftover
+	game.defender_wins_ties = defender_wins_ties
+	game.defender_resists_charge_ties = defender_resists_charge_ties
 	# Bots accept the recommended formation as-is; nothing here optimizes a
 	# deployment. That is deliberate: it leaves deployment choice as a lever a
 	# human player can use against a bot that never bothers to.
