@@ -17,7 +17,7 @@
   ],
   "fallen": [
     { "name": "Kestrel", "type": "LA", "battle": "Battle 1 — The Toll Road", "detail": "Lost a duel with Tally over the crossing." },
-    { "name": "Ferrant", "type": "MC", "battle": "Battle 1 — The Toll Road", "detail": "Fought three separate melees in one battle — beat Reeve, retreated once, beat Reeve again, beat Toll-taker, beat Tally — before Toll-taker's line finally brought her down in the fourth. No formation in the campaign has yet matched that." },
+    { "name": "Ferrant", "type": "MC", "battle": "Battle 1 — The Toll Road", "detail": "Fought four engagements in one battle — lost the first to Reeve, beat Reeve in the rematch, beat Toll-taker, beat Tally — before Toll-taker and Marrow's stand finally caught her between two enemies at once and broke the formation. No formation in the campaign has yet matched that run. Not everyone who rode with her died there; some of her riders made it off the field, without enough left to hold the name or fight as she fought. The formation does not return to the roster. The riders might turn up again." }
     { "name": "Ash", "type": "LC", "battle": "Battle 1 — The Toll Road", "detail": "Lost the three-way scrum for the crossing to Coin." }
   ]
 }

@@ -44,9 +44,29 @@ time. A single battle can be fun for reasons that do not generalise.
 
 ## Findings so far
 
-**Battle 1 played, debrief pending.** Blue held the crossing at round 7 of 22,
-losing 3 of 9 formations against Red's 7 of 9 — fast and lopsided for a
-mirrored army. Played against the bot rather than me, since I hit a usage
-limit mid-battle, so it isn't yet the clean commander-vs-commander baseline
-the battle was meant to be. Full outcome in `battles/01_toll_road.md`; nothing
-gets promoted from there to here until we've actually talked about it.
+**Hold-the-centre creates a real decision, not just a destination.** Winning
+by objective requires arriving *early*, not just eventually — an earlier test
+of this same map went well on casualties but still lost on the objective
+clock. Question 1 from the list above: answered, at least for this shape of
+map. (Battle 1)
+
+**Heavy Infantry needs a battle shaped for it.** Two squares of approach to
+the objective meant Oakhand and Stonewatch never reached the fight in time to
+matter, not because anything is wrong with them, but because nothing asked
+them to be fast. They want a long battle, or a defensive one where the
+objective comes to them. Bears on question 3. (Battle 1)
+
+**A lopsided score in a mirrored matchup isn't automatically a balance
+signal.** Battle 1 was replayed several times against the bot before the
+recorded result, so "round 7, 7-of-9 losses" may be a skilled commander
+against a fixed opponent rather than the matchup itself. Worth a genuine
+single-shot rematch, commander against commander, before trusting a score
+like that again.
+
+**Permanent loss produces a real ruling, not just a stat change.** The first
+formation death (Ferrant, Battle 1) needed an actual decision about what
+"destroyed" means for the story, not just the roster. Ruled: the formation
+is gone for good, no exceptions, but a destroyed unit's death toll isn't
+automatically total — survivors can persist as a narrative thread even when
+the formation itself never returns. Bears on question 6, and is now the
+standing precedent for every future loss.

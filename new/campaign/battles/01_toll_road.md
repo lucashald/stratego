@@ -69,19 +69,60 @@ Full account: `campaign/roster.json` → `fallen` and each survivor's `history`.
 
 ## Debrief
 
-_To be written together — Lucas played this one against the bot rather than
-me, which changes what it can tell us. Worth talking through:_
+**Not a single clean playthrough.** Lucas replayed this several times against
+the bot while testing things, so the recorded result carries an advantage a
+one-shot baseline wouldn't have. Worth remembering when weighing how decisive
+"round 7, 7-of-9" actually is as a read on the matchup.
 
-- The result was fast and lopsided (round 7, 7-of-9 losses on one side) against
-  a mirrored army. Is that the matchup, the bot, or the objective rewarding a
-  particular kind of aggression once real fighting starts?
-- Ferrant's four-melee run and Thistle's revenge kill are the most interesting
-  things that happened. Did committing cavalry hard into repeated fights feel
-  like a real decision at the time, or did the toggle (cavalry always
-  repositions) make that choice cheaper than it should have been?
-- Nine a side, predicted borderline-too-many going in — with the bot playing
-  Red, was tracking nine formations actually the friction, or did it not come
-  up because the bot moves fast and doesn't need reading?
-- Whether this counts as the honest baseline reading I wanted, or whether Vare
-  needs a rematch with an actual commander before the campaign trusts this
-  result.
+**The map has a real timing requirement, separate from the rout.** Winning by
+objective here means arriving at the crossing *fast* — an earlier test battle
+went well on casualties but still lost on the objective clock. That's the map
+doing real work: hold-the-centre isn't just "walk to the middle," it's "get
+there before the window closes," which is a genuine decision the intent
+doc hoped for and got. Lucas's read on the lopsided casualty count itself,
+though, is that it came from outplaying the bot in this specific game, not
+from the scenario forcing it. Fair, and consistent with playing it more than
+once — an opponent this refined only shows up with practice.
+
+**Two squares of approach starved the heavies of time, not of purpose.**
+Oakhand and Stonewatch could not reach the fight fast enough to matter here.
+That's not a case for reworking Heavy Infantry — it's a case for not asking
+them to sprint. They want a longer battle, or one where the objective comes to
+them instead of the other way around. Design note for what comes next.
+
+**Verdict on the baseline:** keep it. It answered its question — the objective
+creates a real decision — even if the specific score isn't a clean read on
+"commander vs. commander." That question gets its real test the next time I'm
+actually seated across the board, not by discarding this fight.
+
+## Design log entries this earns
+
+Promoted to `design_log.md`:
+- Hold-the-centre works: it demands early arrival, not just eventual
+  presence, which is a real decision rather than a walk.
+- Heavy Infantry needs a battle shaped for it — long, or defending — not a
+  race. Confirmed by design intent, not merely observed once.
+- Casualty asymmetry in a mirrored matchup can come from play skill, not
+  scenario bias. Worth a genuine rematch before trusting the score as a
+  balance signal.
+
+## Ferrant
+
+*Ruling, since the campaign asked for one: a destroyed formation's death
+toll isn't automatically total.*
+
+Ferrant fought four engagements in one battle and only broke on the fourth,
+caught between two enemies at once rather than beaten clean. That's not an
+annihilation. The formation — the standard, the drilled cohesion that let her
+beat Reeve twice and Toll-taker and Tally in a single afternoon — is finished
+regardless. It doesn't reform, and nothing restores it to the active roster.
+That rule stays absolute, because it's the rule that makes losses mean
+something.
+
+But some of her riders made it off that field. Not enough to hold the
+Ferrant name, or fight as Ferrant fought — but enough that Ashmere's next
+levy of horse will have a few veterans in it who know which end of a lance
+to hold, and who remember exactly how it ended. `roster.json`'s fallen entry
+reflects that. Whatever unit picks up that thread later in the campaign
+inherits nothing mechanical — no bonus, no reroll — just the fact that it
+isn't starting from nothing.
