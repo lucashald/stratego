@@ -127,13 +127,19 @@ and skips the app's own presentation/animation. `commit` was added to
 
 ## Outstanding
 
-- **Design and set up Battle 3 — a rebuild scenario.** Blue is one formation;
-  the next battle cannot be an army-vs-army rematch (campaign rule: a decisive
-  result branches to a *different kind* of battle). Pending the commander's
-  rebuild/recruitment choice below.
-- **Recruitment/rebuild choice is with the commander.** Supply 3. The choice must
-  cost something — the pool can't buy everything. Put the options to Lucas before
-  building Battle 3.
+- **Play Battle 3 — The Fen Road.** Built, validated, and loaded to
+  `current_battle.json`. Files: `battles/03_fen_road.{json,md}`. A fighting
+  withdrawal: Blue (Stonewatch HI 8 + Ember MC 4) retreats south to a muster
+  (`reach` [4,17,12,3], strength 8) before a fast Vare pursuit (Outrider LI,
+  Warrant + Distraint LC, Quarrel LA) runs them down (`survive` until round 14).
+  14-round window on purpose — the tight-clock fix from Ashweir. **Claude
+  commands Red**; the bot can't run a real pursuit, so a bot-vs-bot verify run
+  under-threatens and isn't a balance check. Two tuning dials if it plays wrong:
+  Blue's start line (row 8) and the window. See the intent doc's "what I expect
+  to go wrong."
+- **Recruitment/rebuild choice: made.** Bring back the horse. Whole supply pool
+  spent remounting Ferrant's riders as Ember (MC 4). Cost: no bows, no second
+  body — both felt on the Fen Road. Supply now 0.
 - **Veteran reroll is now a written rule** (`roster.json` → `rules.veteran_reroll`),
   awarded to Stonewatch, but **GM-applied only — no engine support**. Building the
   engine hook (let the app offer a reroll on a veteran's combat die) is still

@@ -143,3 +143,38 @@ reputation, and a river that Vare now knows costs more to cross than it looks.
 The Line is one formation and a story. Ashmere has to become an army again before
 Vare comes back, and it cannot do it the way it did before — there isn't enough
 left to lose a fair fight and recover. What comes next is not another bridge.
+
+## IV. Ember, and the Fen Road
+
+There wasn't enough to rebuild an army. There was enough to remount some riders.
+
+The survivors of Ferrant — the ones who got off the Toll Road when she was broken
+and have been riding without a banner since — were what the whole rebuild could
+afford, and Ashmere spent all of it on them. They are not Ferrant. That banner is
+gone and stays gone, and the new one takes nothing from it but the fact of the
+people under it, who have already been outnumbered to death once and lived to be
+asked to do it again. They ride now as Ember: medium cavalry, under-strength, a
+coal that kept its heat. It is the first thing Ashmere has been able to call fast
+since the first battle of the campaign.
+
+Spending everything on the horse meant spending nothing on bows. Harrow and Wren
+are not replaced. The next time something shoots at the Ashmere Line, the Line
+will have to take it and keep walking, because it has nothing to shoot back with.
+
+Vare did not give them the season to fix that. They knew how thin the Line had
+been left — Bulwark carried that knowledge home from the bridge — and they did the
+thing a garrison does when it has finally stopped being polite: they sent riders
+to run the survivors down before the survivors could become dangerous again. At
+the head of the column is Outrider, who killed Harrow at the bridge and rode away
+from it, come back to finish the account.
+
+So the third battle is not a battle for anything. It is a road. South, down the
+Fen Road, past the marsh at the neck, to the muster ground where Ashmere can
+stand again — and Stonewatch, who moves at the pace of the wall she is, has to
+walk the whole length of it with a fast column trying to get in front of her.
+Ember rides to buy her that road. It is a bitter first outing for a formation
+made of people who remember being the last thing between an enemy and someone
+slower. It is also the only thing they were ever going to be asked to do.
+
+*(Battle 3 — The Fen Road: built, loaded, and waiting. Its intent is written in
+`battles/03_fen_road.md`; its telling will be here when it's fought.)*

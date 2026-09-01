@@ -1,10 +1,10 @@
 {
   "campaign": "The Ashmere Line",
   "commander": "Blue",
-  "battle_number": 2,
-  "phase": "aftermath — rebuild before Battle 3",
-  "supply": 3,
-  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns — it moves to fallen instead of lingering here at zero. Ashweir Bridge was won at the cost of six of seven formations; the roster is a single survivor and a supply pool to rebuild from. Recruitment is the commander's choice and must cost something — the supply pool never buys everything on offer at once.",
+  "battle_number": 3,
+  "phase": "Battle 3 loaded — The Fen Road (withdrawal)",
+  "supply": 0,
+  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns — it moves to fallen instead of lingering here at zero. Ashweir Bridge was won at the cost of six of seven formations. The whole rebuild pool went to remounting Ferrant's surviving riders as Ember — which is the cost: no other recruits, and no replacement for the archers, so Blue goes into the Fen Road with a slow anchor, a fragile screen, and no bows at all against a fast pursuit that has one.",
   "rules": {
     "permanent_death": "A destroyed formation is struck from formations and moved to fallen. It does not return. Its soldiers may persist as a narrative thread (see Ferrant), but the formation, its name, and any veteran advantage it held are gone.",
     "veteran_reroll": "A formation that has survived a battle in which it fought and mattered may earn Veteran status, granting one reroll per battle: once, the commander may refuse a single combat die result involving that formation and force a new roll (the second result stands, better or worse). Earned by GM ruling from what the formation actually did, not automatically by survival. GM-applied for now; no engine support yet — Claude honours it at the table when commanding the opposition or resolving a roll.",
@@ -12,7 +12,8 @@
     "recruitment_cost": "Between battles the commander may recruit from supply, but the pool is deliberately too small to take everything offered — every recruit is a choice against another recruit or against reinforcing a survivor."
   },
   "formations": [
-    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 2, "veteran": true, "veteran_reason": "Held Ashweir Bridge alone. Put Picket in the river in her only fight, then stood unwounded at the bridgehead while every other Ashmere formation died around her and the crossing broke against her. Sole survivor of a won battle.", "history": ["Battle 1 — The Toll Road: never engaged. The fight never reached her side of the line.", "Battle 2 — Ashweir Bridge: threw Picket off the span in her one crossing fight, then outlived the entire battle at the bridgehead without a wound. The last formation of the Ashmere Line still standing. Earned Veteran status — one reroll per battle."] }
+    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 2, "veteran": true, "veteran_reason": "Held Ashweir Bridge alone. Put Picket in the river in her only fight, then stood unwounded at the bridgehead while every other Ashmere formation died around her and the crossing broke against her. Sole survivor of a won battle.", "history": ["Battle 1 — The Toll Road: never engaged. The fight never reached her side of the line.", "Battle 2 — Ashweir Bridge: threw Picket off the span in her one crossing fight, then outlived the entire battle at the bridgehead without a wound. The last formation of the Ashmere Line still standing. Earned Veteran status — one reroll per battle."] },
+    { "name": "Ember", "type": "MC", "strength": 4, "battles": 0, "reformed_from": "Ferrant", "history": ["Reformed after Ashweir Bridge from the riders who got clear of the Toll Road when Ferrant was broken. The whole rebuild pool went to remounting them. They are not Ferrant — the banner does not return and they inherit nothing mechanical from her, no bonus and no reroll — but they are not starting from nothing either: these are people who have already been outnumbered to death once and rode away from it. Under-strength and short of their old cohesion. Their first battle as Ember is a rearguard, which is a bitter kind of first outing for a formation that remembers being the last line for someone else."] }
   ],
   "fallen": [
     { "name": "Kestrel", "type": "LA", "battle": "Battle 1 — The Toll Road", "detail": "Lost a duel with Tally over the crossing." },
