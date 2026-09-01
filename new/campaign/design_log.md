@@ -70,3 +70,43 @@ is gone for good, no exceptions, but a destroyed unit's death toll isn't
 automatically total — survivors can persist as a narrative thread even when
 the formation itself never returns. Bears on question 6, and is now the
 standing precedent for every future loss.
+
+**Hold-out windows must close near when the result settles, not a dozen rounds
+later.** Ashweir Bridge ran 28 rounds; the crossing had broken and the outcome
+was decided by roughly round 18. The last ten rounds were a won battle still
+being made to play itself out, with two enemy survivors that couldn't force
+anything declining to fight. A `survive` objective's turn limit is the whole
+lever on how a defensive battle *feels*, and this one was set far too long. Next
+defensive battle: materially shorter window. Answers question 7 more bluntly
+than Battle 1 — set the clock by when doubt ends, not by generosity. (Battle 2)
+
+**The bot cannot fight a multi-lane chokepoint.** Two failures at Ashweir, both
+the opponent AI's: it fed only one of the bridge's two lanes and left the second
+idle, collapsing a "two-wide" decision into "one-wide with a spare"; and when the
+direct push jammed it kept pushing the same square instead of manoeuvring around.
+`bot_policy.gd` has no notion of splitting an assault across parallel approaches
+or switching lanes when one stalls. Fix before another chokepoint scenario is
+trusted — until then, a human commanding the attacker is the only fair test of a
+chokepoint. (Battle 2)
+
+**In a chokepoint, ranged fire into the gap outvalues bodies in the gap.** The
+intent doc built Ashweir to make Heavy Infantry matter and worried the bottleneck
+would swallow the game. It half-did: the bottleneck was the game, but the
+deciding pieces were the two archers firing into it, not the Heavy plug standing
+in it. The recruitment trade — a second bow taken over the last cavalry slot — is
+the direct, traceable cause of the win. Bears on question 3: what a formation is
+worth depends on the battle's shape, and a chokepoint is an archer's battle.
+(Battle 2)
+
+**A pyrrhic win is a valid outcome that branches the campaign, not a balance
+bug.** Blue won Ashweir down to its last formation. That's a genuinely different
+result from a clean win, and it triggers the rules' own "decisive result leads to
+a different *kind* of battle" branch: Blue can't field an army, so Battle 3 has to
+be a rebuild scenario, not a rematch. Outnumbered-behind-terrain is *supposed* to
+risk exactly this. Bears on question 5 and 6 — asymmetry and permanence together
+produced a story branch neither would alone. (Battle 2)
+
+**The promised veteran reroll is now a written rule.** Outstanding since Battle 1,
+finally defined in `roster.json` → `rules.veteran_reroll` and awarded to Stonewatch
+for holding the bridge alone: one reroll per battle, GM-applied, no engine support
+yet. Engine hook remains a separate task. (Battle 2)

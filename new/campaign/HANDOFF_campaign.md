@@ -1,7 +1,11 @@
 # Handoff: the campaign ("The Ashmere Line")
 
-Status as of 2026-09-01. Battle 1 is played and debriefed. Battle 2 is written,
-verified, and loaded — but **not yet played**.
+Status as of 2026-09-01. Battles 1 and 2 are played and debriefed. Battle 2
+(Ashweir Bridge) was **won, pyrrhically** — Blue held the bridge to the turn
+limit but lost six of seven formations. The campaign is now in an **aftermath /
+rebuild phase** before Battle 3, and the roster is a single survivor
+(Stonewatch) plus a supply pool. The in-world story now lives in
+`campaign/chronicle.md`.
 
 ## The premise
 
@@ -30,14 +34,19 @@ after it concludes** — not written solo by Claude. That's what
 
 ## Current state
 
-`campaign/roster.json` is the source of truth. Battle 2, supply 1.
+`campaign/roster.json` is the source of truth. Aftermath after Battle 2, supply 3.
 
-**Alive:** Oakhand (HI, 5), Stonewatch (HI, 8), Marrow (MI, 5), Thistle (MI, 3),
-Coldbrook (LI, 6), Harrow (MA, 6), Wren (LA, 5 — new recruit, 0 battles).
+**Alive:** Stonewatch (HI, 8, unwounded, **Veteran**) — the sole survivor of
+Ashweir Bridge and the entire remaining Ashmere Line.
 
-**Fallen:** Kestrel (LA), Ferrant (MC), Ash (LC). All three died at the Toll
-Road. The roster lost every fast, mounted, and (until Wren) ranged formation it
-had.
+**Fallen:** Kestrel (LA), Ferrant (MC), Ash (LC) at the Toll Road; then Harrow
+(MA), Wren (LA), Oakhand (HI), Coldbrook (LI), Marrow (MI), Thistle (MI) at
+Ashweir Bridge. The two archers (Harrow, Wren) did nearly all of Vare's killing
+and both died for it; see `chronicle.md` and each `fallen` entry.
+
+**Enemy threads (new):** Outrider (Vare LI, survived at Strength 3 having killed
+Harrow) and Bulwark (Vare HI, never engaged, carried word home). Both live in
+`roster.json` → `enemy_threads`.
 
 File convention: a dead formation is *struck from* `formations` and moves to
 `fallen`. It never lingers at Strength 0 in the live list.
@@ -118,14 +127,29 @@ and skips the app's own presentation/animation. `commit` was added to
 
 ## Outstanding
 
-- **Play Battle 2.** It's loaded and waiting.
-- **Veteran rerolls don't exist yet.** Promised as "I'll build the rule while
-  you fight, so it's live for Battle 2" — never actually implemented. Still
+- **Design and set up Battle 3 — a rebuild scenario.** Blue is one formation;
+  the next battle cannot be an army-vs-army rematch (campaign rule: a decisive
+  result branches to a *different kind* of battle). Pending the commander's
+  rebuild/recruitment choice below.
+- **Recruitment/rebuild choice is with the commander.** Supply 3. The choice must
+  cost something — the pool can't buy everything. Put the options to Lucas before
+  building Battle 3.
+- **Veteran reroll is now a written rule** (`roster.json` → `rules.veteran_reroll`),
+  awarded to Stonewatch, but **GM-applied only — no engine support**. Building the
+  engine hook (let the app offer a reroll on a veteran's combat die) is still
   outstanding.
-- **Between-battle Strength gains** for resting survivors: stated as a campaign
-  rule, no mechanic built.
-- Debrief Battle 2 conversationally once it concludes, and promote findings to
-  `campaign/design_log.md`.
+- **Between-battle Strength gains** are now a written rule
+  (`rules.strength_gain`) but likewise unimplemented in engine; applied by hand
+  during the rebuild.
+- **Turn-limit lesson for the next defensive battle:** shorten the `survive`
+  window hard. Ashweir's 28 was decided by ~18. See `design_log.md`.
+- **Bot chokepoint fix** (`bot_policy.gd`: use both lanes, manoeuvre around a
+  jam) before another chokepoint scenario is trusted with the bot on the
+  attacker.
+
+Done this pass: Battle 2 recorded (`battles/02_ashweir_bridge.md` outcome +
+debrief), replay archived (`replays/02_ashweir_bridge.json`), roster updated,
+findings promoted to `design_log.md`, chronicle started (`chronicle.md`).
 
 ## Engine work done in service of the campaign
 

@@ -2,20 +2,31 @@
   "campaign": "The Ashmere Line",
   "commander": "Blue",
   "battle_number": 2,
-  "supply": 1,
-  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns — it moves to fallen instead of lingering here at zero.",
+  "phase": "aftermath — rebuild before Battle 3",
+  "supply": 3,
+  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns — it moves to fallen instead of lingering here at zero. Ashweir Bridge was won at the cost of six of seven formations; the roster is a single survivor and a supply pool to rebuild from. Recruitment is the commander's choice and must cost something — the supply pool never buys everything on offer at once.",
+  "rules": {
+    "permanent_death": "A destroyed formation is struck from formations and moved to fallen. It does not return. Its soldiers may persist as a narrative thread (see Ferrant), but the formation, its name, and any veteran advantage it held are gone.",
+    "veteran_reroll": "A formation that has survived a battle in which it fought and mattered may earn Veteran status, granting one reroll per battle: once, the commander may refuse a single combat die result involving that formation and force a new roll (the second result stands, better or worse). Earned by GM ruling from what the formation actually did, not automatically by survival. GM-applied for now; no engine support yet — Claude honours it at the table when commanding the opposition or resolving a roll.",
+    "strength_gain": "Surviving formations that rest between battles rather than fighting recover toward their max Strength and can be reinforced past their starting value by spending supply. Applied between battles as part of the rebuild.",
+    "recruitment_cost": "Between battles the commander may recruit from supply, but the pool is deliberately too small to take everything offered — every recruit is a choice against another recruit or against reinforcing a survivor."
+  },
   "formations": [
-    { "name": "Oakhand",    "type": "HI", "strength": 5, "battles": 1, "history": ["Battle 1 — The Toll Road: won a straight fight against Gatewright."] },
-    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 1, "history": ["Battle 1 — The Toll Road: never engaged. The fight never reached her side of the line."] },
-    { "name": "Marrow",     "type": "MI", "strength": 5, "battles": 1, "history": ["Battle 1 — The Toll Road: caught alongside Ferrant when Toll-taker broke both of them at once. Marrow got clear; Ferrant did not."] },
-    { "name": "Thistle",    "type": "MI", "strength": 3, "battles": 1, "history": ["Battle 1 — The Toll Road: cut down the same Toll-taker that had broken Ferrant and Marrow, then beat Scrip in the same round. The two hardest fights of the battle, back to back."] },
-    { "name": "Coldbrook",  "type": "LI", "strength": 6, "battles": 1, "history": ["Battle 1 — The Toll Road: reached the field and never took a wound."] },
-    { "name": "Harrow",     "type": "MA", "strength": 6, "battles": 1, "history": ["Battle 1 — The Toll Road: two shots, two hits — chipped Whistle, then killed Coin outright."] },
-    { "name": "Wren",       "type": "LA", "strength": 5, "battles": 0, "history": ["Recruited between the Toll Road and Ashweir Bridge. The roster lost every fast, ranged and mounted formation it had — Wren is the archer the last one didn't have to be there in time to become."] }
+    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 2, "veteran": true, "veteran_reason": "Held Ashweir Bridge alone. Put Picket in the river in her only fight, then stood unwounded at the bridgehead while every other Ashmere formation died around her and the crossing broke against her. Sole survivor of a won battle.", "history": ["Battle 1 — The Toll Road: never engaged. The fight never reached her side of the line.", "Battle 2 — Ashweir Bridge: threw Picket off the span in her one crossing fight, then outlived the entire battle at the bridgehead without a wound. The last formation of the Ashmere Line still standing. Earned Veteran status — one reroll per battle."] }
   ],
   "fallen": [
     { "name": "Kestrel", "type": "LA", "battle": "Battle 1 — The Toll Road", "detail": "Lost a duel with Tally over the crossing." },
     { "name": "Ferrant", "type": "MC", "battle": "Battle 1 — The Toll Road", "detail": "Fought four engagements in one battle — lost the first to Reeve, beat Reeve in the rematch, beat Toll-taker, beat Tally — before Toll-taker and Marrow's stand finally caught her between two enemies at once and broke the formation. No formation in the campaign has yet matched that run. Not everyone who rode with her died there; some of her riders made it off the field, without enough left to hold the name or fight as she fought. The formation does not return to the roster. The riders might turn up again." },
-    { "name": "Ash", "type": "LC", "battle": "Battle 1 — The Toll Road", "detail": "Lost the three-way scrum for the crossing to Coin." }
+    { "name": "Ash", "type": "LC", "battle": "Battle 1 — The Toll Road", "detail": "Lost the three-way scrum for the crossing to Coin." },
+    { "name": "Harrow", "type": "MA", "battle": "Battle 2 — Ashweir Bridge", "detail": "Two battles, and the deadliest formation Ashmere fielded in both. At Ashweir killed Fletch, both Vare Heavies, and Siegewright, and shared Bailiff — nearly every Vare formation that died did so to Harrow's or Wren's arrows. Ridden down in the last exchange of the battle by Outrider, with the Vare line already broken in front of him. Killed more of the enemy across the campaign than any other Ashmere formation to date." },
+    { "name": "Wren", "type": "LA", "battle": "Battle 2 — Ashweir Bridge", "detail": "The recruit taken over a troop of light cavalry, on the argument that a second bow was worth more at a bridge than more horse. One battle. In it she killed Tithe, Warden, and Bailiff and put arrows into Vare First and Siegewright — three enemy formations off the field on the first day she ever fought. Killed by Siegewright's return shot across the water. The recruitment gamble was proven right before she died for it." },
+    { "name": "Oakhand", "type": "HI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Battle 1: won a straight fight against Gatewright. Battle 2: met Vare's Levy at the bridge mouth and the two destroyed each other in the same instant — a clean trade, both banners down together." },
+    { "name": "Coldbrook", "type": "LI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Reached the Toll Road and never took a wound there. Cut down by Siegewright holding the bridge mouth at Ashweir." },
+    { "name": "Marrow", "type": "MI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Battle 1: caught alongside Ferrant when Toll-taker broke both at once, and got clear where Ferrant did not. Battle 2: shot off the bank early by Tithe, before the lines closed — got clear of the Toll Road only to not get clear of Ashweir." },
+    { "name": "Thistle", "type": "MI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Battle 1: killed the Toll-taker that had broken Ferrant and Marrow, then beat Scrip in the same round — the two hardest fights of that battle, back to back. Battle 2: gone to one of Tithe's arrows before the melee even began." }
+  ],
+  "enemy_threads": [
+    { "name": "Outrider", "type": "LI", "faction": "Vare", "detail": "Survived Ashweir Bridge at a third strength, having personally ridden down Harrow in the final exchange. A live enemy thread pointed the mirror-image of Ferrant's riders — a specific enemy face that could return." },
+    { "name": "Bulwark", "type": "HI", "faction": "Vare", "detail": "A Vare Heavy that never struck a blow at Ashweir and carried word of the defeat back to the garrison intact. Vare has now lost badly to Ashmere twice; whatever they send next is unlikely to be an honest muster for the crossing." }
   ]
 }
