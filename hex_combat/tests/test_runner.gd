@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_reposition_marches_like_the_main_phase()
 	_test_a_fight_holds_until_it_is_committed()
 	_test_a_bounce_reads_as_being_stopped()
 	_test_support_is_offered_on_a_friendly_formation()
@@ -741,6 +742,30 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_reposition_marches_like_the_main_phase() -> void:
+	# Reposition used to be dropped before it reached the march, so formations
+	# simply appeared on their new squares. It walks now, on the same legs as the
+	# main phase, as a single beat because the phase is one simultaneous wave.
+	var game := _test_game()
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	var events: Array[Dictionary] = [
+		{"action": "move", "batch": "impulse_2", "piece_id": 0, "from": Vector2i(1, 1), "to": Vector2i(1, 2), "visible_to": [StrategoGame.BLUE]},
+		{"action": "move", "batch": "leftover", "piece_id": 1, "from": Vector2i(2, 1), "to": Vector2i(2, 2), "visible_to": [StrategoGame.BLUE]},
+		{"action": "move", "batch": "ranged", "piece_id": 2, "from": Vector2i(3, 1), "to": Vector2i(3, 2), "visible_to": [StrategoGame.BLUE]},
+	]
+	var steps: Array = presenter._march_steps_from(events)
+	var marched: Array[int] = []
+	for step in steps: marched.append(int(step.piece_id))
+	_expect(1 in marched, "a reposition move is handed to the march instead of being dropped")
+	_expect(0 in marched, "and the main phase still marches as it did")
+	_expect(2 not in marched, "while a batch that carries no movement is still ignored")
+	for step in steps:
+		if int(step.piece_id) == 1:
+			_expect(int(step.impulse) == 1, "reposition is one beat, since nothing in it is staggered by Weight")
+	presenter.free()
 
 
 func _test_a_fight_holds_until_it_is_committed() -> void:

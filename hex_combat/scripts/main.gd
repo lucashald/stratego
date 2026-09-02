@@ -1525,9 +1525,14 @@ func _march_steps_from(events: Array[Dictionary]) -> Array:
 		if not _event_is_known_to_viewer(event):
 			continue
 		var batch := String(event.get("batch", ""))
-		if not batch.begins_with("impulse_"):
-			continue
-		var impulse := int(batch.substr(8))
+		# Reposition marches on the same legs as the main phase. It is one
+		# simultaneous wave rather than three weight-staggered ones, so it is a
+		# single beat, but the walk itself should look like walking either way.
+		# The leftover phase resolves in its own call, so beat numbering never
+		# has to share a march with the main impulses.
+		var impulse := 1 if batch == "leftover" else 0
+		if batch.begins_with("impulse_"):
+			impulse = int(batch.substr(8))
 		if impulse <= 0:
 			continue
 		var action := String(event.get("action", ""))
