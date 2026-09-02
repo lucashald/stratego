@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_every_way_of_issuing_an_order_queues_it()
 	_test_who_holds_the_ground_a_side_just_took()
 	_test_the_order_you_issued_first_takes_the_square()
 	_test_two_cavalry_may_reposition_onto_one_enemy()
@@ -749,6 +750,28 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_every_way_of_issuing_an_order_queues_it() -> void:
+	# The queue only decides anything if every route into it assigns a place.
+	# One that does not sends its formations to the back, where piece id picks
+	# between them again, which is the tiebreak the queue exists to replace.
+	var game := _test_game()
+	var walker := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 5), 8)
+	var grouped := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 7), 8)
+	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(4, 9), 8)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(9, 9), 8)
+	game.set_unit_order(StrategoGame.RED, walker, [Vector2i(5, 5)])
+	_expect(game.order_for_piece(walker).has("sequence"), "a single movement order is queued")
+	game.append_group_order_step(StrategoGame.RED, [grouped] as Array[int], HexGrid.SOUTH, false)
+	_expect(game.order_for_piece(grouped).has("sequence"), "and so is one issued through a group step")
+	_open_reposition(game)
+	game.set_leftover_order(StrategoGame.RED, walker, HexGrid.neighbor(game.pieces[walker].position, HexGrid.SOUTH))
+	_expect(game.order_for_piece(walker).has("sequence"), "a reposition order is queued")
+	game.set_group_leftover_step(StrategoGame.RED, [grouped] as Array[int], HexGrid.SOUTH)
+	_expect(game.order_for_piece(grouped).has("sequence"), "and so is a grouped reposition, which used to be the one that was not")
+	game.set_suppress_order(StrategoGame.RED, archer, HexGrid.neighbor(game.pieces[archer].position, HexGrid.SOUTH))
+	_expect(game.order_for_piece(archer).has("sequence"), "and so is an Archer's shot")
 
 
 func _test_who_holds_the_ground_a_side_just_took() -> void:

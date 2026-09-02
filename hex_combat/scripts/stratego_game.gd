@@ -1338,6 +1338,11 @@ func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], directi
 		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
 		if candidate.is_empty():
 			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
+		# Group orders are queued too, in selection order. Without this they
+		# carried no sequence at all and fell to the back of the queue, where
+		# piece id decided between them: exactly the invisible tiebreak the
+		# sequence was added to replace.
+		candidate.sequence = _next_order_sequence(candidate)
 		candidate.leftover = target
 		candidate.ranged_target = Vector2i(-1, -1)
 		candidate.ranged_target_id = -1
