@@ -59,3 +59,15 @@ at (Strength) + 2:
 Tell me the company, whether you want the bot or me as Vare, and any
 reinforcing/hiring. Then I build the Cassewick counterattack, verify it, and hand
 it over.
+
+## Decision made
+
+**Sent: the Charter Company, rebuilt** — reinforced Errant (1 → 6) and hired
+Ledger (Medium Archer). Treasury 13 → 0 (Errant 5, Ledger 8), the whole chest.
+Four fast formations, three of them bows. **Playing the bot**, with the scenario
+built to lean on the bot's real strength (defending an objective) rather than a
+rewrite of the AI.
+
+Built to `battles/06_cassewick_again.{json,md}`, loaded to `current_battle.json`.
+Verified bot-vs-bot: Halgate 18 / Vare 42 — tuned to the hard end deliberately, a
+winnable-but-difficult offensive. Ready to play.

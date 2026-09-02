@@ -34,14 +34,27 @@ debrief in `battles/05_weirgate.md`; replay `replays/05_weirgate.json`. Bastion 
 Finding logged: static ranged defence is near-unloseable for a human vs this bot;
 verification bounds "winnable," not "hard."
 
-**Turn 3 is live — `dispatch_03.md`, the counterattack on Cassewick.** Host broken,
-initiative to Halgate for the first time. A **race against a Vare relief clock** to
-retake and hold the granary town — Halgate on offence (the harder posture).
-Commander chooses: rebuild the Charter Company (fast, right for the race) or send
-the slow Gate Guard; reinforce/hire from 13 crowns. **Also offered: Claude commands
-Red live** instead of the bot, since a relief race is exactly what the bot can't
-run and a static/ passive bot makes for shooting galleries. **Battle not built yet**
-— depends on the choice (company + bot-or-Claude-as-Red), then built + verified.
+**Turn 3 decided and built — Battle 6, Cassewick Again, loaded and waiting.**
+Commander rebuilt and sent the **Charter Company** (reinforced Errant 1→6, hired
+Ledger MA; treasury 13 → 0), and chose to **play the bot** but asked me to make it
+a real opponent. Files `battles/06_cassewick_again.{json,md}`, loaded to
+`current_battle.json`. Halgate on **offence**: retake and hold the granary yard
+(`hold` [10,9], 3 rounds, 14-round limit) off a thin garrison (Distress LI 2, Cess
+LI 5) before a relief column (Writ MC 7, Chattel LC 6, Forfeit LI 6) breaks it.
+**Verified bot-vs-bot: Halgate 18 / Vare 42** — deliberately tuned to the hard end
+(a garrison-on-the-yard cut was 12%/near-unwinnable; pulling it off the square and
+trimming the relief landed ~30% for the bot attacker → hard-but-winnable for a
+human). Treasury 0 = no net if it's lost.
+
+**Bot-difficulty decision (re the commander's "adjust it as you see fit"):** did
+NOT modify `bot_policy.gd`. The bot defends a `hold` objective competently (it beat
+the human that way in Battle 4) and only attacks passively; so the scenario puts
+the human on offence against the bot defending, which is where the bot is actually
+dangerous. Chose matchup design over a risky mid-campaign AI rewrite. If a future
+turn wants the bot to *attack* well, that's the real `bot_policy.gd` work
+(piecemeal-feeding / won't-commit), still unaddressed. Note: `objective_occupy`
+(20.0) and `objective_progress` (5.0) weights already make it contest `hold`
+squares — its gap is pressing an assault, not holding.
 
 Verification harness note: throwaway-script method (crib `batch_runner.gd:_play_one`,
 load via `CampaignScenario.apply`, tally `game.winner`). Run from **`C:\stratego\new`**
