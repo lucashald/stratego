@@ -45,15 +45,22 @@ Committing to a main-phase melee stops the unit's remaining main path at the mom
 ## Combat
 
 A melee is fought between sides rather than between formations. Each side rolls
-a pool of d6 and keeps its single highest die. Score is that die plus the
-combined current Strength of every formation on that side, so Strength is
-damage and weight of numbers at once. There is no Armor stat.
+a pool of d6 and keeps its single highest die. Score is that die plus the current
+Strength of the strongest formation on that side, so Strength is damage rather
+than a cap on the roll. There is no Armor stat.
+
+Numbers are paid out in dice and nowhere else. Bringing a second formation gets
+you another die and a better chance at a high one, not a second Strength added
+into the score, so a gang wins more often without the win being a foregone
+conclusion. A side of one rolls exactly the pool a lone formation has always
+rolled, which leaves single combat unchanged.
 
 A side's pool is one die per formation it has in the fight, plus one for each of:
 
-- having the **higher combined Strength**. Comparative, so two evenly matched
-  sides give each other nothing, and chip damage that drops a side below its
-  enemy costs it this die as well as the score.
+- being the **stronger** side, comparing the best current Strength each side can
+  field. Comparative, so evenly matched sides give each other nothing, and chip
+  damage that drops a side's leader below its enemy costs it this die as well as
+  the score.
 - fielding the **uniquely heaviest** formation present. A Heavy facing Mediums
   earns it. A Heavy facing another Heavy does not, however many Mediums stand
   behind either one.
@@ -101,11 +108,12 @@ Damage has two independent sources:
   through the winner on its way down, and a draw can still draw blood. Because
   they cancel, at most one side is ever owed crit damage in a single clash.
 
-In an even fight both sides bring comparable Strength, the margin stays small,
-and a healthy formation cannot be destroyed outright. Attrition is the only way
-through one. Concentration is what changes that: several formations pooling
-their Strength can open a margin wide enough to destroy what they have
-surrounded, which is the reason to surround it.
+Because only the leading formation's Strength scores, the margin stays inside the
+range a formation can absorb, and a healthy one cannot be destroyed in a single
+melee however many enemies it faces. Attrition is still the only way through one.
+What numbers buy is consistency: extra dice mean a side keeps a good die far more
+often, so a gang wins most exchanges and takes its target apart across several
+rounds rather than deleting it in one.
 
 ### Holding the hex
 
