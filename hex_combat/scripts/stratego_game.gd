@@ -1580,7 +1580,7 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 			var path: Array = order_for_piece(int(piece.id)).get("path", [])
 			var taken := int(piece.steps_taken)
 			if path.size() > taken:
-				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[taken], "is_attacker": true, "impulse": impulse})
+				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[taken], "is_attacker": true, "arrival": impulse})
 		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse))
 		_record_all_sightings()
 	ready_players.clear()
@@ -1607,7 +1607,7 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 		if not _eligible_for_leftover(piece): continue
 		var target: Vector2i = order_for_piece(int(piece.id)).get("leftover", Vector2i(-1, -1))
 		if target.x >= 0 and are_adjacent(piece.position, target):
-			leftover_proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": target, "is_attacker": true, "impulse": 4})
+			leftover_proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": target, "is_attacker": true, "arrival": 4})
 	if not leftover_proposals.is_empty():
 		leftover_events.append_array(_resolve_movement_batch(leftover_proposals, "leftover"))
 	_record_all_sightings()
@@ -1692,7 +1692,9 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 		var occupant := piece_at(destination)
 		var occupant_leaves := not occupant.is_empty() and int(occupant.id) in proposal_by_id and int(occupant.id) not in swapping
 		if not occupant.is_empty() and not occupant_leaves:
-			participants.append({"piece_id": int(occupant.id), "from": destination, "to": destination, "is_attacker": false, "impulse": arrivals[0].impulse})
+			# Arrival 0: it was standing here before the round started, so nothing
+			# that moves this round can reach the square ahead of it.
+			participants.append({"piece_id": int(occupant.id), "from": destination, "to": destination, "is_attacker": false, "arrival": 0})
 		if participants.size() == 1:
 			ordinary_moves.append(arrivals[0])
 			continue
@@ -1774,6 +1776,26 @@ func _opposing_comparators(piece_id: int, participant_ids: Array[int]) -> Array[
 	return [rank, strength]
 
 
+## Braced against whoever was slower to the square. A formation defends when no
+## enemy reached the contested hex before it or alongside it, which makes a
+## stationary occupant the defender against everyone, an early arrival the
+## defender against whatever follows it in, and two enemies landing on the same
+## impulse a fight where neither had time to set. Allies that arrive together are
+## all braced: the die is earned by beating the enemy there, not each other.
+##
+## Distinct from `is_attacker`, which only records whether a formation moved into
+## this fight or was already standing in it. That still decides where a loser
+## falls back to, and a formation can very well have moved and be braced.
+func _is_defending(piece_id: int, participants: Array) -> bool:
+	var own := int(_participant_for(piece_id, participants).get("arrival", 0))
+	for participant: Dictionary in participants:
+		var other_id := int(participant.piece_id)
+		if other_id == piece_id: continue
+		if are_allied_players(int(pieces[piece_id].player), int(pieces[other_id].player)): continue
+		if int(participant.get("arrival", 0)) <= own: return false
+	return true
+
+
 func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, batch_name: String) -> Dictionary:
 	var scores: Dictionary = {}
 	var raw_rolls: Dictionary = {}
@@ -1789,10 +1811,9 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 	# pool depends on who else turned up to the fight.
 	for id in participant_ids:
 		var comparators := _opposing_comparators(id, participant_ids)
-		var participant := _participant_for(id, participants)
-		var is_attacker := bool(participant.get("is_attacker", false))
+		var defending := _is_defending(id, participants)
 		var piece_role := String(pieces[id].role)
-		var role_die: bool = (is_attacker and piece_role == ROLE_CAVALRY) or (not is_attacker and piece_role == ROLE_INFANTRY)
+		var role_die: bool = (piece_role == ROLE_CAVALRY and not defending) or (piece_role == ROLE_INFANTRY and defending)
 		var count := _combat_dice_count(pieces[id], comparators[0], comparators[1], role_die)
 		var pool := _roll_dice_pool(count)
 		scores[id] = int(pool.high) + int(pieces[id].strength)
@@ -1822,7 +1843,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		# tie itself does not point to one.
 		var defenders_among_top: Array[int] = []
 		for id in top_ids:
-			if not bool(_participant_for(id, participants).get("is_attacker", false)):
+			if _is_defending(id, participants):
 				defenders_among_top.append(id)
 		if defenders_among_top.size() == 1:
 			unique_winner_id = defenders_among_top[0]
@@ -1836,8 +1857,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		var defenders_among_top2: Array[int] = []
 		var all_attackers_are_cavalry := true
 		for id in top_ids:
-			var participant := _participant_for(id, participants)
-			if bool(participant.get("is_attacker", false)):
+			if not _is_defending(id, participants):
 				if pieces[id].role != ROLE_CAVALRY: all_attackers_are_cavalry = false
 			else:
 				defenders_among_top2.append(id)

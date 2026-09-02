@@ -78,11 +78,13 @@ arrives sooner. Bracing is not sprinting. A Light stepping a single hex arrives
 on impulse 1 and out-braces nearly anything, while a Heavy that moves at all
 arrives on impulse 3 and can only defend ground it was already holding.
 
-Formations arriving on the same impulse are simultaneous and none of them is
+A formation is braced only if it reached the hex before any enemy did. Landing on
+the same impulse as an enemy means neither of you had time to set, so neither is
 braced. That covers crossing-path enemies, who are both attacking, so both
-Cavalry dice can apply and neither Infantry defense die does. A reinforcement
-that shows up after the formation it came to help is attacking as well, and adds
-no defense die.
+Cavalry dice can apply and neither Infantry defense die does. Allies who arrive
+together are all braced, because the race that earns the die is against the enemy
+rather than against each other. A reinforcement that shows up no sooner than the
+enemy is attacking as well, and adds no defense die.
 
 ### Joining a fight
 

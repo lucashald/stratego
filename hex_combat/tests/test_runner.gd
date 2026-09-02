@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
 	_test_tie_is_a_bounce()
@@ -704,6 +705,29 @@ func _test_follower_advances_into_a_vacated_attack_square() -> void:
 	_ready_and_resolve(light_game)
 	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
 	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
+
+
+func _test_bracing_is_earned_by_arriving_first() -> void:
+	# Pins the rule the deferred melee pass will lean on, ahead of that pass
+	# existing. Today's flow can only produce arrivals of 0 and one impulse at a
+	# time, so the staggered cases below are unreachable through orders alone.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 7)
+	var ally := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(3, 2), 7)
+	var enemy := game.add_piece(StrategoGame.MEDIUM_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 7)
+	var standing: Array = [{"piece_id": holder, "arrival": 0}, {"piece_id": enemy, "arrival": 3}]
+	_expect(game._is_defending(holder, standing), "a formation already on the hex is braced against anything that moves in")
+	_expect(not game._is_defending(enemy, standing), "and whatever moved in is attacking")
+	var staggered: Array = [{"piece_id": ally, "arrival": 2}, {"piece_id": enemy, "arrival": 3}]
+	_expect(game._is_defending(ally, staggered), "reaching contested ground first is what braces you, not standing still")
+	_expect(not game._is_defending(enemy, staggered), "the slower formation attacks into it")
+	var simultaneous: Array = [{"piece_id": ally, "arrival": 3}, {"piece_id": enemy, "arrival": 3}]
+	_expect(not game._is_defending(ally, simultaneous) and not game._is_defending(enemy, simultaneous), "enemies landing on the same impulse leave neither of them set")
+	var together: Array = [{"piece_id": holder, "arrival": 2}, {"piece_id": ally, "arrival": 2}, {"piece_id": enemy, "arrival": 3}]
+	_expect(game._is_defending(holder, together) and game._is_defending(ally, together), "allies that arrive together are both braced, since the race is against the enemy")
+	var reinforced: Array = [{"piece_id": holder, "arrival": 0}, {"piece_id": ally, "arrival": 3}, {"piece_id": enemy, "arrival": 3}]
+	_expect(game._is_defending(holder, reinforced), "the formation that held the hex stays braced")
+	_expect(not game._is_defending(ally, reinforced), "a reinforcement that arrives with the enemy is attacking, not bracing")
 
 
 func _test_bounced_attacker_survives_a_filled_origin() -> void:
