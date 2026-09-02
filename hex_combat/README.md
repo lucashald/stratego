@@ -1,229 +1,958 @@
-# WEGO Formations — Hex + Combat Prototype
+# WEGO Formations: Hex + Combat
 
-This isolated Godot project combines the flat-top hex battlefield with the comparative-dice combat rewrite. North and south are straight movement directions, movement and range share one six-neighbour metric, and battles use d6 pools, comparative Weight and Strength dice, role dice, margin damage, and cancelling critical 6s.
+Master reference for the `hex_combat` prototype. Everything here was read out of
+the code at commit `a8986c8` and checked by running the suite and the batch
+runner. Where an older document in this repo disagrees with this file, this file
+is right and the older one is stale.
 
-The stable square-grid development game remains in `../new/`.
+A Godot 4 tactics game. Two or four armies write orders at the same time, then
+the engine resolves everything simultaneously: movement in three impulses, then
+melee, then a post-clash action phase, then archery. Combat is d6 pools where a
+side keeps its single highest die.
 
-## Play
+## Contents
 
-Run this folder's **Play Stratego.bat**, or open this directory in Godot 4.3 or newer.
+- [Orientation](#orientation)
+- [Running it](#running-it)
+- [The board](#the-board)
+- [Formations](#formations)
+- [A round, end to end](#a-round-end-to-end)
+- [Planning and orders](#planning-and-orders)
+- [Movement resolution](#movement-resolution)
+- [Melee](#melee)
+- [Retreats](#retreats)
+- [The post-clash phase](#the-post-clash-phase)
+- [Ranged fire](#ranged-fire)
+- [Fog and information](#fog-and-information)
+- [Objectives](#objectives)
+- [Scenarios](#scenarios)
+- [Deployment](#deployment)
+- [How a battle ends](#how-a-battle-ends)
+- [Replays](#replays)
+- [Campaign battles](#campaign-battles)
+- [The bot](#the-bot)
+- [Command bridge](#command-bridge)
+- [Balance tooling](#balance-tooling)
+- [Interface](#interface)
+- [Code map](#code-map)
+- [Current status](#current-status)
 
-The default game is the two-player bridge scenario. **New Meeting** starts the symmetric centre-hex battle instead. You command the Blue attacker; Red is controlled by the bot. Open **Settings** to start a four-player fog battle, watch a four-bot exhibition, clear orders, withdraw, or manage replays.
+## Orientation
 
-During planning:
+`C:\stratego` holds several sibling Godot projects. They share a lineage and a
+lot of copied code, and they are not kept in sync.
 
-1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
-2. Click one of the six on-map direction arrows, which are controls in their own right: they sit on the boundary between the two hexes so banners stay readable, and a click on one belongs to the arrow rather than to whichever hex the pixel happens to fall in. Right-clicking one still reaches the board underneath. Or use the inspector's six-direction **Move Selection** pad to draw the main path. Keyboard shortcuts are W for north, X/S for south, Q/A for northwest, E for northeast, Z for southwest, and D for southeast. With several formations selected, that direction is applied to every member that still has unused movement.
-3. Ghosts numbered 1–3 show the hex each formation intends to occupy on each impulse.
-4. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, group, and cancel-all changes.
-5. Right-click a formation on your own side to **Support** it: the selected formations adjacent to it move up onto its hex. That is the same order as walking into an ally, named so it reads as a decision. If a fight is open on the hex when they arrive they join it; if the hex is quiet they bounce off harmlessly. Walking into your own line without asking for support is still refused.
-6. After the main clash resolves, every eligible formation receives one post-clash action. Move one adjacent hex, or select an Archer and right-click for **Attack** or **Volley**. Attack follows a targeted formation through reposition; Volley aims at a fixed hex. Both have a maximum range of two hexes.
-7. Choose **End Planning** when planning is complete.
+| Folder | What it is |
+| --- | --- |
+| `hex_combat/` | This project. Hex board plus the side-based dice combat. The active one. |
+| `new/` | Square-grid predecessor. Older combat rules. |
+| `hex/` | Hex board with the older combat rules. |
+| `combat/` | Untracked working copy, not part of the repo. |
+| `classic/` | The original turn-based Stratego with a trained policy. Unrelated to WEGO. |
 
-Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, clicking or dragging on the minimap centres the main battlefield on that location, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
+Nothing in `hex_combat` imports from the siblings. Treat it as self-contained.
 
-The contextual movement-help panel can be dismissed with its **X** button. Dismissing it also hides the selected-formations inspector and Move Selection pad. Use **Help** beside the zoom controls to restore the contextual panels together.
+## Running it
 
-Resolution is presented event-by-event on the battlefield. In a human game, every combat, consequential retreat, and opposing-side tie remains on screen until **Next** is clicked; harmless friendly congestion is applied without adding a click-through card. A fight shows itself as it arrives: each side's dice land on the contested hex, the damage follows, and any formation the fight killed is drawn where it fell rather than having already gone. The dice are decided when the round resolves, well before any of it is drawn, since replay verification depends on the exact stream, so the landing reads the result out rather than producing it. **Order Reposition** on the final main-resolution event opens the post-clash action phase. Every eligible formation may hold or move one adjacent hex; an Archer instead may Attack a visible formation or Volley a visible hex within range two. Click **End Reposition** to reveal all choices. Reposition movement, its battles, and retreats resolve first, followed by all surviving Archer attacks. The whole reposition is a single card listing who went where, rather than one card per formation; its battles and retreats still get their own. **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card is built around sides, because a side rolls once: banners are grouped with the blades between the sides rather than between every pair, and the pool, kept die, Strength, score, surviving 6s and damage are each shown once per side. Only Strength still standing is listed per formation, and only for a side holding more than one. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, reposition, and ranged attacks.
+Godot 4 is required. The launchers look for
+`C:\situation-room\Godot_v4.3-stable_win64.exe` first, then a portable copy
+beside the launcher, then `godot.exe` or `godot4.exe` on `PATH`. `project.godot`
+records `config/features="4.7"` because a newer editor last wrote it; 4.3 still
+runs it.
 
-The game rejects orders from one player that would make friendly formations occupy or swap through the same empty hex on the same impulse. During reposition, Cavalry may deliberately enter an enemy-held hex; Infantry and Archers may enter only empty or friendly hexes. Two of your own Cavalry may be sent at the same enemy-held hex, as in the main phase, and arrive together as one side against whoever is standing there. A defender may still slip the attack by repositioning away in the same wave, but the ground it gives up is taken by the first of the attackers rather than left empty; the rest bounce. Whether it actually gets away is settled by its own step: if that step is refused and it never leaves, the attack it was running from happens after all. Converging on a hex that was already open is still plain congestion and still bounces everyone. Opposing formations that simultaneously reposition into the same empty hex still fight, with every arrival counted as an attacker. Friendly congestion and bounce rules still handle formations converging on a quiet friendly-held hex, but a friendly hex with a fight pending on it is joined as support rather than bounced off.
+Play the game:
 
-**Withdraw** is available during planning. It immediately concedes the scenario while preserving every surviving formation at its current Strength. It does not revive destroyed units. There is no automatic material-collapse rule yet.
+```bash
+"C:/situation-room/Godot_v4.3-stable_win64.exe" --path .
+```
 
-**Export Replay** is available between rounds, during the click-through combat review, while waiting for post-clash actions, and after battle. It writes a timestamped JSON file to this project's `replays` folder and updates `replays/last_replay.json` for the **Replay Last** slot. An in-progress export includes the current round through the resolved main clash, so an odd result can be saved before continuing. The versioned file records scenario setup, seed, orders, the exact dice stream, and verification digests. **Replay Last** rebuilds the saved state through the authoritative engine and rejects any divergence.
+Run the rules suite:
 
-## Round sequence
+```bash
+"C:/situation-room/Godot_v4.3-stable_win64_console.exe" --headless --path . --script res://tests/test_runner.gd
+```
 
-1. Main movement resolves simultaneously in three impulses: Light moves on 1, 2, and 3; Medium moves on 2 and 3; Heavy moves only on 3. Only movement steps actually attempted are spent, including an attempted entry that ends in a bounce. Entering a contested hex commits a formation to the fight standing there and ends its movement for the round, but nothing is rolled yet.
-2. Once all three impulses have moved, every melee resolves in a single pass, followed by all retreats simultaneously. Holding the dice until movement is finished is what lets formations that arrive on different impulses fight the same battle together.
-3. The game pauses for post-clash actions. Every surviving formation that did not lose, suffer an opposing-side tie, or reach the two-melee limit may hold or reposition one hex. An Archer may shoot instead of repositioning.
-4. Reposition movement resolves simultaneously. Cavalry may deliberately attack an occupied enemy hex; other roles cannot. Opposing formations that meet in a formerly empty hex fight as attackers.
-5. Reposition battles and retreats finish, then every still-eligible Archer attack resolves simultaneously. The shot's final range determines its accuracy: range 1 adds one Archer die and range 2 does not.
-6. Victory is checked at the end of the round.
+Run a bot-vs-bot batch:
 
-Committing to a main-phase melee stops the unit's remaining main path at the moment of contact, whatever the fight later decides. Winning still leaves it free to take its post-clash action. Losing, or tying with an opposing side, ends the unit's actions for the round. An Archer that chooses to shoot loses that shot if it is defeated or tied in a reposition battle before ranged fire resolves.
+```bash
+"C:/situation-room/Godot_v4.3-stable_win64_console.exe" --headless --path . --script res://scripts/batch_runner.gd -- --games 120 --scenario highfield
+```
 
-## Combat
+Take a screenshot of the real interface without a person watching:
 
-A melee is fought between sides rather than between formations. Each side rolls
-a pool of d6 and keeps its single highest die. Score is that die plus the current
-Strength of the strongest formation on that side, so Strength is damage rather
-than a cap on the roll. There is no Armor stat.
+```bash
+"C:/situation-room/Godot_v4.3-stable_win64.exe" --path . --script res://scripts/screenshot.gd -- --out shot.png --scenario meeting --reveal 1
+```
 
-Numbers are paid out in dice and nowhere else. Bringing a second formation gets
-you another die and a better chance at a high one, not a second Strength added
-into the score, so a gang wins more often without the win being a foregone
-conclusion. A side of one rolls exactly the pool a lone formation has always
-rolled, which leaves single combat unchanged.
+The `.bat` files (`Play Stratego.bat`, `Test Stratego.bat`,
+`Train Stratego Bot.bat`, `Evaluate Stratego Bot.bat`) wrap the same commands
+and pause at the end. `Test Stratego.bat` first runs the editor for two frames
+so Godot builds its script-class index on a fresh checkout, which matters
+because the code leans on `class_name` globals.
 
-A side's pool is one die per formation it has in the fight, plus one for each of:
+Launching goes straight into the bridge scenario with the player commanding
+Blue. Everything else is reached from the Settings drawer.
 
-- being the **stronger** side, comparing the best current Strength each side can
-  field. Comparative, so evenly matched sides give each other nothing, and chip
-  damage that drops a side's leader below its enemy costs it this die as well as
-  the score.
-- fielding the **uniquely heaviest** formation present. A Heavy facing Mediums
-  earns it. A Heavy facing another Heavy does not, however many Mediums stand
-  behind either one.
-- each **Cavalry attacking**, and each **Infantry defending**.
+## The board
 
-### Who is defending
+20 by 20 flat-top hexes in odd-column offset layout, identified in the engine as
+`hex_odd_q_flat`. Coordinates are `Vector2i(column, row)`. Odd-numbered columns
+sit half a hex lower than even ones. `HexGrid` owns every adjacency, distance
+and pixel operation; nothing else should compute them.
 
-Whoever reached the contested hex first is defending. Everyone who arrived later
-is attacking, whichever side they are on. A formation already standing there
-arrived before the round began and defends against all comers.
+North and south are straight lines, which is why this orientation was chosen.
+The six directions are numbered:
 
-Arrival impulse works out to `3 - unused movement`, so a formation that spends
-its whole allowance always arrives on impulse 3, and one that holds a step back
-arrives sooner. Bracing is not sprinting. A Light stepping a single hex arrives
-on impulse 1 and out-braces nearly anything, while a Heavy that moves at all
-arrives on impulse 3 and can only defend ground it was already holding.
+| Constant | Value |
+| --- | --- |
+| `NORTH` | 0 |
+| `NORTH_EAST` | 1 |
+| `SOUTH_EAST` | 2 |
+| `SOUTH` | 3 |
+| `SOUTH_WEST` | 4 |
+| `NORTH_WEST` | 5 |
 
-A formation is braced only if it reached the hex before any enemy did. Landing on
-the same impulse as an enemy means neither of you had time to set, so neither is
-braced. That covers crossing-path enemies, who are both attacking, so both
-Cavalry dice can apply and neither Infantry defense die does. Allies who arrive
-together are all braced, because the race that earns the die is against the enemy
-rather than against each other. A reinforcement that shows up no sooner than the
-enemy is attacking as well, and adds no defense die.
+One metric covers movement, vision and range: hex distance, computed by
+converting to axial coordinates. A hex has 6 neighbours, radius 2 covers 19
+cells, radius 4 covers 61.
 
-### Joining a fight
+Terrain is one of four kinds. Open is the default and is stored as the empty
+string.
 
-Moving onto a hex where a fight is already pending joins that fight instead of
-bouncing off it. An enemy joins as another attacker and a friend joins as
-support. A crossing fight involves both of the hexes its participants are
-trading, so entering either one joins it.
+| Terrain | Passable | Used by |
+| --- | --- | --- |
+| open | yes | everywhere |
+| `lake` | no | the four-lake map |
+| `water` | no | the bridge river |
+| `bridge` | yes | the four crossing hexes |
 
-Committing to a fight vacates the hex behind you, so an ally queued there can
-advance into it on the same impulse and a winning line does not tear itself
-apart as it moves.
+`is_blocked_terrain` is true for lake and water. The lake map places four 2x2
+blocks at columns 7-8 and 11-12, rows 7-8 and 11-12. The bridge map floods row
+9 across the whole width and then marks columns 8, 9, 10 and 11 as bridge.
+
+## Formations
+
+Nine fighting types, one per combination of three roles and three weights, plus
+a Flag.
+
+| | Light | Medium | Heavy |
+| --- | --- | --- | --- |
+| Infantry | `LI` | `MI` | `HI` |
+| Archer | `LA` | `MA` | `HA` |
+| Cavalry | `LC` | `MC` | `HC` |
+
+Weight sets movement and feeds one comparative combat die. Role decides which
+combat die a formation can earn. Strength is both damage capacity and a term in
+the combat score.
+
+| Weight | Movement | First impulse it moves on |
+| --- | --- | --- |
+| light | 3 | 1 |
+| medium | 2 | 2 |
+| heavy | 1 | 3 |
+
+The first impulse is `4 - movement`, so everything finishes moving on impulse 3
+regardless of speed.
+
+Strength is 7 for every type in `PIECE_DEFINITIONS`. That uniformity is
+deliberate. Weight, Role and dice decide a fresh fight; Strength differences only
+appear once someone has been hurt, or when a scenario or campaign battle sets
+explicit per-formation values. `add_piece` takes a `strength_override` for that.
+
+A Flag has no role, no weight, strength 0, and never moves. It only exists in the
+two four-corner scenarios. Archers cannot target it.
+
+## A round, end to end
+
+1. **Planning.** Every player writes orders for every formation at once. A path
+   may be up to the formation's movement allowance.
+2. **Main movement**, three impulses. Light moves on 1, 2 and 3; Medium on 2 and
+   3; Heavy only on 3. Contact with an enemy opens a fight but rolls nothing:
+   the formations involved stop moving and the fight is held open.
+3. **Melee.** Once all three impulses are done, every fight opened during them is
+   rolled in one pass, then all retreats from that pass resolve together.
+4. **Post-clash planning.** The engine pauses. Every surviving formation that did
+   not lose, did not bounce off an opposing tie, and has not already fought twice
+   gets one action.
+5. **Reposition.** Post-clash movement resolves as a single wave, with its
+   battles and retreats.
+6. **Archery.** Every surviving declared shot fires simultaneously.
+7. **End of round.** Victory is checked, then the round number advances.
+
+Holding fights until all three impulses have moved is the load-bearing detail. A
+Light that made contact on impulse 1 and the Heavy that reached the same hex on
+impulse 3 fight one battle together, which is impossible if contact resolves
+where it happens.
+
+Phases are `deployment`, `planning`, `leftover_planning`, `resolving` and
+`game_over`. The engine calls the post-clash phase "leftover" throughout;
+the interface calls it "reposition".
+
+## Planning and orders
+
+An order is a path of adjacent passable hexes, no longer than the formation's
+movement allowance. Orders are stored per player, per piece, and each carries a
+`sequence` number recording when the player issued it. That sequence is the
+final tiebreak for who takes contested ground.
+
+A player's own orders are validated against each other before being accepted.
+The engine refuses a set of orders where two of your own formations would:
+
+- occupy the same hex on the same impulse, when that hex is empty or holds an
+  ally
+- swap through each other
+- end the round on the same hex
+
+Two of your own formations *may* be sent at the same enemy-held hex, at any mix
+of speeds. Committing a second wave against a defender the first attack might
+not beat is a real decision. Because melee now waits for every impulse, both
+attackers end up in the same fight whatever their speeds.
+
+Walking into your own line is refused by default, because it is usually a
+misclick. **Support** is the way to ask for it deliberately: right-click a
+formation on your own side and the adjacent selected formations are ordered onto
+its hex. Resolution is unchanged by the naming. If a fight is open on that hex
+when they arrive they join it; if the hex is quiet they bounce off harmlessly.
+
+`strict_friendly` is a parameter on the order calls. The bot passes strict so
+that a rejection prunes its own colliding candidates. Permissive callers accept
+that a projected collision may never happen, because the occupant can move, win
+its fight and advance, or be killed.
+
+## Movement resolution
+
+Every proposed step costs one movement point whether or not it lands. A bounce
+is charged. A Light gets three attempts in total, however it spends them.
+
+Within one batch, proposals are classified in this order:
+
+1. **Joining an open fight.** If the destination is a hex with a pending battle
+   on it, the formation joins that battle, whichever side is standing there and
+   whether or not anyone still is. Settled first, so a contested hex is never
+   mistaken for open ground.
+2. **Swaps.** Two formations trading hexes. Enemies fight a crossing battle;
+   allies collide.
+3. **Destination groups.** Everyone else, grouped by target hex. An occupant that
+   is not leaving joins as a defender with arrival 0. More than one team present
+   means a battle; one team means an allied collision.
+
+A lone mover takes an empty hex and bounces off an occupied one
+(`occupied_after_resolution`).
+
+Allied collisions carry no round-status penalty. A stationary formation keeps its
+own path. A mover may retry on a later impulse only when it queued behind that
+stationary formation; converging movers stop this path so they do not repeat the
+same collision every impulse.
+
+Two cases make an allied collision into something else, decided after the
+ordinary moves have been placed, because only then is it known whether the hex's
+holder actually got away:
+
+- The holder was expected to leave, and did, leaving the hex empty. The first
+  claimant by placement order takes the ground rather than everyone bouncing off
+  an attack that was merely dodged. The rest bounce.
+- The holder was expected to leave and failed, so an enemy is still standing
+  there. The formations booked as congestion are attacking it after all, and a
+  battle opens.
+
+## Melee
+
+A fight is scored by **side**, not by formation. Each side rolls one pool and
+keeps its single highest die.
+
+### Pool size
+
+A side's pool is one die per formation it brought, plus:
+
+- **+1 if its Strength is the highest**, comparing the strongest single formation
+  on each side. Comparative, so equals give each other nothing.
+- **+1 if its Weight is the highest**, comparing the heaviest formation on each
+  side. A Heavy earns nothing against another Heavy however many Mediums stand
+  behind either of them.
+- **+1 per formation** that is Cavalry and not braced, or Infantry and braced.
+
+Numbers pay out in dice here and nowhere else. That is the whole reason Strength
+scores off the leading formation alone: stacking both would let a gang open a
+margin wide enough to delete a healthy formation on contact.
+
+### Braced
+
+A formation is braced when no enemy reached the contested hex before it or
+alongside it. Arrival 0 is the stationary occupant, so it is braced against
+everyone. An early arrival is braced against whatever follows it in. Two enemies
+landing on the same impulse are both unbraced. Allies arriving together are all
+braced: the die is earned by beating the enemy there, not each other.
+
+Braced is not the same as `is_attacker`, which only records whether a formation
+moved into the fight. `is_attacker` still decides where a loser falls back to,
+and a formation can have moved and still be braced.
+
+### Score and outcome
+
+Score is the kept die plus the side's highest current Strength. There is no
+Armor stat, and no cap on the roll beyond the die itself: the most any pool ever
+scores off the dice is 6, so extra dice buy reliability rather than a bigger
+ceiling.
+
+The unique highest-scoring side wins. A tie across opposing sides is a bounce:
+nobody took the hex, every survivor returns to where it came from and is done for
+the round.
+
+Two experimental toggles, both off by default, break that tie instead. Both
+require exactly one of the tied sides to be braced.
+
+| Flag | Behaviour |
+| --- | --- |
+| `defender_wins_ties` | The braced side wins any tie. |
+| `defender_resists_charge_ties` | The braced side wins only when everything that came at it was Cavalry, the matchup where both role dice cancel. |
+
+The batch runner exposes them as `--defenderties 1` and `--chargeties 1`.
 
 ### Damage
 
-Damage has two independent sources:
+Two independent sources, and every formation on a side takes the same amount.
 
-- **The score margin**, paid by every formation on the losing side. A tie costs
-  nobody a margin.
-- **Surviving 6s.** Every 6 a side rolls is one extra damage to the other side,
-  but 6s cancel across the two sides one for one; a 6 each is worth nothing to
-  either, and one side's own two 6s do not cancel each other. Unlike the margin
-  these land whatever the scores did, so a side being overrun can still put one
-  through the winner on its way down, and a draw can still draw blood. Because
-  they cancel, at most one side is ever owed crit damage in a single clash.
+- **The margin**, paid only by the losing side. A tie costs nobody a margin.
+- **Surviving 6s.** Every 6 rolled is one extra damage, but 6s cancel across the
+  two sides one for one. A 6 each is worth nothing to either; your own two 6s do
+  not cancel each other. These land whatever the scores did, so a side being
+  overrun can still put one through the winner on its way down, and a level fight
+  can still draw blood. Because they cancel, at most one side is ever owed crit
+  damage in a single clash.
 
-Because only the leading formation's Strength scores, the margin stays inside the
-range a formation can absorb, and a healthy one cannot be destroyed in a single
-melee however many enemies it faces. Attrition is still the only way through one.
-What numbers buy is consistency: extra dice mean a side keeps a good die far more
-often, so a gang wins most exchanges and takes its target apart across several
-rounds rather than deleting it in one.
+Strength at or below zero destroys the formation.
 
-### Holding the hex
+### Taking the ground
 
-The higher score wins the hex for its side. Equal scores are a bounce, and every
-surviving participant returns to its previous hex and is done for the round.
+The winning side claims the hex in **placement order**:
 
-Each survivor on the winning side then takes the hex it was ordered into, if that
-hex is still free when it is placed, and otherwise returns where it started. If
-the square it started from has been filled too, normally by the ally that
-advanced into the gap behind it, it falls back to whichever neighbouring hex
-leads most directly away from the contested one. All six are tried before a
-formation that never lost its fight is destroyed for standing in traffic, which
-is more forgiving than the three options a retreat gets.
-Claims are settled in order: a formation already standing on the hex first, so a
-defender that held its ground keeps it and its own reinforcements cannot shove it
-off; then the strongest, so ground a side has taken is held by the formation best
-able to keep it; then whoever arrived first; and last the order you issued, so
-two formations alike in every other way are separated by which one you committed
-first rather than by anything you cannot see. In an ordinary fight every
-attacker was ordered into the same hex, so one takes it and the rest come home.
-In a crossing fight the participants were ordered into different hexes, so an
-advancing line can take both and stay together.
+1. A formation already standing there beats everything. Its own reinforcements
+   cannot shove it off.
+2. Then current Strength, so among formations that moved in, the strongest takes
+   the ground. Arrival is Weight rather than intent, so ordering by arrival left
+   a won hex garrisoned by the formation least able to hold it.
+3. Then arrival.
+4. Then the order the player issued, by `sequence`.
 
-Every formation on the losing side retreats.
+Each winner in turn tries to reach its own intended destination. In an ordinary
+fight everyone wanted the same hex, so one claim lands and the rest come home. In
+a crossing fight the destinations differ and an advancing line keeps its shape.
 
-Retreats first use the neighbouring hex most directly away from the strongest opposing formation, measured by current Strength now that score belongs to the side rather than to any one formation, with an earlier arrival breaking a tie. If that exact hex contains a friendly formation, the loser shunts into the adjacent left-hand retreat hex, then the right-hand one, and past those into any neighbouring hex it can still reach, widening until it finds one. Only a formation with no free neighbour at all is lost to congestion, so a side moving reinforcements up behind its own line no longer kills the formations falling back into it. An enemy in the direct retreat hex still destroys the loser without allowing a shunt; the same is true of water, lake terrain, and the board edge. Retreats are evaluated together, once the round's melee pass has resolved every battle. Enemy retreats entering the same previously empty hex fight a retreat battle. The comparative Weight and Strength dice still apply, but no role die does: nobody there is charging or braced. The loser is destroyed and a tie destroys both, with no further retreat.
+A winner that cannot take its destination returns to where it came from. If that
+hex was filled in the meantime, normally by the ally that advanced into the gap
+behind it, it falls back to a free adjacent hex chosen by how directly it leads
+away from the contested ground, and is only destroyed if nothing at all is free.
+A formation that did not lose its fight should not die of traffic.
 
-A shot is a contest, not a threshold. The Archer rolls a base die plus the
-heavier and stronger dice, plus one more for a **short** shot; the target rolls
-the base die plus its own heavier and stronger dice, and never gets a role or
-range die. The Archer wins the contest only if its score is strictly higher,
-which is worth the margin. Surviving 6s are added on top and land either way,
-so an Archer that loses the contest outright still chips for any 6 the target
-failed to match - a hopeless shot is never fired for literally nothing, and the
-target's own 6s are its only answer. A miss that still drew blood is reported
-as a graze rather than a hit. Range-1 fire is more accurate, while firing from
-range 2 keeps only the advantage of distance.
+The losing side retreats. Winning ends a formation's main path but not its
+post-clash action. Losing, or bouncing off an opposing tie, ends its round.
 
-Ranged focus fire is simultaneous. All valid shots resolve and excess damage is lost.
+## Retreats
 
-Archers aimed at the same hex may loose together or apart. Right-clicking a hex
-an ally is already volleying offers **Join Volley** beside Attack and Volley, and
-a joined Volley is one contest: a die per Archer, the comparative dice the best
-of them earns, an accuracy die for each Archer already at range 1, and the
-strongest Archer's Strength added to the kept die. The trade runs both ways.
-Massing turns several weak contests into one strong one, but it is a single
-contest paying a single margin, while firing apart gives independent chances that
-can each draw blood and each graze on a surviving 6 even after losing.
+A loser's direct retreat hex is:
 
-Only a Volley can be joined. Aimed fire tracks a formation, and a pool of Archers
-tracking one moving target has no clean answer when it moves out from under some
-of them, so aimed shots stay solo. An Archer facing a hex somebody is volleying
-therefore has three choices: aim at what is standing there, volley the hex on its
-own account, or join the volley.
+- the hex it came from, if it was an attacker in a non-crossing fight
+- otherwise the neighbour most directly away from the strongest surviving
+  opposing formation, with the earlier arrival breaking a tie. Formations
+  destroyed in the same clash are only considered if nothing on that side is
+  left standing.
+
+If that hex is off the board, blocked terrain, or enemy-held, the loser is
+destroyed. No shunt is allowed past an enemy.
+
+If it holds a friendly formation, the loser shunts. Treating directly away as 6
+o'clock, it tries in order: left (7 o'clock), right (5 o'clock), wide left, wide
+right, and backward. If none of the five is free, it dies of friendly congestion.
+
+Retreats from one batch resolve together, so two of them can want the same hex:
+
+- **Two allies** into one hex destroys both.
+- **Two enemies** into one hex fights a retreat battle. This is still scored
+  per formation rather than per side, with the comparative Weight and Strength
+  dice but no role die, because nobody there is charging and nobody is braced on
+  ground they meant to hold. The loser is destroyed, a tie destroys both, and
+  there is no further retreat.
+
+## The post-clash phase
+
+Every surviving formation gets one action, so long as it is movable, its round
+status is `ready` or `won`, and it has fought fewer than two melees this round.
+
+The action is one of:
+
+- hold
+- move one adjacent hex
+- for an Archer, declare a shot instead of moving
+
+Cavalry may deliberately reposition into an enemy-held hex. Infantry and Archers
+may enter only empty or friendly hexes.
+
+The same friendly-collision rules apply, with two exceptions. Any number of
+friendly follow-ups may enter a hex their own stationary formation currently
+holds. And two of your own may be sent at one enemy-held hex, exactly as the main
+phase allows: reposition is a single wave, so they arrive together, neither is
+braced, and they fight as one side. Two of your own swapping is still refused.
+
+Reposition movement resolves as an ordinary movement batch, so its battles roll
+where they happen rather than being held open. Its retreats follow. Then archery.
+
+An Archer that chose to shoot loses the shot if it is defeated or tied in a
+reposition battle before ranged fire resolves.
+
+## Ranged fire
+
+Only Archers, only at range 1 or 2, and only at something the player can see.
+There is no blind fire into fog. An Archer cannot target its own hex, an ally, or
+a Flag.
+
+Three orders, all declared during the post-clash phase:
+
+| Order | Targets | Notes |
+| --- | --- | --- |
+| Attack | a formation, by id | Follows it through reposition. Never pools. |
+| Volley | a fixed hex | Hits whoever holds it after reposition resolves. |
+| Join Volley | a hex an ally is already volleying | Pools into one contest. |
+
+Range is judged when the arrow is loosed, not when the order is written. A
+tracked target that closes to range 1 grants the same accuracy die as any other
+adjacent target. A declared shot whose target is gone or out of range at fire time
+is reported as a fizzle rather than silently dropped.
+
+### A single shot
+
+A shot is a contest, not a threshold. Both sides roll.
+
+- **Archer**: one base die, plus heavier, plus stronger, plus one for a short
+  (range 1) shot. Range 2 gets no accuracy die.
+- **Target**: one base die, plus heavier, plus stronger. Never a role die and
+  never a range die, because it is being shot at rather than shooting back.
+
+Score is the kept die plus that formation's Strength. The Archer hits only if its
+score is strictly higher, which is worth the margin. Surviving 6s are added on
+top and land either way, so an Archer that loses the contest outright still chips
+for any 6 the target failed to match. The target's own 6s are its only answer.
+The Archer never takes damage back.
+
+A miss that still drew blood is reported as a **graze**, not a miss.
+
+### A massed volley
+
+Allies who joined a Volley loose as one contest, scored the way a side is scored
+in melee. Pool is one die per Archer, plus one more per Archer already at range 1,
+plus the heavier and stronger dice earned by the best of them. Score is the kept
+die plus the strongest Archer's Strength.
+
+The trade runs both ways. Massing turns several weak contests into one strong
+one, but it is a single contest paying a single margin, while firing separately
+gives independent chances that can each draw blood and each graze on a surviving
+6 even when they lose.
+
+The lowest-numbered ally volleying on its own account leads a pool. Aimed shots
+never join one: a pool of Archers tracking one moving target has no clean answer
+when it moves out from under some of them but not others.
+
+Focus fire is simultaneous. Every valid shot resolves against the target's
+pre-fire state, damage is summed, and excess is lost.
 
 ## Fog and information
 
-Fog uses a four-hex radius. Seeing an enemy during any impulse records that it was seen even if it leaves sight before the round ends. Observed speed intentionally reveals Weight. Combat reveals role, Weight, and current Strength while the target remains in sight. With private combat information enabled, detailed results go only to the participating players; spectator view is omniscient.
+Vision is a radius of 4 hexes around every one of a player's own formations.
+Sightings are recorded at setup, after every impulse, and after every phase, so
+seeing an enemy at any point in a round records that it was seen even if it slips
+out of sight before the round ends.
 
-## Bridge scenario
+Two levels of knowledge are tracked per piece. `seen_by` is having observed the
+hex it stood on. `revealed_to` is knowing what it actually is.
 
-- Blue attacker: twelve formations, 82 starting Strength, deployed on its board edge.
-- Red defender: twelve formations, 82 starting Strength, deployable anywhere north of the river but never on the bridge.
-- The four bridge hexes are passable; the other river hexes are impassable.
-- Blue wins by ending a round with at least 20 current Strength north of the river.
-- Red wins if Blue has not done so by the end of Round 20. The turn limit is explicitly a testing value.
+Meeting in melee reveals role, Weight and current Strength to everyone who could
+see the fight. Trading fire does the same to both the shooter and its target: an
+Archer that looses a shot has given itself away, and whoever it hit has been seen
+closely enough to be named. Without that, a ranged duel could run all match with
+neither side learning what it was shooting at, which melee never allows.
 
-## Meeting engagement
+Observed speed reveals Weight on its own, and that is intended.
 
-Both armies field the same twelve formations and deploy on their own back rank. The centre hex is the objective: hold it alone at the end of three consecutive rounds to win. Losing it for a single round resets the count, and if neither side has consolidated it by round 20 the battle is a draw.
+During the deployment phase a player sees exactly their own deployment zone and
+nothing else. Ordinary piece-radius vision would leak a glimpse of a neighbouring
+corner, because every army already exists on the board by then.
 
-Unlike the bridge crossing, trading evenly does not favour either side: the win goes to whoever holds the ground, not to whoever survives the attrition.
+`private_battle_results` sends detailed combat results only to participating
+players. Spectator view is omniscient.
 
-## Highfield
+## Objectives
 
-Two asymmetric armies fight for one central hill, the same hold-the-hex objective as the meeting, but the forces are built to opposite theories of war. **Red, the Wardens** are seven heavy formations — heavy foot and two Heavy Archers around a Heavy Cavalry, with a medium pair — that win by attrition and by holding the hill as an intact wall, but are slow and few and lose if they advance piecemeal into numbers. **Blue, the Outriders** are nine faster formations — a medium core with light horse on the wings and two bows behind — that win by reaching the hill first, flanking, and massing on the objective, and lose any straight slug. Blue commands the Outriders.
+Victory conditions are typed data, not per-scenario branches. A scenario lays its
+terrain and declares one or more objectives.
 
-Every formation on both sides starts at the same Strength. The armies differ in Weight, Role, and numbers, not in a strength total, which makes this the standard scenario that most directly tests those levers. It is tuned to a near-even bot-vs-bot result (~51/49 over 200 games) with no dead weight in either list; because the bot underplays the faster, flanking army, a human commanding the Outriders should find them a touch stronger than the bot does.
+| Type | Won by |
+| --- | --- |
+| `hold_square` | Holding one hex, alone, at the end of each of N consecutive rounds. Any round the holder is absent or an enemy is present resets that player's streak. Draw if nobody has by the turn limit. |
+| `reach_area` | Having a given total Strength inside a rectangle at the end of a round. |
+| `eliminate` | Destroying the other army. Draw if both survive to the turn limit. |
+| `survive` | Still being in the game at a given round. |
 
-## Scenarios and objectives
+Objectives resolve in declaration order, so a scenario sets its own precedence.
+The bridge attacker breaking through on the final round beats the defender's
+turn-limit win because it is declared first.
 
-Terrain and victory conditions are data rather than per-scenario branches. A scenario lays its terrain during setup and declares one or more typed objectives:
+Losing an entire army loses the game regardless of the objective, in any
+two-player objective scenario.
 
-- `reach_area` — a player wins with a given Strength inside a rectangle at the end of a round
-- `hold_square` — a player wins by holding one hex alone for a number of consecutive rounds
-- `survive` — a player wins by still standing at a given round
+Every objective reports a one-line summary of its win condition alongside its
+current progress through `describe_objectives`, so a bot or an external
+controller can play a new scenario without special-casing it.
 
-Objectives resolve in the order declared, so a scenario sets its own precedence; the bridge attacker breaking through on the final round beats the defender's turn-limit win because it is declared first. Losing an entire army loses the game regardless. Each objective reports a one-line summary of its win condition alongside its current progress, so a bot or external controller can play a new scenario without special-casing it.
+## Scenarios
 
-## Four-player mode
+Every army below starts at Strength 7 per formation, so totals are just seven
+times the formation count.
 
-Four-player mode retains the symmetric twelve-formation, 80-Strength armies plus Flags. Each color normally begins as its own side, while the engine supports assigning multiple colors to one team. Capturing a Flag eliminates that army; the last remaining army/team wins.
+### Bridge (the default)
 
-## Tests
+Blue attacks, Red defends. Twelve formations each, 84 Strength each. There is no
+deployment phase: Blue is scattered at random along its own board edge (row 19)
+and Red at random anywhere north of the river (rows 0 to 8), seeded from the
+setup seed. The four bridge hexes are passable and the rest of row 9 is not.
 
-Run this folder's **Test Stratego.bat**, or:
+Blue wins by ending a round with at least 20 current Strength north of the river.
+Red wins if Blue has not managed it by the end of round 20. The turn limit is
+explicitly a testing value.
 
-```powershell
-godot --headless --path . --script res://tests/test_runner.gd
+### Meeting
+
+Both armies field the identical twelve-formation roster, 84 Strength each, so a
+result reflects play and unit design rather than an army list. Hold the centre
+hex alone at the end of three consecutive rounds to win. Losing it for a single
+round resets the count. Draw at round 20.
+
+Deployment rows are placed symmetrically about the objective rather than on rows
+0 and 19. On an even board the centre is not equidistant from the two back ranks,
+and that one row of advantage was worth roughly 65/35.
+
+The battle line is shaped rather than shuffled: heavy foot holds the centre with
+an archer shooting over it, mediums form the second line, light troops screen the
+wings. That also fixes arrival timing, since slow formations take the short
+central path while fast ones travel the long way round the flanks.
+
+### Highfield
+
+Two asymmetric armies fight for one central hill at (10, 10), using the same
+hold-the-hex objective, on deliberately bare ground.
+
+- **Red, the Wardens.** Seven formations, 49 Strength. Heavy foot and two Heavy
+  Archers around a Heavy Cavalry, with a medium pair. Wins by attrition and by
+  holding the hill as an intact wall. Slow and few, and beaten if it advances
+  piecemeal into numbers.
+- **Blue, the Outriders.** Nine formations, 63 Strength. A medium core with light
+  horse on the wings and two bows behind. Wins by reaching the hill first,
+  flanking and massing. Loses a straight slug.
+
+Both sides start at the same per-formation Strength, so the difference is Weight,
+Role and numbers. Blue is two bodies up, and faster, which is the edge. See
+[Current status](#current-status) for what this actually measures now.
+
+### Crossroads
+
+A 2v2 team battle on the four-lake map. Red and Green are allied, Blue and Yellow
+are allied, on adjacent corners. That pairing is point-symmetric: rotate the board
+180 degrees and Team Red becomes Team Blue exactly.
+
+The win condition is the same `hold_square` primitive, and nothing about it is
+two-player specific, because the objective check loops every active player and
+scores by alliance. Either teammate holding the centre builds the team's streak.
+
+This is the only scenario that opens in the deployment phase.
+
+### Four-player
+
+Four independent armies, one per corner, 13 pieces each (12 fighting formations
+at 84 Strength, plus a Flag). Capturing a Flag eliminates that army. The last
+army or team standing wins. The engine supports assigning several colours to one
+team here as well.
+
+### Skirmish
+
+A deliberately dull control scenario for measurement. Bare board, no terrain, no
+positional objective, two facing lines `separation` rows apart, win by destroying
+the other army.
+
+Separation is the important dial. At 2 or 3 every formation is in contact
+immediately regardless of Weight, so the result reflects combat maths alone.
+Widen it and travel time re-enters. Rosters are parameters, so one matchup can be
+isolated at a time.
+
+The split is computed around the board's true centre. Truncating to
+`BOARD_SIZE / 2` compounded into a full extra cell favouring Blue at every odd
+separation, which was strong enough on its own to decide about 90% of games.
+
+### Campaign
+
+Loaded from JSON. See [Campaign battles](#campaign-battles).
+
+## Deployment
+
+Only Crossroads uses the deployment phase. The others place their armies during
+setup and start in planning.
+
+A deployment zone is that player's own corner: 4 hexes deep from their board edge
+and 11 wide from the edge's centreline, 44 cells in all. The four zones do not
+touch at that depth.
+
+Every army starts already placed at a recommended formation, which is a hand-tuned
+shape for a 4-deep corner: heavy line innermost so the slowest formations travel
+least, mediums behind, lights on the flanks at the shallowest rank, Flag at the
+literal edge. A player who deploys nothing gets exactly that.
+
+`redeploy_piece` moves one formation to another empty cell inside the zone, and is
+refused once the player has marked ready. `reset_deployment` restores the whole
+recommended layout, which is what auto-deploy does before locking in. Once every
+active player is ready, `resolve_deployment` records where everything actually
+ended up, records first sightings from those positions, and hands off to planning.
+
+Deployment placements are stored separately in the replay, because the seed alone
+reproduces the recommended formation rather than whatever a player dragged it to.
+
+## How a battle ends
+
+At the end of each round, in order:
+
+1. Flag captures eliminate that army (four-corner scenarios only).
+2. In a two-player objective scenario, an army with zero Strength loses.
+3. Objectives are checked in declaration order.
+4. In a four-corner scenario, one surviving team wins.
+
+`withdraw_player` is available during planning. It concedes immediately while
+preserving every surviving formation at its current Strength, which is what makes
+it usable as a campaign action. It does not revive destroyed formations. There is
+no automatic material-collapse rule.
+
+End reasons that can appear: `bridge_breakthrough`, `turn_limit`,
+`held_objective`, `objective_contested`, `escaped`, `held_out`, `stalemate`,
+`army_destroyed`, `flag_captured`, `last_team_standing`, `mutual_destruction`,
+`withdrawal`.
+
+## Replays
+
+Format `wego-formations-replay`, version 9. `build_replay_document` can be called
+during planning, during the post-clash phase, or after the game.
+
+A document records:
+
+- **setup**: scenario, seed, player count, grid, board size, privacy, vision
+  range, every scenario parameter, teams, actual deployment placements, and the
+  verbatim campaign battle data if there was one
+- **rounds**: per round, the encoded main orders, the exact dice stream, an event
+  digest and a state digest, then the same for the post-clash phase
+- **partial_round**: the current round through the resolved main clash, so an odd
+  result can be saved mid-review
+- **battle_history**: every combat inline, so reading what happened does not
+  require a second engine to recompute it
+- **terminal** and **final_state_digest**
+
+Replaying rebuilds the state through the authoritative engine and rejects any
+divergence from the recorded digests. Exports land in `replays/` with a timestamp
+and also update `replays/last_replay.json` for the Replay Last slot. `replays/`
+is gitignored apart from a `.gitkeep`.
+
+Because verification depends on the exact dice stream, the dice for a round are
+decided when the round resolves, well before any of it is drawn. The presentation
+reads the result out; it does not produce it.
+
+## Campaign battles
+
+`CampaignScenario` builds a battle from a JSON description instead of a hardcoded
+setup, which is what lets an army carry its dead and its damage between battles.
+Everything goes through the ordinary engine calls, so a loaded battle is not a
+special case once it starts.
+
+The interface loads `campaign/current_battle.json` from the Settings drawer, and
+writes `campaign/last_battle_report.json` and `campaign/last_battle_replay.json`
+when the battle ends. It reads the file fresh every time, so the next battle
+appears simply by the campaign writing it.
+
+A battle file looks like this:
+
+```json
+{
+  "name": "Battle 1 — The Toll Road",
+  "grid": "hex_odd_q_flat",
+  "briefing": ["..."],
+  "turn_limit": 22,
+  "private_battle_results": true,
+  "terrain": { "lakes": true, "open": [[10, 10]] },
+  "objective": { "kind": "hold", "square": [10, 10], "rounds": 3 },
+  "armies": {
+    "blue": [{ "name": "Oakhand", "type": "HI", "at": [9, 17], "strength": 8 }],
+    "red":  [{ "name": "Vare First", "type": "HI", "at": [9, 3], "strength": 8 }]
+  }
+}
 ```
 
-The deterministic suite covers flat-top odd-column neighbours, hex radius counts, coordinate and pixel round trips, fog, delayed Weight-based impulse timing, movement and collisions, comparative bonus dice, cross-side crit cancelling, side scoring off the strongest formation, bracing earned by arrival, one shared margin across a losing side, a follower advancing into a vacated square, aimed and suppressing Archer fire, directional retreats, objectives, replay round trips and tamper rejection, and four-bot round resolution.
+The `grid` field must equal `hex_odd_q_flat` or the load is refused. Objective
+kinds are `eliminate`, `hold`, `reach` and `survive`, and an `also` key layers a
+second objective, which is how one side racing for an edge and the other trying
+to stop them becomes a single battle.
 
-## Formation banners
+`apply` returns a map from the scenario's own formation names to engine piece ids,
+which is what lets a campaign follow one formation across several battles.
+`build_battle_report` turns the finished `battle_history` into a named debrief.
 
-Every faction has its own complete banner set, including Flags and an
-information-safe unknown banner. The cloth identifies the faction, while the
-border and equipment artwork communicate Weight and Role and the large live
-numeral shows current Strength. A visible but unidentified enemy uses its
-faction's unknown banner without leaking Role or Strength.
+`campaign/` holds the written battles, their replays, a roster, a chronicle and
+design notes. Those markdown files are campaign fiction and working notes, not
+rules documentation.
+
+## The bot
+
+`StrategoBotPolicy` writes complete simultaneous orders and goes through the real
+collision validator rather than taking privileged sequential actions.
+
+Orders are chosen per formation rather than per army, because the joint action
+space of twelve formations each with a multi-step path is far too large to
+enumerate. Each formation picks its own best order in turn and the validator
+prunes anything that collides with an earlier choice. Candidates are scored
+before being submitted, because validation is the expensive part.
+
+Scoring is a weighted sum. Current weights, several of which were set by sweeps
+recorded in the source comments:
+
+| Weight | Value | What it scores |
+| --- | --- | --- |
+| `objective_progress` | 5.0 | closing on the scenario's aim point |
+| `objective_occupy` | 20.0 | standing on the hex a scenario is won by |
+| `fight_advantage` | 2.2 | expected melee edge when entering an enemy |
+| `losing_fight` | 0.0 | scaled penalty for attacking at a disadvantage |
+| `defend_in_place` | 1.2 | standing firm once contact is made |
+| `infantry_receives` | 0.0 | extra for Infantry |
+| `cavalry_charges` | 3.0 | extra for Cavalry |
+| `support` | 0.5 | ending next to a friendly formation |
+| `archer_exposure` | -0.8 | ending within shot of an enemy Archer |
+| `ranged_damage` | 1.6 | expected damage from a declared shot |
+| `finish_target` | 2.0 | preferring targets a shot can kill |
+| `idle` | -1.2 | holding for no reason |
+| `unknown_risk` | -1.5 | flat caution about fighting the unidentified |
+
+Against an unidentified enemy the bot substitutes an assumed profile: Medium
+Infantry at Strength 3. That 3 was measured under the older rules and is an
+untested carry-over. The dice-pool rewrite changed what an assumed Strength is
+worth twice over, since it now feeds a comparative bonus die as well as the
+score.
+
+`omniscient` makes the bot read true stats instead of guessing. It changes the
+bot, not the fog state, which is what makes cheater-vs-honest comparisons
+meaningful.
+
+`training/self_play.gd` and `training/evaluate_models.gd` run heuristic self-play
+diagnostics. No champion model is persisted; the simultaneous-order action space
+is still moving.
+
+## Command bridge
+
+`StrategoMCPBridge` is a newline-delimited JSON server on 127.0.0.1, default port
+8791. One JSON object per line in, one per line out, paired by `id`. It owns no
+rules: every command forwards to `StrategoGame` and hits exactly the validation
+the interface does.
+
+Commands: `ping`, `get_state`, `legal_steps`, `new_game`, `set_order`,
+`clear_orders`, `set_player`, `commit`, `end_planning`, `auto_deploy`,
+`get_events`, `get_history`, `save_replay`.
+
+Two ways to run it:
+
+- Headless, via `scripts/mcp_host.gd`, which serves a bridge-scenario game with
+  the bot defending.
+
+  ```bash
+  "C:/situation-room/Godot_v4.3-stable_win64_console.exe" --headless --path . --script res://scripts/mcp_host.gd -- --port 8791 --seed 7
+  ```
+
+- Attached to the real app, by launching with `--remote`. A second commander
+  connects and plays Red while the window plays Blue.
+
+`observed_state` is currently full-truth and omniscient. The `player` argument is
+the viewer and is unused, kept so the signature survives a later fog-limited
+variant.
+
+## Balance tooling
+
+`scripts/batch_runner.gd` plays bot against bot so results reflect unit design and
+scenario shape rather than one player's mistakes. It tracks more than damage,
+because damage alone cannot detect a formation whose job is to stand on an
+objective and still be there at the end: it also reports objective occupancy, how
+quickly each Weight reaches the contested ground, and melees won while braced.
+
+Useful arguments:
+
+| Argument | Effect |
+| --- | --- |
+| `--games N`, `--seed N` | how many games, from which seed |
+| `--scenario` | `meeting`, `highfield`, `skirmish`, `crossroads`, `meeting_inverted`, `meeting_heavycav` |
+| `--sep N` | skirmish line separation |
+| `--blue`, `--red` | rosters like `LC:4,LA:4` |
+| `--formation-strength N` | normalize every formation's Strength, diagnostic only |
+| `--defenderties 1`, `--chargeties 1` | the two tie-breaking toggles |
+| `--w key=value,...` | override bot scoring weights |
+| `--assume`, `--assumeblue`, `--assumered` | what a bot pretends an unknown enemy is |
+| `--cheater blue\|red` | that side reads true stats |
+| `--sweep field=v1,v2,...` | with `--cheater`, find the assumption that costs the honest bot least |
+| `--sweepweight field=v1,...` | direct head-to-head over one scoring weight |
+| `--result-file` | machine-readable output, so batches can run concurrently |
+
+`tools/melee_model.py` is a standalone Python simulator for comparing resolution
+rules in a vacuum, without the positioning and initiative confounds a real game
+carries. It is decoupled from the engine on purpose, and its unit stats mirror an
+older version of the rules.
+
+## Interface
+
+Blue is the human player in every scenario. Settings offers New Bridge, New
+Meeting, New Highfield, New 4-Player, New Crossroads, Watch 4 Bots, and Campaign
+Battle, plus clear orders, withdraw, replay export and import, and toggles for
+Archer target mode, private battle details and field reports.
+
+### Planning
+
+Select a formation, shift-click to add, or drag a selection rectangle. Select All
+and `Ctrl+A` take every movable formation. Alt-click selects a formation instead
+of stepping into its hex.
+
+Six on-map direction arrows are real controls in their own right, sitting on the
+boundary between hexes so banners stay readable. A click on one belongs to the
+arrow rather than to whichever hex the pixel falls in; right-clicking one still
+reaches the board underneath. The inspector has a six-direction Move Selection
+pad that does the same thing.
+
+Keyboard directions:
+
+| Key | Direction |
+| --- | --- |
+| `W`, `Up` | north |
+| `E` | north-east |
+| `D`, `Right` | south-east |
+| `X`, `S`, `Down` | south |
+| `Z` | south-west |
+| `Q`, `A`, `Left` | north-west |
+
+With several formations selected, a direction applies to every member that still
+has unused movement. Ghosts numbered 1 to 3 show the hex each formation intends
+to occupy on each impulse.
+
+Cancel All Orders removes every order this phase. Undo, or `Ctrl+Z`, restores the
+previous complete order state, including group and cancel-all changes.
+
+Right-click a hex for the context menu: Inspect, Cancel Order, Support, and for a
+selected Archer during the post-clash phase, Attack, Volley and Join Volley. Join
+Volley appears only once an ally has actually declared a Volley on that hex.
+
+### Resolution
+
+Presented event by event on the board. In a human game every combat, consequential
+retreat and opposing-side tie waits for Next; harmless friendly congestion is
+applied without a click-through card. A fight shows itself as it arrives: each
+side's dice land on the contested hex, damage follows, and anything the fight
+killed is drawn where it fell rather than having already vanished.
+
+The battle card is built around sides, because a side rolls once. Banners are
+grouped with the blades between the sides rather than between every pair, and the
+pool, kept die, Strength, score, surviving 6s and damage appear once per side.
+Strength still standing is listed per formation, and only for a side holding more
+than one.
+
+Order Reposition on the final main event opens the post-clash phase; End
+Reposition reveals every choice at once. The whole reposition is a single card
+listing who went where, with its battles and retreats getting their own. Next
+Round starts the next round. First, Previous and Last allow review without
+dismissing the sequence. Four-bot spectator battles advance automatically.
+
+The phase banner shows the current event number, and the bottom timeline tracks
+impulses, battles, retreats, reposition and ranged attacks.
+
+Mouse wheel or the `+` and `-` controls zoom; middle-drag pans; clicking or
+dragging the minimap centres the main view; Fit restores the default. Zoom and pan
+stay available during resolution. The contextual help panel can be dismissed with
+its X, which also hides the inspector and Move Selection pad, and Help restores
+them together.
+
+### Field reports
+
+An optional prose after-action report, written by a model from the round's
+visible log. It reads the log and writes to the log, touches no game state, and
+needs a local bridge on port 8787. Flavour only. A model that is slow, unreachable
+or absent costs nothing but the report.
+
+### Banners
+
+Every faction has a complete banner set, including Flags and an
+information-safe unknown banner. The cloth identifies the faction, the border and
+equipment art communicate Weight and Role, and a large live numeral shows current
+Strength. A visible but unidentified enemy uses its faction's unknown banner
+without leaking Role or Strength. `UnitIconCatalog` is the single place a
+(player, type) pair becomes a texture.
+
+## Code map
+
+| Path | Role |
+| --- | --- |
+| `scripts/stratego_game.gd` | The engine. All rules, state, objectives, replays. ~3760 lines and authoritative. |
+| `scripts/hex_grid.gd` | Hex topology: neighbours, distance, ranges, pixel conversion. |
+| `scripts/board_view.gd` | Board rendering, selection, direction arrows, context menu, undo. |
+| `scripts/main.gd` | Interface, scenario launching, resolution playback, campaign hooks. |
+| `scripts/campaign_scenario.gd` | JSON battle loading and battle reports. |
+| `scripts/bot_policy.gd` | Heuristic WEGO bot. |
+| `scripts/batch_runner.gd` | Bot-vs-bot measurement harness. |
+| `scripts/mcp_bridge.gd`, `scripts/mcp_host.gd` | JSON command server, and its headless host. |
+| `scripts/llm_client.gd` | Field-report client. |
+| `scripts/unit_icon_catalog.gd` | Texture lookup. |
+| `scripts/screenshot.gd` | Headless interface capture. |
+| `scripts/self_play_trainer.gd`, `training/` | Self-play diagnostics. |
+| `tests/test_runner.gd` | The rules suite. |
+| `tools/*.py` | Asset preparation, and the standalone melee model. |
+| `docs/*.md` | Older plan documents. Historical. |
+| `campaign/` | Campaign battles, replays, chronicle, notes. |
+
+## Current status
+
+Everything below was measured at commit `a8986c8`.
+
+**The suite passes.** 589 checks, 0 failures. Coverage includes hex topology,
+fog, impulse timing, movement and collisions, the side-based pool, bracing,
+placement order, crit cancelling, retreat widening, support, massed volleys,
+reposition, objectives, deployment, replay round trips and tamper rejection,
+four-bot rounds, and the LLM client's parsing.
+
+**Bot-vs-bot balance, 120 games per scenario from seed 1.** Note these are the
+bot's results, and the bot underplays fast flanking armies.
+
+| Scenario | Result | Mean length |
+| --- | --- | --- |
+| Highfield | Blue 86, Red 34 | 5.5 rounds |
+| Meeting | Blue 49, Red 71 | 8.2 rounds |
+| Skirmish | Blue 56, Red 62, 2 draws | 11.1 rounds |
+
+**Highfield is no longer near-even.** The source comment on `HIGHFIELD_WARDENS`
+and the previous README both claim roughly 51/49 over 200 games. It now runs 72%
+to the Outriders. That measurement predates the rewrite that moved scoring from
+per formation to per side, which is exactly the change that would favour the side
+bringing more bodies: numbers now buy dice. The comment is stale, not the code.
+
+**Meeting skews to Red** by 71 to 49 despite identical rosters and deployment
+placed symmetrically about the objective. At this sample size that is about two
+standard deviations from even, so it is suggestive rather than settled. Skirmish
+at 62 to 56 is within noise.
+
+**Battles are short.** Highfield averages 5.5 rounds and resolves on the
+objective 103 times out of 120 rather than by destruction.
+
+**Known inconsistencies in the code, stated as they are:**
+
+- Retreat battles still score per formation, using `_combat_dice_count` and
+  `_opposing_comparators`, while ordinary melee scores per side. The two paths
+  have not been unified.
+- `calculate_melee` and `calculate_ranged` are the older per-formation helpers.
+  They remain for isolated resolution and for the bot's expectations, and are not
+  what `_resolve_battle` uses.
+- `observed_state` is omniscient despite taking a viewer argument.
+- The bot's unknown-enemy Strength assumption of 3 was tuned under the previous
+  rules.
+- `docs/UI_UPDATE_PLAN.md`, `docs/HEX_MAP_MIGRATION_PLAN.md` and
+  `docs/UNIT_ICON_REPLACEMENT_PLAN.md` are plan documents from earlier work.
+  Treat them as history.
