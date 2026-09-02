@@ -1393,7 +1393,17 @@ func _same_player_leftover_orders_are_clear(player: int) -> bool:
 		# Any number of friendly follow-ups may enter a square their own
 		# stationary formation currently defends. Enemy arrivals turn that into
 		# an ordinary multiway battle; without an enemy, everyone bounces.
-		if not has_stationary_defender:
+		if has_stationary_defender:
+			continue
+		# Two of your own may also be sent at one enemy-held hex, exactly as the
+		# main phase allows. Reposition is a single wave, so they arrive on the
+		# same impulse, neither is braced, and they fight as one side against
+		# whoever is standing there. Refusing it here contradicted the main phase
+		# for no reason anyone could state. Converging on open ground is still a
+		# plain collision, and only Cavalry may enter an enemy hex at all, which
+		# the per-order check upstream still enforces.
+		var occupant := piece_at(target)
+		if occupant.is_empty() or are_allied_players(player, int(occupant.player)):
 			return false
 	for first_index in own_pieces.size():
 		for second_index in range(first_index + 1, own_pieces.size()):

@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_two_cavalry_may_reposition_onto_one_enemy()
 	_test_a_melee_casualty_is_still_there_while_the_fight_is_shown()
 	_test_a_formation_killed_by_a_shot_is_still_there_to_be_shot()
 	_test_a_bounce_lunges_from_where_it_actually_stood()
@@ -746,6 +747,31 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_two_cavalry_may_reposition_onto_one_enemy() -> void:
+	# The main phase has always let two of your own be sent at one enemy-held
+	# hex. Reposition refused it, which contradicted that for no stateable
+	# reason, and side scoring made the refusal cost real: arriving together is
+	# the only way the pair fights as one side rather than one at a time.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 8)
+	var first := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 9)
+	var second := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(6, 5), 9)
+	var afoot := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 6), 9)
+	_open_reposition(game)
+	_expect(bool(game.set_leftover_order(StrategoGame.RED, first, Vector2i(5, 5)).get("ok", false)), "one Cavalry may be sent at an enemy-held hex")
+	_expect(bool(game.set_leftover_order(StrategoGame.RED, second, Vector2i(5, 5)).get("ok", false)), "and so may a second, the same as in the main phase")
+	# The rules this sits between are untouched: only Cavalry may enter an enemy
+	# hex at all, and converging on open ground is still plain congestion.
+	_expect(not bool(game.set_leftover_order(StrategoGame.RED, afoot, Vector2i(5, 5)).get("ok", false)), "Infantry still may not deliberately reposition onto an enemy")
+	var empty_game := _test_game()
+	empty_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(18, 18), 8)
+	var one := empty_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 9)
+	var two := empty_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(6, 5), 9)
+	_open_reposition(empty_game)
+	_expect(bool(empty_game.set_leftover_order(StrategoGame.RED, one, Vector2i(5, 5)).get("ok", false)), "the first may still take an empty hex")
+	_expect(not bool(empty_game.set_leftover_order(StrategoGame.RED, two, Vector2i(5, 5)).get("ok", false)), "but two of your own converging on open ground is still refused")
 
 
 func _test_a_melee_casualty_is_still_there_while_the_fight_is_shown() -> void:
