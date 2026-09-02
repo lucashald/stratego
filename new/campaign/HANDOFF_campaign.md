@@ -34,7 +34,26 @@ debrief in `battles/05_weirgate.md`; replay `replays/05_weirgate.json`. Bastion 
 Finding logged: static ranged defence is near-unloseable for a human vs this bot;
 verification bounds "winnable," not "hard."
 
-**Turn 3 decided and built — Battle 6, Cassewick Again, loaded and waiting.**
+**Battle 6 — Cassewick Again: played and LOST** (Vare held the yard, round 4). Same
+shape as Battle 4: Halgate won the fighting (killed Distress, Cess, Writ), lost the
+town — an archer-heavy company holds no ground once its lance dies. Errant + Quill
+fell; Charter Company is now two MAs (Vellum, Ledger). Outcome/debrief in
+`battles/06_cassewick_again.md` (includes the answer to the commander's rules
+question — per-impulse movement decides who defends a contested square; charge and
+brace cancel; fog+simultaneous planning); replay `replays/06_cassewick_again.json`.
+Income banked (0 → 8); chronicle ch. VIII; findings in `design_log.md`.
+
+**Turn 4 is live — `dispatch_04.md`, a strategic decision (no battle built).** The
+war's shape is now clear: Halgate can defend (Weirgate) but cannot take ground
+(Cassewick ×2) with archer-heavy companies that can't hold. Three directions
+offered: (A) consolidate/bank income and build a combined-arms strike force; (B)
+send the Gate Guard to take Cassewick as a *grind* (a no-relief-clock assault where
+slow doesn't lose); (C) stay defensive and win the next Weirgate. Claude-as-Red
+still on offer. Await the commander's direction, then build + verify.
+
+---
+
+**Superseded (Battle 6, now played):**
 Commander rebuilt and sent the **Charter Company** (reinforced Errant 1→6, hired
 Ledger MA; treasury 13 → 0), and chose to **play the bot** but asked me to make it
 a real opponent. Files `battles/06_cassewick_again.{json,md}`, loaded to

@@ -190,3 +190,27 @@ into a proper campaign shape: absorb a loss it survives (Cassewick), then a
 decisive win that closes the oldest enemy thread (the Weirgate, Bulwark dead). The
 company/treasury structure is what makes that rhythm possible — losses and wins
 both leave a faction still standing. (Battles 4–5)
+
+**An archer-heavy company cannot win a seize-and-hold.** Cassewick, both sides
+of it: Battle 4 Halgate defended with bows and lost the yard; Battle 6 Halgate
+attacked with bows and lost the yard. Bows win every exchange and hold no ground —
+the moment the one melee body dies, the objective is uncontestable even while you
+are killing everything near it. Offensive objectives need a formation that can
+stand on the square. Proven twice. (Battles 4, 6)
+
+**Rules clarity, from a commander's question — per-impulse movement decides who
+defends a contested square.** Main-phase movement resolves in three impulses, one
+step per impulse, so the formation with fewer squares to travel reaches a contested
+square first and is the stationary defender when the other arrives. Charge (cavalry
+attacking, +3) and brace (infantry defending, +3) cancel, so a cav-into-inf
+collision on the objective is decided by Strength and dice, not the bonus — a lone
+LC 6 can still bounce off an LI 2 on a bad roll. Fog + simultaneous planning means
+you commit blind to hidden movers (vision range 4); an enemy inside that range at
+resolution but outside it at planning "appears" mid-move. Working as designed, but
+worth stating plainly. (Battle 6)
+
+**Scenario note: a relief/clock must start far enough back to be a felt beat.** In
+Battle 6 the relief began ~5 rows off and arrived the same round as first contact,
+so the intended "fight the garrison, then the relief lands" texture never
+appeared — it played as one massed force. Distance is what makes a clock read.
+(Battle 6)

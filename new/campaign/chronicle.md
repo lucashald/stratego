@@ -318,3 +318,32 @@ is the next dispatch's problem. But Bulwark is dead, the oldest thread in the wa
 tied off on a causeway, and for the first time the tide is the thing that got hit.
 
 *(Dispatch 03: with the host broken, the initiative changes hands.)*
+
+## VIII. Cassewick again
+
+Halgate went to take its town back and could not hold it.
+
+The Charter Company, rebuilt around three bows and a single lance, reached the
+granary and did to the garrison what bows do — killed Distress on the yard, killed
+Cess, and when Vare's relief lance came on, shot Writ dead too. It won every fight
+it had. It just could not stand anywhere. Errant, the last horse Halgate ever
+fielded and the company's whole ability to hold a square, met the garrison out of
+the fog in the first minute and was ridden down by the relief before the round was
+out, and after that the archers were four hands with no fist. They shot a yard
+they could not take, and Forfeit stood in it until the clock ran out, and Cassewick
+stayed Vare's.
+
+Two towns fought for, two towns lost, both the same way: Halgate wins the killing
+and loses the ground, because you cannot hold ground with archers. The lesson is
+not subtle any more. The Weirgate said Halgate can stop the tide on the right
+ground. Cassewick, twice, says it cannot yet take ground back — not with what it
+has been sending. The Charter Company is two Medium Archers now, and the Gate
+Guard, slow and unbeaten, is the only real army the city has left.
+
+The war is not lost. Nothing like it — the treasury still fills, the walls still
+stand, and Vare's host is still dead in the millwater. But the shape of the problem
+is finally clear, and it is not one more battle will solve. Halgate can hold. To
+win, it has to learn to take, and it has not learned that yet.
+
+*(Dispatch 04: a lull, and a decision about how Halgate fights a war it can defend
+but not yet win.)*

@@ -58,3 +58,58 @@ attacks far better than the passive bot, that should net a genuinely hard but
 winnable offensive — the challenge the commander asked for, with a real chance of
 losing the company's whole rebuild if it goes wrong. Treasury is at 0, so this one
 is played without a net.
+
+## Outcome
+
+**Vare held Cassewick again. Round 4, held the yard.** The same shape as Battle 4
+from the other side: Halgate won the fighting — killed Distress, Cess, and Writ
+(the relief's lance) — and lost the town, because when the lance died there was
+nothing left that could stand on the square. Forfeit (LI) held the yard to the
+end. Blue lost Errant and Quill; Vellum and Ledger (the two rear bows) walked off.
+
+Blue's dead (2 of 4): Errant (LC), Quill (LA). Survivors: Vellum (MA 6), Ledger
+(MA 6). Vare's dead: Distress, Cess, Writ. Vare survivors: Chattel (LC 2),
+Forfeit (LI 6).
+
+## Debrief
+
+**The force trap closed exactly as the intent doc warned.** Three bows and one
+lance is a company that wins every exchange and holds nothing. Errant died and the
+Charter Company had no body left to put on the objective, so the archers shot a
+held yard they could not take. Halgate has now lost two seize-and-hold battles the
+same way — you cannot hold ground with archers, and the campaign has proven it
+twice. The Charter Company is spent as an offensive force: two Medium Archers left.
+
+**The round-1 collision, answered (it is working as designed).** Errant advanced
+onto the objective (10,9) and met Distress there, which had come out of fog, and
+Distress fought as the defender. Why: movement resolves in three impulses, and a
+formation moves one step per impulse. Distress started two squares from the yard
+and arrived on impulse 2; Errant started three squares away and arrived on impulse
+3. So Distress was standing on the square when Errant moved in — the stationary
+occupant is the defender. It did *not* cost the fight, though: Errant's cavalry
+charge (+3) and Distress's infantry brace (+3) cancel exactly, so it was a straight
+Strength-and-dice contest Errant (6) should have won against Distress (2). It
+didn't because Errant rolled a 2 and the scores tied (5-5) into a bounce — bad
+luck, not the bonus. The fog was legitimate: Distress was five squares away at
+planning, past the vision range of four, so it was invisible when the order was
+given. WeGo commits both sides blind to hidden movers; that is the game, but it
+can feel like an ambush.
+
+**A real scenario miss: the relief clock didn't read.** The relief column started
+only ~5 rows back and, being fast, arrived almost on the garrison's heels — Writ
+killed Errant in the first round's leftover phase. So there was no visible window
+of "fight the garrison, then the relief hits," which was the whole intended
+texture. If a relief/clock scenario is run again, the relief must start far enough
+back that its arrival is a distinct, felt beat, not a second wave one round later.
+
+## Design log entries this earns
+
+Promoted to `design_log.md`:
+- An archer-heavy company cannot win a seize-and-hold: it takes every fight and
+  holds no ground. Proven twice (Battles 4 and 6). Offensive objectives need a
+  body that can stand on the square.
+- Movement resolves per-impulse (one step each), so the closer formation reaches a
+  contested square first and defends it; charge and brace cancel in cav-vs-inf, so
+  the collision is decided by Strength and dice, not the bonus. (Rules clarity.)
+- A relief/clock must start far enough back to read as a distinct arrival, or the
+  clock texture is lost and it plays as one massed force.
