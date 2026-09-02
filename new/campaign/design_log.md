@@ -149,3 +149,29 @@ death was honoured all the way to an empty roster — Blue is gone, not rebuilt.
 campaign continues as the wider war against Vare, taken up by a new power. The
 open question the Line leaves behind is the spine of what follows: a frontier
 could *beat* Vare and still lose to arithmetic — can anyone actually stop them?
+
+## The Red Tide begins (Halgate)
+
+**Hold-the-centre, lost on the objective while won on casualties — delivered in a
+played human game at last.** Cassewick (Battle 4): Halgate killed 4 of 5 and kept
+3 of 6, and lost, because Vare held the granary the three rounds that decide a
+hold and Halgate never did. The commander was "doing well" and lost at the last
+second to a single Strength-2 unit on the square. This is the outcome hold-the-
+centre was built to make possible and the campaign had not yet produced against a
+human. Questions 1 and 2: answered yes, together, in one battle. (Battle 4)
+
+**The objective resolves after the reposition/leftover phase.** A late leftover
+move can step onto the square and take the round; clearing it in the main phase is
+not holding it. Defending a hold objective means watching the leftover phase, not
+just the main one. This is how Cassewick was won and lost. (Battle 4)
+
+**The company/treasury structure passed its first test.** Halgate lost a battle
+and absorbed it: one company bled, the other untouched, the treasury earning. The
+same casualty ratio would have ended Blue. The fix for Blue's fatal flaw — a
+faction that is more than one army — works as designed. (Battle 4)
+
+**Verify-before-handover works, and correctly could not predict the loss.** The
+bot-vs-bot check (Halgate 47/13) confirmed the scenario was winnable and fair; it
+could not foresee a human losing it on the objective, because the bot can't
+defend a point. That's the right division of labour: verification rules out
+impossible/broken, not "hard." (Battle 4)

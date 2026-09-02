@@ -4,10 +4,10 @@
   "faction": "Halgate",
   "predecessor": "The Ashmere Line (Blue) — fallen, Battles 1–3. Record in ashmere_line.json and chronicle.md.",
   "premise": "Halgate is a rich walled trade-city south of the fallen Ashmere frontier. Where Blue was a single poor levy that put its whole existence on the field every battle, Halgate fields companies — it commits one to a fight and keeps the rest, and its coffers rebuild what a battle costs. A lost battle costs a company's blood, not the war.",
-  "campaign_turn": 1,
-  "treasury_crowns": 7,
+  "campaign_turn": 2,
+  "treasury_crowns": 15,
   "income_per_turn": 8,
-  "deployed": "Charter Company (+ hired Vellum) committed to Battle 4 — Cassewick. Gate Guard held in reserve at the city. Treasury 15 → 7 (hired Vellum, MA, for 8).",
+  "last_battle": "Battle 4 — Cassewick: LOST (Vare held the granary, round 4). The Charter Company won the fighting 4-kills-to-3 but never held the yard the three rounds that decide a hold objective. Vare took Cassewick and the winter stores. The Charter Company came home three of six; the faction is intact. Treasury 7 + 8 income = 15.",
   "economy": {
     "reinforce": "1 crown per Strength point restored, up to a formation's max.",
     "recruit": "A new formation costs (its Strength) + 2 crowns to hire.",
@@ -33,14 +33,11 @@
     },
     "charter_company": {
       "name": "The Charter Company",
-      "character": "Hired horse and skirmishers, paid for by charter out of the city treasury. Fast, with reach and a lance — the answer of 'deny the grind, never stand still.' Individually thinner than the Guard; loses a straight slugging match it can't choose the terms of.",
+      "character": "Hired horse and skirmishers, paid for by charter out of the city treasury. Fast, with reach and a lance — the answer of 'deny the grind, never stand still.' Individually thinner than the Guard; loses a straight slugging match it can't choose the terms of. Bled at Cassewick: lost its lance and half its foot, came home three of six.",
       "formations": [
-        { "name": "Argent",  "type": "MC", "strength": 7, "max_strength": 7, "battles": 0, "history": ["The company's heavy lance."] },
-        { "name": "Errant",  "type": "LC", "strength": 6, "max_strength": 6, "battles": 0, "history": [] },
-        { "name": "Ferrule", "type": "LI", "strength": 6, "max_strength": 6, "battles": 0, "history": [] },
-        { "name": "Ingot",   "type": "LI", "strength": 5, "max_strength": 6, "battles": 0, "history": [] },
-        { "name": "Quill",   "type": "LA", "strength": 5, "max_strength": 5, "battles": 0, "history": [] },
-        { "name": "Vellum",  "type": "MA", "strength": 6, "max_strength": 6, "battles": 0, "hired": "Turn 1, 8 crowns, for Cassewick", "history": ["Hired out of the treasury for the Cassewick raid — the second bow the Charter Company needed and Ashmere never had. Paper and quill: folded in beside Quill."] }
+        { "name": "Errant",  "type": "LC", "strength": 1, "max_strength": 6, "battles": 1, "veteran": true, "veteran_reason": "Killed Warrant — the rider that ran the last of Ashmere down on the Fen Road — and came off Cassewick alive at Strength 1. Survived a battle that killed half the company.", "history": ["Battle 4 — Cassewick: killed Warrant, then survived the raid at a single point of Strength. Earned Veteran status — one reroll per battle. Badly hurt; a reinforcement decision for next turn."] },
+        { "name": "Quill",   "type": "LA", "strength": 5, "max_strength": 5, "battles": 1, "history": ["Battle 4 — Cassewick: on the field the whole raid, more out of range than in it. Came home whole but with little to show."] },
+        { "name": "Vellum",  "type": "MA", "strength": 6, "max_strength": 6, "battles": 1, "hired": "Turn 1, 8 crowns, for Cassewick", "history": ["Hired for the Cassewick raid — the second bow. Killed Summons with its first shots and came home unwounded. Worth the eight crowns even in a loss; the company keeps it."] }
       ]
     }
   },
@@ -52,10 +49,13 @@
       { "name": "(hire) Light Cavalry",  "type": "LC", "strength": 6, "cost": 8 }
     ]
   },
-  "fallen": [],
+  "fallen": [
+    { "name": "Argent",  "type": "MC", "battle": "Battle 4 — Cassewick", "detail": "The Charter Company's heavy lance. Killed Escheat, Vare's own lance, and was then cut down by Distress — the cheapest formation on the field — while Halgate held the winning side of the fight and the losing side of the objective." },
+    { "name": "Ferrule", "type": "LI", "battle": "Battle 4 — Cassewick", "detail": "Traded itself with Quarrel, the Vare bow; both destroyed in the exchange." },
+    { "name": "Ingot",   "type": "LI", "battle": "Battle 4 — Cassewick", "detail": "Cut down by Escheat in the storm on the yard." }
+  ],
   "enemy_threads": [
-    { "name": "Bulwark", "type": "HI", "faction": "Vare", "detail": "The Heavy that saw Ashmere break and carried word home. Somewhere in the tide now pushing south." },
-    { "name": "Warrant", "type": "LC", "faction": "Vare", "detail": "Ran the last of Ashmere down on the Fen Road. Fast, and blooded." },
-    { "name": "Quarrel", "type": "LA", "faction": "Vare", "detail": "The bow Ashmere never had an answer to. Halgate does." }
+    { "name": "Bulwark", "type": "HI", "faction": "Vare", "detail": "The Heavy that saw Ashmere break and carried word home. Somewhere in the main host now pushing south." },
+    { "name": "Distress", "type": "LI", "faction": "Vare", "detail": "The lone survivor of the Cassewick vanguard, at Strength 2. Seized the granary on a reposition and held it with the last breath of the raid — killed Argent doing it. The cheapest unit Vare had and the one that won them a battle it lost four-fifths of a column to. A face to remember." }
   ]
 }

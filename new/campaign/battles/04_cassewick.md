@@ -62,3 +62,58 @@ yard.** Winnable and then some, with the objective genuinely in play and Vare
 taking roughly one in five off the bot — a real contest, the opposite of the Fen
 Road. A human commanding the Charter Company should win, but can lose formations
 doing it, and can lose the battle by mishandling the town.
+
+## Outcome
+
+**Vare won. Round 4, held the granary.** A successful raid, and a ruinous one for
+them: Vare kept **one** formation of five. Halgate kept three of six — and still
+lost, because the battle was never about the body count.
+
+Blue's dead (3 of 6): **Argent** (MC), **Ferrule** (LI), **Ingot** (LI).
+Blue's survivors: **Errant** (LC, down to 1), **Quill** (LA, 5), **Vellum** (MA, 6).
+Vare's dead (4 of 5): Escheat, Warrant, Summons, Quarrel.
+Vare's survivor: **Distress** (LI, down to 2) — the lone raider that seized the
+yard on a reposition and held it to the end.
+
+The shape of it: Halgate won nearly every exchange. Errant killed Warrant; Vellum
+shot Summons off the board; Ferrule and Quarrel destroyed each other; Argent
+killed Escheat, the enemy's heavy lance — and was then cut down by Distress, the
+cheapest thing Vare had. While Halgate was winning that fight, it never controlled
+the granary square for three clean rounds, and Vare did, slipping a holder onto it
+during the reposition phase and clinging on with its last unit. Casualties: a
+Halgate win. Objective: a Vare win. The objective is the one that counts.
+
+## Debrief
+
+**"Won the fight, lost the yard" — the exact thing hold-the-centre tests, this
+time as a real human loss.** The Toll Road's design note warned that you can go
+well on casualties and still lose on the objective clock. Cassewick delivered it:
+the commander was "doing well," took the better of the fighting, and lost at the
+last second to a single unit holding the square. Question 1 (does the objective
+create a decision?) and question 2 (is the outcome ever in doubt?): both answered
+yes, decisively, and by a played game rather than a bot run. This is the battle
+the campaign has been trying to produce since Battle 1.
+
+**The reposition-phase seize is a real, teachable tactic.** The hold streak is
+checked at the end of the round, *after* leftover/reposition moves. Clearing the
+yard in the main phase is not holding it — a fast unit can step onto the square in
+the reposition phase and take the round. Holding the centre means holding it
+through the leftover phase, and defending it means watching that phase, not just
+the main one. Bears on how every future hold objective should be read.
+
+**The system worked.** Halgate lost a battle and is not wiped. Only the Charter
+Company was on the field; the Gate Guard is untouched at the city; the treasury is
+intact and earning. Three formations came home. This is the whole point of the
+company structure, and its first real test passed: a defeat is a setback the
+faction absorbs, not an extinction. Contrast Blue, for whom this same casualty
+ratio would have been the end.
+
+## Design log entries this earns
+
+Promoted to `design_log.md`:
+- Hold-the-centre can be lost on the objective while won on casualties — now
+  proven in a played human game, not just a design note.
+- The objective is checked after the reposition phase; a late leftover move can
+  steal a round. Holding means holding through leftover, not just main.
+- The company/treasury structure did its job: a lost battle cost a company blood,
+  not the faction. The fix for Blue's fatal flaw is validated.

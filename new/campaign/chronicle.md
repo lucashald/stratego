@@ -235,5 +235,49 @@ The question the Ashmere Line could not answer, it leaves to whoever picks up th
 war: **the frontier could beat Vare and still lose. Can anyone actually stop
 them?**
 
-*(The Line's story is finished. What comes next is a different banner. See the
-handoff and the design log; the next chronicle chapter opens under a new colour.)*
+*(The Line's story is finished. What comes next is a different banner.)*
+
+---
+
+# The Red Tide (Halgate)
+
+## VI. Cassewick
+
+Halgate is a rich city, and rich cities do not die the way frontier levies do.
+When word came that Vare's tide had swallowed the Ashmere line and turned south,
+Halgate did not put its whole strength on a road and pray. It sent a company and
+kept the rest, which is the only lesson worth taking from watching Blue.
+
+Vare's vanguard rode ahead of the host for Cassewick, the granary town, meaning to
+take the winter stores before the city could stop them. Halgate read the raid for
+what it was and sent the Charter Company — hired horse and skirmishers, fast
+enough to answer fast — and paid eight crowns to put a second bow, Vellum, in the
+line, because Ashmere had died twice for want of bows and Halgate could simply
+afford not to.
+
+The fighting went Halgate's way and the battle did not. Errant killed Warrant, the
+rider that had run the last of Ashmere into the ground on the Fen Road. Vellum's
+first shots put Summons down. Argent, the company's lance, killed Escheat, the
+enemy's — and then died to Distress, a single light-infantry raider, the cheapest
+thing Vare had on the field. When the dust settled Halgate had killed four of the
+five raiders and kept three of its six formations, and it had lost, because a
+granary is not won by killing the men around it. It is won by standing in the yard
+when the round ends, three rounds running, and while Halgate was winning the
+fight, Vare's raiders were standing in the yard. Distress seized it on a
+reposition and held it to the last with two points of strength left in the whole
+column, and the winter stores burned.
+
+So Vare took Cassewick. It cost them four of five formations to do it, and it cost
+Halgate a lance and half a company — Argent, Ferrule, and Ingot down — but the
+difference between Halgate and Ashmere is written in what happened next, which was
+nothing catastrophic. Three formations rode home. The Gate Guard never left the
+walls. The treasury took in its season's crowns as if nothing had happened,
+because for the city, almost nothing had. A company bled. The war went on.
+
+That is the point of being Halgate. You can lose Cassewick and still be Halgate the
+morning after. Ashmere could not lose anything and stay Ashmere, and so it didn't,
+and so it isn't. The tide is still coming. But this time the thing in its path can
+afford to be hit.
+
+*(Battle 5 comes as Dispatch 02: where Vare strikes next, and which company
+answers.)*

@@ -15,15 +15,23 @@ per battle, keeps the rest, and rebuilds from a treasury. Turn loop and rules ar
 in `system.md`; state (treasury, two companies, reserve, economy) in `roster.json`;
 Blue's closed record preserved in `ashmere_line.json`.
 
-**Turn 1 decided and built — Battle 4, Cassewick, loaded and waiting to play.**
-Commander sent the **Charter Company + hired Vellum (MA)**; treasury 15 → 7; Gate
-Guard reserved. Files `battles/04_cassewick.{json,md}`, loaded to
-`current_battle.json`. **Verified bot-vs-bot (60 games): Halgate 47 / Vare 13, the
-granary deciding 15** — winnable and a real contest, per the Fen Road rule. A race
-to hold the town yard (`hold` [10,9], 3 rounds, 16-round limit); Vare's fast
-vanguard starts a step closer, Blue's two bows are the edge. Caveat recorded in
-the intent doc: the bot can't defend a position, so the objective bites harder for
-a commanded Red than the bot shows — this favours Halgate more than the raw split.
+**Battle 4 — Cassewick: played and LOST** (Vare held the granary, round 4). Halgate
+won the fighting (killed 4 of 5, kept 3 of 6) and lost the objective — the
+hold-the-centre outcome the campaign had been chasing since Battle 1, delivered
+against a human. Outcome + debrief in `battles/04_cassewick.md`; replay at
+`replays/04_cassewick.json`. Losses applied (Argent, Ferrule, Ingot struck to
+`fallen`); survivors Errant (LC 1, now Veteran), Quill (LA 5), Vellum (MA 6);
+income banked (treasury 7 → 15); Distress added as an enemy thread. The faction
+absorbed the loss — the whole point of the company system, validated. Chronicle
+chapter VI written.
+
+**Turn 2 is live — `dispatch_02.md`, the Weirgate.** Vare's heavy main host (Bulwark
+HI, Sessions HI, Assize HA, Mandate + Sergeant MI, Amerce MC — ~44 Strength)
+marches on a fortified causeway; this is a **hold a fortified point** fight, the
+Gate Guard's battle. Commander chooses: send the fresh Gate Guard (right tool,
+commits the elite core) or rebuild and send the battered Charter Company;
+reinforce/hire from 15 crowns. **Battle not built yet** — depends on the choice,
+then gets built + verified bot-vs-bot before handover.
 
 Verification method (reusable): a throwaway `SceneTree` script loads the scenario
 via `CampaignScenario.apply`, runs `StrategoBotPolicy` both sides through the
