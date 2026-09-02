@@ -25,21 +25,28 @@ income banked (treasury 7 → 15); Distress added as an enemy thread. The factio
 absorbed the loss — the whole point of the company system, validated. Chronicle
 chapter VI written.
 
-**Turn 2 decided and built — Battle 5, The Weirgate, loaded and waiting to play.**
-Commander sent the **Gate Guard + hired Merlon (MA)**, topped off Bastion/Sterling;
-treasury 15 → 5; Charter remnant reserved. Files `battles/05_weirgate.{json,md}`,
-loaded to `current_battle.json`. A defensive causeway hold: `survive` (blue) to
-round 12, `also` `reach` (red) 19 Strength into the rear [8,14,3,4]. Millwater
-flanks (row 9), a 3-wide gate (cols 8-10) walled by 2 HI + MI with 3 bows behind.
-**Verified bot-vs-bot: Halgate 36 / Vare 24, every game decided by the objective**
-— a near-even hold leaning to the defender, tuned there via the breakthrough bar
-(tried 16→70% Vare and 20→95% Blue before landing 19). A human wall should hold it
-but can lose the gate by letting the line be pulled out of shape.
+**Battle 5 — The Weirgate: played and WON decisively** (held the causeway; Vare's
+heavy host destroyed to the last, round 11; Halgate lost only Bastion). The
+three-bow Gate Guard curb-stomped a passive bot assault. **Bulwark killed** — the
+oldest enemy thread, closed (moved to `roster.json` → `closed_threads`). Outcome +
+debrief in `battles/05_weirgate.md`; replay `replays/05_weirgate.json`. Bastion →
+`fallen`; Sable now Veteran; income banked (5 → 13); chronicle chapter VII written.
+Finding logged: static ranged defence is near-unloseable for a human vs this bot;
+verification bounds "winnable," not "hard."
 
-Verification harness note: same throwaway-script method as Battle 4 (crib
-`batch_runner.gd:_play_one`, load via `CampaignScenario.apply`, tally
-`game.winner`). Run from **`C:\stratego\new`** (the project root — not `C:\stratego`):
-`Godot_..._console.exe --headless --path . --script res://scripts/<tmp>.gd`.
+**Turn 3 is live — `dispatch_03.md`, the counterattack on Cassewick.** Host broken,
+initiative to Halgate for the first time. A **race against a Vare relief clock** to
+retake and hold the granary town — Halgate on offence (the harder posture).
+Commander chooses: rebuild the Charter Company (fast, right for the race) or send
+the slow Gate Guard; reinforce/hire from 13 crowns. **Also offered: Claude commands
+Red live** instead of the bot, since a relief race is exactly what the bot can't
+run and a static/ passive bot makes for shooting galleries. **Battle not built yet**
+— depends on the choice (company + bot-or-Claude-as-Red), then built + verified.
+
+Verification harness note: throwaway-script method (crib `batch_runner.gd:_play_one`,
+load via `CampaignScenario.apply`, tally `game.winner`). Run from **`C:\stratego\new`**
+(not `C:\stratego`): `Godot_..._console.exe --headless --path . --script res://scripts/<tmp>.gd`.
+Objective JSON kinds: `eliminate`/`hold`/`reach`/`survive` (`hold`, not `hold_square`).
 
 Verification method (reusable): a throwaway `SceneTree` script loads the scenario
 via `CampaignScenario.apply`, runs `StrategoBotPolicy` both sides through the

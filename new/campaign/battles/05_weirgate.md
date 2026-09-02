@@ -65,3 +65,55 @@ tense hold, where a careless line loses the gate and a disciplined one keeps it.
 Tuned here deliberately: an earlier cut had Vare breaking through 70%, another had
 the wall impregnable at 95%; the breakthrough bar (19 Strength) is the dial that
 put it in the doubt zone.
+
+## Outcome
+
+**Halgate held the Weirgate. Round 11, Vare's host destroyed to the last
+formation.** Halgate lost one: Bastion (HI), to Assize's heavy-archer fire. Five
+of six walked off the causeway.
+
+Blue's dead (1 of 6): Bastion (HI). Survivors: Portcullis (HI 8, untouched),
+Halberd (MI 5), Sable (HA 7), Sterling (MA 6), Merlon (MA 6).
+Vare's dead: all six — Sessions, Bulwark, Amerce, Assize, Mandate, Sergeant.
+
+The shape of it: a slaughter down a lane. Vare came on piecemeal and the three
+bows erased them a formation at a time before they reached the wall — Sterling and
+Merlon opened Mandate and Sergeant, then the whole gunline turned on the Heavies.
+**Bulwark** — the campaign's oldest enemy thread, who saw Ashmere break and
+carried the tide south — was shot dead on the causeway by Sable, Sterling and
+Merlon without landing a blow. Assize, the enemy's own Heavy Archer, was the only
+Vare formation to do real damage, killing Bastion before Sable and Merlon put it
+down. Amerce tried the flank and Halberd killed it. Nothing crossed.
+
+## Debrief
+
+**The Gate Guard's battle, and it read exactly as designed: slow, hard, and
+lethal at range on ground it didn't have to leave.** After Cassewick punished
+being slow, the Weirgate rewarded it completely. Three bows on a defended causeway
+is a killing floor. Whether that's *too* dominant is the open question — see below.
+
+**The bot cannot press an assault, and a ranged defence curb-stomps it.** The
+commander's own read: "the bot played too passively; my ranged attackers ripped
+them apart." Correct, and it is the same class of weakness already logged for
+chokepoint attacks and pursuit — the bot won't commit weight to force a defended
+point, so it fed itself into the bows a piece at a time. The bot-vs-bot
+verification said 60/40 to the defender; the human defended far better than
+bot-Blue and the result was a wipe. That gap is the finding: **against this bot, a
+ranged defensive scenario will always play easier for a human than verification
+suggests, because the bot both attacks passively and defends worse than a person.**
+
+**Design consequence for what comes next.** Static defence behind bows is a solved
+problem versus this bot. The battles that actually challenge a human are the ones
+where the bot can win by passively occupying an objective under a clock — Cassewick
+was hard for exactly that reason, the Weirgate easy for the lack of it. Future
+strikes should lean that way, or be commanded by me as Red, if they are to be a
+contest rather than a shooting gallery.
+
+## Design log entries this earns
+
+Promoted to `design_log.md`:
+- Three bows on a defended chokepoint is dominant against the bot; a static ranged
+  defence is close to unloseable for a human, whatever the bot-vs-bot split says.
+- The bot attacks passively and defends worse than a person, so verification bounds
+  "winnable," not "hard." Difficulty must come from objective-and-clock pressure
+  the bot can satisfy passively, or from a commanded Red.

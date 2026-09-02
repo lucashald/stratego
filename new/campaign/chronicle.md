@@ -279,5 +279,42 @@ morning after. Ashmere could not lose anything and stay Ashmere, and so it didn'
 and so it isn't. The tide is still coming. But this time the thing in its path can
 afford to be hit.
 
-*(Battle 5 comes as Dispatch 02: where Vare strikes next, and which company
-answers.)*
+## VII. The Weirgate
+
+The host that broke Ashmere came to the Weirgate and did not cross.
+
+Bulwark led it — the Vare Heavy who had stood at Ashweir Bridge and watched the
+Ashmere Line die on it, and had carried the word of that south ever since, at the
+head of first a rumour and then an army. He brought two more Heavies, his own
+Heavy Archer, foot and horse, forty-four points of weight, to force a causeway
+three spans wide.
+
+Halgate met it with a wall and three bows, and the thing about a causeway is that
+it is a lane, and a lane under three bows is not a road, it is a range. Vare came
+on the only way the water let them, a formation abreast at a time, and Sterling and
+Merlon and Sable shot them as they came. Mandate first, then Sergeant, then the
+gunline turned on the Heavies and did not stop. Bulwark — who had seen what
+happened to a people that could not afford bows — died on the causeway to bows,
+without landing a blow, shot down by exactly the weapon Ashmere went into the
+ground wishing it had. There is a justice in that, of the cold kind the ledger
+keeps.
+
+Only Assize, the enemy's own archer, reached anyone: it killed Bastion at the wall
+before Sable and Merlon put it down. That was the whole cost. One formation, for a
+destroyed host. When the eleventh round closed there was nothing of Vare left on
+the near bank or the far one, and the road to the city was still shut.
+
+It was, the commander noted, a bloodbath — the enemy too cautious, the bows too
+good, the ground too kind. A lopsided win where Cassewick had been a knife-edge
+loss. But lopsided in Halgate's favour is a sentence the campaign has not been
+able to write since the Toll Road, and it is worth writing plainly: **the red tide
+can be stopped.** Not outlasted the way Ashmere tried and failed to outlast it —
+stopped, on the right ground, by a rich enough city with the wall and the bows to
+hold it. The question the Ashmere Line died asking has a first answer, and the
+answer is the Weirgate.
+
+Vare's main push is spent. What it does next, having lost a heavy host to a wall,
+is the next dispatch's problem. But Bulwark is dead, the oldest thread in the war
+tied off on a causeway, and for the first time the tide is the thing that got hit.
+
+*(Dispatch 03: with the host broken, the initiative changes hands.)*

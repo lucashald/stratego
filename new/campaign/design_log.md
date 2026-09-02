@@ -175,3 +175,18 @@ bot-vs-bot check (Halgate 47/13) confirmed the scenario was winnable and fair; i
 could not foresee a human losing it on the objective, because the bot can't
 defend a point. That's the right division of labour: verification rules out
 impossible/broken, not "hard." (Battle 4)
+
+**A static ranged defence is near-unloseable for a human against this bot.** The
+Weirgate (Battle 5): three bows on a defended causeway destroyed Vare's whole
+heavy host for one loss, round 11. Verification said 60/40 to the defender; the
+human turned it into a wipe because the bot attacks piecemeal and passively and
+defends worse than a person. Verification bounds "winnable," not "hard." Real
+difficulty against this bot comes only from an objective the bot can win by
+passively occupying under a clock (Cassewick), or from a commanded Red. Static
+defence behind bows is a solved problem. (Battle 5)
+
+**Pacing note.** Ashmere's arc was tragedy (win, win, wipe). Halgate's is turning
+into a proper campaign shape: absorb a loss it survives (Cassewick), then a
+decisive win that closes the oldest enemy thread (the Weirgate, Bulwark dead). The
+company/treasury structure is what makes that rhythm possible — losses and wins
+both leave a faction still standing. (Battles 4–5)
