@@ -207,6 +207,12 @@ var orders: Dictionary = {}
 var ready_players: Array[int] = []
 var battle_history: Array[Dictionary] = []
 var last_round_events: Array[Dictionary] = []
+## Main-phase contacts held open until every impulse has moved, and the hexes
+## they cover mapped back to them so a later arrival joins the fight standing
+## there instead of reading it as ordinary ground. Both are empty outside the
+## main movement phase, which still resolves its one wave of contact on the spot.
+var _pending_battles: Array[Dictionary] = []
+var _contested_hexes: Dictionary = {}
 var last_move := {"from": Vector2i(-1, -1), "to": Vector2i(-1, -1), "visible_to": [], "action": ""}
 
 var phase := PHASE_PLANNING
@@ -1581,8 +1587,11 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 			var taken := int(piece.steps_taken)
 			if path.size() > taken:
 				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[taken], "is_attacker": true, "arrival": impulse})
-		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse))
+		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse, true))
 		_record_all_sightings()
+	# Every contact opened across the three impulses is rolled here, together.
+	last_round_events.append_array(_resolve_pending_battles("melee"))
+	_record_all_sightings()
 	ready_players.clear()
 	phase = PHASE_LEFTOVER_PLANNING
 	_active_replay_round = {
@@ -1630,6 +1639,8 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 
 
 func _begin_round_state() -> void:
+	_pending_battles.clear()
+	_contested_hexes.clear()
 	for piece: Dictionary in pieces:
 		if piece.alive:
 			pieces[piece.id].round_status = STATUS_READY
@@ -1640,7 +1651,7 @@ func _begin_round_state() -> void:
 			pieces[piece.id].main_done = false
 
 
-func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -> Array[Dictionary]:
+func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String, defer: bool = false) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	var proposal_by_id: Dictionary = {}
 	for proposal: Dictionary in proposals:
@@ -1652,6 +1663,16 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 	var battles: Array[Dictionary] = []
 	var allied_collisions: Array[Dictionary] = []
 	var ids: Array = proposal_by_id.keys()
+	# A formation walking into a fight that is already open joins it, whichever
+	# side is standing there and whether or not anyone still is. Settled before
+	# anything else is classified, so a contested hex is never mistaken for
+	# ordinary congestion or for open ground the attackers happened to vacate.
+	for id_value in ids:
+		var joining_id := int(id_value)
+		var joining: Dictionary = proposal_by_id[joining_id]
+		if joining.to not in _contested_hexes: continue
+		_join_pending_battle(int(_contested_hexes[joining.to]), joining)
+		handled[joining_id] = true
 	for first_index in ids.size():
 		var first_id: int = ids[first_index]
 		if first_id in handled: continue
@@ -1741,10 +1762,52 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision"))
 	var retreat_intents: Array[Dictionary] = []
 	for battle: Dictionary in battles:
+		if defer:
+			_open_pending_battle(battle)
+			continue
 		var result := _resolve_battle(battle.participants, battle.position, bool(battle.crossing), batch_name)
 		events.append(result.event)
 		retreat_intents.append_array(result.retreats)
 	if not retreat_intents.is_empty(): events.append_array(_resolve_retreats(retreat_intents, batch_name))
+	return events
+
+
+## Hold a contact open rather than rolling for it where it happened. Everyone in
+## it stops moving at the moment of contact, and the fight's hexes are recorded
+## so later arrivals join it. A crossing fight covers both of the hexes its
+## participants are trading, which is why entering either one joins.
+func _open_pending_battle(battle: Dictionary) -> void:
+	var index := _pending_battles.size()
+	_pending_battles.append(battle)
+	_contested_hexes[battle.position] = index
+	for participant: Dictionary in battle.participants:
+		pieces[int(participant.piece_id)].main_done = true
+		if bool(battle.get("crossing", false)): _contested_hexes[participant.to] = index
+
+
+func _join_pending_battle(index: int, proposal: Dictionary) -> void:
+	var id := int(proposal.piece_id)
+	_pending_battles[index].participants.append(proposal.duplicate(true))
+	# Same as any attacker: it has left the square behind it, so whoever is
+	# queued there can move up on this impulse.
+	_clear_piece_square(id)
+	pieces[id].main_done = true
+
+
+## Every fight opened during main movement, rolled together once the impulses
+## are done. The waiting is the whole point: a formation that made contact on
+## impulse 1 and the ally that reached it on impulse 3 are in one fight, which
+## they could never be while contact resolved where it happened.
+func _resolve_pending_battles(batch_name: String) -> Array[Dictionary]:
+	var events: Array[Dictionary] = []
+	var retreat_intents: Array[Dictionary] = []
+	for battle: Dictionary in _pending_battles:
+		var result := _resolve_battle(battle.participants, battle.position, bool(battle.crossing), batch_name)
+		events.append(result.event)
+		retreat_intents.append_array(result.retreats)
+	if not retreat_intents.is_empty(): events.append_array(_resolve_retreats(retreat_intents, batch_name))
+	_pending_battles.clear()
+	_contested_hexes.clear()
 	return events
 
 

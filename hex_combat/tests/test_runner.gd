@@ -429,11 +429,11 @@ func _test_march_animation_staggers_by_weight() -> void:
 
 
 func _test_mixed_speed_formations_can_gang_up() -> void:
-	# Sending two formations at one enemy is a real decision: the second wave
-	# matters precisely because the first attack might lose. The collision
-	# rule used to allow it only when both attackers arrived on the same
-	# impulse, which silently restricted ganging up to formations of matched
-	# Weight - a Light and a Heavy aimed at one enemy were refused.
+	# Sending two formations at one enemy is the whole point of holding melee
+	# until the impulses are done. Contact used to resolve where it happened, so
+	# a Light that reached the enemy on impulse 1 had already won or died before
+	# the Heavy behind it moved at all, and the two could never combine however
+	# they were ordered.
 	var game := _test_game()
 	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 10)
 	var fast := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
@@ -451,33 +451,27 @@ func _test_mixed_speed_formations_can_gang_up() -> void:
 	empty_game.set_unit_order(StrategoGame.BLUE, one, [Vector2i(5, 5)])
 	_expect(not bool(empty_game.set_unit_order(StrategoGame.BLUE, two, [Vector2i(5, 5)]).get("ok", false)), "two formations still may not be ordered onto the same empty square")
 
-	# The first wave winning leaves its ally bouncing off it, not stacked.
-	# Strengths are lopsided on purpose: damage is the score margin now, so a
-	# formation at full Strength simply cannot be killed in a single melee.
-	var won := _test_game()
-	var beaten := won.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 3)
-	var winner := won.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
-	var follower := won.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
-	won.set_unit_order(StrategoGame.BLUE, winner, [Vector2i(5, 5)])
-	won.set_unit_order(StrategoGame.BLUE, follower, [Vector2i(5, 5)])
-	won.set_forced_rolls([5, 5, 1, 1])
-	for player in won.active_players: won.mark_player_ready(player)
-	var won_events := won.resolve_main_and_ranged()
-	_expect(not won.pieces[beaten].alive and won.pieces[winner].position == Vector2i(5, 5), "the first attacker takes the square when it wins")
-	_expect(won.pieces[follower].position == Vector2i(6, 5) and _events_with_action(won_events, "bounce").size() == 1, "the follow-up bounces off its own ally rather than stacking on it")
-
-	# The first wave losing is the whole point: the second gets its fight.
-	var lost := _test_game()
-	var defender := lost.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 4)
-	var doomed := lost.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 3)
-	var avenger := lost.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
-	lost.set_unit_order(StrategoGame.BLUE, doomed, [Vector2i(5, 5)])
-	lost.set_unit_order(StrategoGame.BLUE, avenger, [Vector2i(5, 5)])
-	lost.set_forced_rolls([1, 6, 1, 1, 5, 1, 1, 1, 1])
-	for player in lost.active_players: lost.mark_player_ready(player)
-	var lost_events := lost.resolve_main_and_ranged()
-	_expect(not lost.pieces[doomed].alive, "the first attacker can lose its fight")
-	_expect(_events_with_action(lost_events, "melee").size() == 2 and not lost.pieces[defender].alive and lost.pieces[avenger].position == Vector2i(5, 5), "the second wave then fights the survivor and takes the square")
+	# Both waves land in one fight now, whatever impulse each of them arrived on.
+	# The Light makes contact on impulse 1 and the Heavy only moves on impulse 3,
+	# and nothing is rolled until both are standing there.
+	var ganged := _test_game()
+	var defender := ganged.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 3)
+	var early := ganged.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 5), 10)
+	var late := ganged.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	ganged.set_unit_order(StrategoGame.BLUE, early, [Vector2i(5, 5)])
+	ganged.set_unit_order(StrategoGame.BLUE, late, [Vector2i(5, 5)])
+	# Blue rolls four: two formations, stronger, and uniquely heaviest. Red rolls
+	# two: one formation, braced, having held the hex since before the round.
+	ganged.set_forced_rolls([1, 1, 1, 5, 2, 2])
+	for player in ganged.active_players: ganged.mark_player_ready(player)
+	var ganged_events := ganged.resolve_main_and_ranged()
+	var melees := _events_with_action(ganged_events, "melee")
+	_expect(melees.size() == 1, "formations arriving on different impulses fight one battle, not one each")
+	_expect(int(melees[0].participants.size()) == 3 and early in melees[0].participants and late in melees[0].participants, "the slower ally is a participant in it rather than a second wave")
+	_expect(int(melees[0].bonus_dice[early]) == 2 and int(melees[0].scores[early]) == 15, "the side rolls a die per formation on top of its comparative dice")
+	_expect(int(melees[0].scores[defender]) == 5 and not ganged.pieces[defender].alive, "and the defender faces the pair at once instead of beating them one at a time")
+	_expect(ganged.pieces[early].position == Vector2i(5, 5), "the formation that reached the hex first has first claim on it")
+	_expect(ganged.pieces[late].position == Vector2i(6, 5) and ganged.pieces[late].round_status == StrategoGame.STATUS_READY, "the ally that could not stack on it comes home without a penalty")
 
 
 func _test_group_orders_apply_per_formation() -> void:
