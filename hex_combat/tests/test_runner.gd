@@ -26,6 +26,8 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_who_holds_the_ground_a_side_just_took()
+	_test_the_order_you_issued_first_takes_the_square()
 	_test_two_cavalry_may_reposition_onto_one_enemy()
 	_test_a_melee_casualty_is_still_there_while_the_fight_is_shown()
 	_test_a_formation_killed_by_a_shot_is_still_there_to_be_shot()
@@ -747,6 +749,52 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_who_holds_the_ground_a_side_just_took() -> void:
+	# Arrival used to decide this outright, but among attackers arrival is Weight
+	# rather than intent: a Light always makes contact before a Heavy can. A won
+	# square was left garrisoned by the formation least able to hold it while the
+	# one that did the work walked home.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 2)
+	var weak_fast := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 5), 3)
+	var strong_slow := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.RED, Vector2i(6, 5), 10)
+	game.set_unit_order(StrategoGame.RED, weak_fast, [Vector2i(5, 5)])
+	game.set_unit_order(StrategoGame.RED, strong_slow, [Vector2i(5, 5)])
+	_ready_and_resolve(game)
+	_expect(game.pieces[strong_slow].position == Vector2i(5, 5), "the strongest formation holds the ground its side took")
+	_expect(game.pieces[weak_fast].position == Vector2i(4, 5), "even though a lighter one reached the fight first")
+
+	# A defender still outranks both. This is the rule arrival order was written
+	# for and the one thing that must not change: a formation cannot be shoved
+	# off ground it held by its own reinforcements, however strong they are.
+	var held := _test_game()
+	var holder := held.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 3)
+	var heavy := held.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	held.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 1)
+	held.set_support_order(StrategoGame.BLUE, heavy, Vector2i(5, 5))
+	_ready_and_resolve(held)
+	_expect(held.pieces[holder].position == Vector2i(5, 5), "a formation that held its hex keeps it")
+	_expect(held.pieces[heavy].position == Vector2i(6, 5), "and a stronger ally that moved up in support does not take it from it")
+
+
+func _test_the_order_you_issued_first_takes_the_square() -> void:
+	# Two formations identical in weight and Strength, arriving together, used to
+	# be separated by piece id: deterministic, but invisible and unaskable. The
+	# queue the player built decides it instead.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 2)
+	var low_id := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 9)
+	var high_id := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(6, 5), 9)
+	_open_reposition(game)
+	# Deliberately ordered against id, so id cannot be what decides it.
+	game.set_leftover_order(StrategoGame.RED, high_id, Vector2i(5, 5))
+	game.set_leftover_order(StrategoGame.RED, low_id, Vector2i(5, 5))
+	_expect(int(game.order_for_piece(high_id).sequence) < int(game.order_for_piece(low_id).sequence), "the order issued first holds the lower place in the queue")
+	_ready_and_resolve_reposition(game)
+	_expect(game.pieces[high_id].position == Vector2i(5, 5), "and takes the square, despite the higher piece id")
+	_expect(game.pieces[low_id].position == Vector2i(4, 5), "while the one committed second comes home")
 
 
 func _test_two_cavalry_may_reposition_onto_one_enemy() -> void:

@@ -130,8 +130,12 @@ advanced into the gap behind it, it falls back to whichever neighbouring hex
 leads most directly away from the contested one. All six are tried before a
 formation that never lost its fight is destroyed for standing in traffic, which
 is more forgiving than the three options a retreat gets.
-Claims are settled in arrival order, so a defender that held its ground keeps it
-and its own reinforcements cannot shove it off. In an ordinary fight every
+Claims are settled in order: a formation already standing on the hex first, so a
+defender that held its ground keeps it and its own reinforcements cannot shove it
+off; then the strongest, so ground a side has taken is held by the formation best
+able to keep it; then whoever arrived first; and last the order you issued, so
+two formations alike in every other way are separated by which one you committed
+first rather than by anything you cannot see. In an ordinary fight every
 attacker was ordered into the same hex, so one takes it and the rest come home.
 In a crossing fight the participants were ordered into different hexes, so an
 advancing line can take both and stay together.

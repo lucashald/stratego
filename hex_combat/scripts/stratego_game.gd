@@ -211,6 +211,13 @@ var last_round_events: Array[Dictionary] = []
 ## they cover mapped back to them so a later arrival joins the fight standing
 ## there instead of reading it as ordinary ground. Both are empty outside the
 ## main movement phase, which still resolves its one wave of contact on the spot.
+## Counts orders as they are issued, so two formations that are otherwise
+## identical can be told apart by which one the player committed first. Piece id
+## did that job before, which is creation order: deterministic, but invisible and
+## unaskable. Kept on the order and encoded into replays, because a replay that
+## reassigned these by id would place formations differently from the game it is
+## meant to reproduce.
+var _order_sequence := 0
 var _pending_battles: Array[Dictionary] = []
 var _contested_hexes: Dictionary = {}
 var last_move := {"from": Vector2i(-1, -1), "to": Vector2i(-1, -1), "visible_to": [], "action": ""}
@@ -995,6 +1002,7 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 		"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
 		"shot_type": "", "leftover": Vector2i(-1, -1),
 	}
+	candidate.sequence = _next_order_sequence(order_for_piece(piece_id))
 	var support_position := normalized_path[normalized_path.size() - 1] if support and not normalized_path.is_empty() else Vector2i(-1, -1)
 	if not _same_player_order_is_clear(player, piece_id, candidate, strict_friendly, support_position):
 		return {"ok": false, "message": "Friendly formations would collide on the same impulse."}
@@ -1202,6 +1210,7 @@ func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: i
 	var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
 	if candidate.is_empty():
 		candidate = {"piece_id": piece_id, "player": player, "path": []}
+	candidate.sequence = _next_order_sequence(candidate)
 	candidate.ranged_target = target
 	candidate.ranged_target_id = target_id
 	candidate.shot_type = shot_type
@@ -1281,6 +1290,7 @@ func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> 
 	var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
 	if candidate.is_empty():
 		candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
+	candidate.sequence = _next_order_sequence(candidate)
 	candidate.leftover = target
 	candidate.ranged_target = Vector2i(-1, -1)
 	candidate.ranged_target_id = -1
@@ -1456,6 +1466,15 @@ func has_leftover_orders(player: int) -> bool:
 		if order.get("leftover", Vector2i(-1, -1)).x >= 0 or order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
 			return true
 	return false
+
+
+## An order keeps the number it was first given, so revising a formation's path
+## does not quietly demote it behind everything ordered since. Only clearing the
+## order and starting again gives it a new place in the queue.
+func _next_order_sequence(existing: Dictionary) -> int:
+	if existing.has("sequence"): return int(existing.sequence)
+	_order_sequence += 1
+	return _order_sequence
 
 
 func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary, strict_friendly: bool = true, support_position: Vector2i = Vector2i(-1, -1)) -> bool:
@@ -1982,12 +2001,32 @@ func _placement_order(ids: Array, participants: Array) -> Array[int]:
 	var ordered: Array[int] = []
 	for id_value in ids: ordered.append(int(id_value))
 	ordered.sort_custom(func(first: int, second: int) -> bool:
+		# Already standing there beats everything, which is the rule arrival
+		# order was written for: a formation that held its ground keeps it and
+		# its own reinforcements cannot push it off.
+		var holding_first := not bool(_participant_for(first, participants).get("is_attacker", false))
+		var holding_second := not bool(_participant_for(second, participants).get("is_attacker", false))
+		if holding_first != holding_second: return holding_first
+		# Among formations that moved in, the strongest takes the ground. Arrival
+		# used to decide this too, but among attackers arrival is Weight rather
+		# than intent, so a Light that made contact first left a won square
+		# garrisoned by the formation least able to hold it while the Heavy that
+		# did the work walked home.
+		if int(pieces[first].strength) != int(pieces[second].strength): return int(pieces[first].strength) > int(pieces[second].strength)
 		var arrival_first := int(_participant_for(first, participants).get("arrival", 0))
 		var arrival_second := int(_participant_for(second, participants).get("arrival", 0))
 		if arrival_first != arrival_second: return arrival_first < arrival_second
-		if int(pieces[first].strength) != int(pieces[second].strength): return int(pieces[first].strength) > int(pieces[second].strength)
-		return first < second)
+		# Nothing about the formations separates them, so the player does: the
+		# one committed first takes the square.
+		return _order_sequence_for(first) < _order_sequence_for(second))
 	return ordered
+
+
+## Where a formation's order sits in the queue the player built. Anything without
+## one sorts last, and piece id keeps the answer stable if two somehow tie.
+func _order_sequence_for(piece_id: int) -> int:
+	var order := order_for_piece(piece_id)
+	return int(order.get("sequence", 1 << 30)) * 1000 + piece_id
 
 
 func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, batch_name: String) -> Dictionary:
@@ -2809,6 +2848,11 @@ func _encode_main_orders() -> Array[Dictionary]:
 				"player": player,
 				"piece_id": piece_id,
 				"path": path,
+				# The queue the player built, which decides who takes contested
+				# ground when nothing about the formations separates them.
+				# Reassigning it on load would place formations differently from
+				# the game this is meant to reproduce.
+				"sequence": int(order.get("sequence", 0)),
 			})
 	return encoded
 
@@ -2824,13 +2868,14 @@ func _encode_leftover_orders() -> Array[Dictionary]:
 			var move_target: Vector2i = order.get("leftover", Vector2i(-1, -1))
 			var ranged_target: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
 			if move_target.x >= 0:
-				encoded.append({"player": player, "piece_id": piece_id, "action": "move", "target": _encode_position(move_target)})
+				encoded.append({"player": player, "piece_id": piece_id, "action": "move", "target": _encode_position(move_target), "sequence": int(order.get("sequence", 0))})
 			elif ranged_target.x >= 0:
 				encoded.append({
 					"player": player, "piece_id": piece_id, "action": "ranged",
 					"target": _encode_position(ranged_target),
 					"target_id": int(order.get("ranged_target_id", -1)),
 					"support": bool(order.get("volley_support", false)),
+					"sequence": int(order.get("sequence", 0)),
 				})
 	return encoded
 
@@ -3181,7 +3226,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		var candidate := {
 			"piece_id": piece_id, "player": player, "path": path,
 			"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
-			"leftover": Vector2i(-1, -1),
+			"leftover": Vector2i(-1, -1), "sequence": int(entry.get("sequence", 0)),
 		}
 		if player not in orders:
 			orders[player] = {}
@@ -3198,6 +3243,9 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		if not bool(result.get("ok", false)):
 			orders.clear()
 			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
+		# Restored rather than reissued: set_unit_order hands out the next number
+		# in this session's queue, which is not the one the recorded game used.
+		orders[int(candidate.player)][int(candidate.piece_id)].sequence = int(candidate.get("sequence", 0))
 	return {"ok": true, "count": candidates.size()}
 
 
@@ -3228,6 +3276,7 @@ func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
 			return {"ok": false, "message": "A recorded post-clash action has an unknown type."}
 		if not bool(result.get("ok", false)):
 			return {"ok": false, "message": "A recorded post-clash action was rejected: %s" % String(result.get("message", "invalid order"))}
+		orders[player][piece_id].sequence = int(entry.get("sequence", 0))
 		if player not in touched_players:
 			touched_players.append(player)
 	for player in touched_players:
