@@ -99,16 +99,6 @@ var resolution_mode := false
 var resolution_events: Array[Dictionary] = []
 var resolution_index := 0
 var presentation_paused := false
-## A fight waits on the player before it shows itself. Committing does not roll
-## anything, since the round is already resolved by the time it is drawn, but it
-## is the moment the player chooses to look, and what follows plays out rather
-## than asking again. Indices rather than a flag so stepping back through a
-## reviewed fight does not ask for it a second time.
-var _rolled_events: Dictionary = {}
-var _battle_awaiting_roll := false
-## True only while a committed fight is showing itself. Enter reaches playback
-## directly, so the disabled button alone would not hold the reveal.
-var _battle_revealing := false
 var presentation_speed := 1.0
 var playback_pause_button: Button
 var zoom_label: Label
@@ -1498,7 +1488,6 @@ func _resolve_ready_round() -> void:
 	if no_visible_events:
 		resolution_events.append({"action": "no_contact", "batch": "leftover" if resolving_leftover else "ranged", "combat": false, "result": "no_visible_contact"})
 	resolution_index = 0
-	_rolled_events.clear()
 	resolution_mode = true
 	presentation_paused = not spectator_mode and not (no_visible_events and not replay_view_mode)
 	presentation_speed = 1.0
@@ -1639,22 +1628,18 @@ func _present_resolution_event() -> void:
 		return
 	resolution_index = clampi(resolution_index, 0, resolution_events.size() - 1)
 	var event: Dictionary = resolution_events[resolution_index]
-	_battle_awaiting_roll = bool(event.get("combat", false)) and not spectator_mode and not replay_view_mode and resolution_index not in _rolled_events
 	var advance_hint := "Auto advancing" if spectator_mode and not replay_view_mode else ("Click %s to continue" % _resolution_completion_label().capitalize() if resolution_index == resolution_events.size() - 1 else "Click Next to continue")
 	phase_subtitle.text = "Event %d of %d · %s · %s" % [resolution_index + 1, resolution_events.size(), _action_label(String(event.get("action", "event"))).capitalize(), advance_hint]
 	if bool(event.get("combat", false)):
 		board_view.combat_hold = not spectator_mode or replay_view_mode
 		board_view.combat_duration_msec = maxi(1400, int(_resolution_event_duration(event) * 1000.0 / presentation_speed))
-		board_view.show_combat(event, not _battle_awaiting_roll)
+		board_view.show_combat(event)
 	else:
 		board_view.combat_hold = false
 		board_view.combat_event.clear()
-	_update_battle_card(event, not _battle_awaiting_roll)
+	_update_battle_card(event)
 	_update_timeline(_timeline_index_for_event(event))
-	if _battle_awaiting_roll:
-		playback_pause_button.text = "ROLL"
-	else:
-		playback_pause_button.text = _resolution_completion_label() if resolution_index == resolution_events.size() - 1 else "NEXT"
+	playback_pause_button.text = _resolution_completion_label() if resolution_index == resolution_events.size() - 1 else "NEXT"
 
 
 func _resolution_completion_label() -> String:
@@ -1678,7 +1663,7 @@ func _resolution_event_duration(event: Dictionary) -> float:
 	return 2.5
 
 
-func _update_battle_card(event: Dictionary, revealed: bool = true) -> void:
+func _update_battle_card(event: Dictionary) -> void:
 	var action := String(event.get("action", "event"))
 	battle_title.text = _battle_name(event)
 	battle_result.text = ""
@@ -1741,15 +1726,6 @@ func _update_battle_card(event: Dictionary, revealed: bool = true) -> void:
 		# Nothing fought, so the outcome line is the whole card.
 		battle_body.text = ""
 		battle_result_detail.text = _result_detail(event, StrategoGame.EMPTY)
-		return
-	# Before the fight is committed the card says who is in it and nothing about
-	# how it went. The banners are the whole point of the pause: this is the
-	# moment to look at what is about to happen to whom.
-	if not revealed:
-		battle_result.text = ""
-		battle_result_detail.text = "Contested. Roll to resolve."
-		battle_body.text = ""
-		battle_body.visible = false
 		return
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
 	battle_result.text = _result_label(event, winner_id)
@@ -2254,47 +2230,11 @@ func _playback_previous() -> void:
 
 
 func _playback_next() -> void:
-	if _battle_revealing:
-		return
-	if _battle_awaiting_roll:
-		_commit_battle(session_id)
-		return
 	if resolution_index >= resolution_events.size() - 1:
 		_finish_resolution_presentation()
 	else:
 		resolution_index += 1
 		_present_resolution_event()
-
-
-## Commit the fight in front of the player and then let it finish on its own.
-## The retreats it caused play out too: a retreat is the fight ending rather than
-## a decision to sit through, and stopping to ask about each one is what made
-## watching a battle feel like paperwork.
-func _commit_battle(active_session: int) -> void:
-	_rolled_events[resolution_index] = true
-	_battle_awaiting_roll = false
-	_battle_revealing = true
-	board_view.commit_combat()
-	playback_pause_button.disabled = true
-	# The card fills in after the dice have landed, not before, so the panel and
-	# the board are saying the same thing at the same moment.
-	await get_tree().create_timer(board_view.combat_reveal_duration_msec() / 1000.0 / presentation_speed).timeout
-	_battle_revealing = false
-	if active_session != session_id or not resolution_mode:
-		return
-	playback_pause_button.disabled = false
-	# Deliberately not _present_resolution_event: re-presenting would call
-	# show_combat again and send the dice back down the board a second time.
-	_update_battle_card(resolution_events[resolution_index], true)
-	playback_pause_button.text = _resolution_completion_label() if resolution_index == resolution_events.size() - 1 else "NEXT"
-	while active_session == session_id and resolution_mode and resolution_index < resolution_events.size() - 1:
-		if String(resolution_events[resolution_index + 1].get("action", "")) not in ["retreat", "retreat_collision"]:
-			break
-		resolution_index += 1
-		_present_resolution_event()
-		await get_tree().create_timer(_resolution_event_duration(resolution_events[resolution_index]) * 0.5 / presentation_speed).timeout
-		if active_session != session_id or not resolution_mode:
-			return
 
 
 func _playback_last() -> void:

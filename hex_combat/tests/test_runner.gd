@@ -31,7 +31,7 @@ func _run() -> void:
 	_test_a_bounce_lunges_from_where_it_actually_stood()
 	_test_the_battle_card_is_built_per_side()
 	_test_reposition_marches_like_the_main_phase()
-	_test_a_fight_holds_until_it_is_committed()
+	_test_a_fight_draws_one_pool_per_side()
 	_test_a_bounce_reads_as_being_stopped()
 	_test_support_is_offered_on_a_friendly_formation()
 	_test_context_menu_actually_issues_support_and_join_volley()
@@ -889,10 +889,9 @@ func _test_reposition_marches_like_the_main_phase() -> void:
 	presenter.free()
 
 
-func _test_a_fight_holds_until_it_is_committed() -> void:
-	# The round is already resolved by the time any of it is drawn, so
-	# committing reveals a result rather than producing one. What the board must
-	# not do is give the result away before the player asks for it.
+func _test_a_fight_draws_one_pool_per_side() -> void:
+	# Every formation on a side shares its roll, so drawing a pool per formation
+	# would put the same dice on the board twice in a multiway fight.
 	var game := _test_game()
 	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
 	var defender := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 6)
@@ -905,18 +904,13 @@ func _test_a_fight_holds_until_it_is_committed() -> void:
 	var battle := _events_with_action(events, "melee")[0]
 	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
 	view.set_game(game)
-	view.show_combat(battle, false)
-	_expect(not view.combat_committed, "a fight shown for the player to look at is not committed yet")
-	view.commit_combat()
-	_expect(view.combat_committed, "and committing it is what starts the reveal")
-	# One pool per side, not one per formation: Blue and Green share a side and
-	# share the roll, so drawing both would draw the same dice twice.
+	view.show_combat(battle)
 	var pools: Array = view._combat_side_pools()
 	_expect(pools.size() == 2, "the board draws one pool per side rather than one per participant")
 	var owners: Array[int] = []
 	for pair in pools: owners.append(game._team_for_piece(int(pair[0])))
 	_expect(owners[0] != owners[1], "and the two pools belong to opposing sides")
-	_expect(view.combat_reveal_duration_msec() > view.COMBAT_DAMAGE_DELAY_MSEC, "the reveal lasts long enough for the dice to land before the damage does")
+	_expect(view.combat_reveal_duration_msec() > view.COMBAT_DAMAGE_DELAY_MSEC, "the dice finish landing before the damage is drawn")
 	_expect(int(battle.participants.size()) == 3 and defender in battle.participants, "the fight under test really is a multiway one")
 	view.free()
 

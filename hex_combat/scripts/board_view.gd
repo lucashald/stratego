@@ -35,10 +35,9 @@ var combat_event: Dictionary = {}
 var combat_started_msec := 0
 var combat_duration_msec := 1600
 var combat_hold := false
-## A fight holds until the player commits it, and shows nothing of its dice
-## before then: the square is simply contested and waiting. The faces are already
-## decided by the time anything is drawn, because replay verification depends on
-## the exact stream, so committing reveals a result rather than producing one.
+## When the fight's dice started landing. The faces are decided long before any
+## of this is drawn, because replay verification depends on the exact stream, so
+## the landing is a way of reading the result out rather than of producing it.
 var combat_committed := true
 var combat_commit_msec := 0
 ## Per die, then the pause before damage lands. Staggering the landings is what
@@ -1140,13 +1139,6 @@ func show_combat(event: Dictionary, committed: bool = true) -> void:
 	combat_started_msec = Time.get_ticks_msec()
 	combat_committed = committed
 	combat_commit_msec = combat_started_msec
-	queue_redraw()
-
-
-func commit_combat() -> void:
-	if combat_event.is_empty(): return
-	combat_committed = true
-	combat_commit_msec = Time.get_ticks_msec()
 	queue_redraw()
 
 
