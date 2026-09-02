@@ -52,6 +52,10 @@ const MARCH_BEAT_MSEC := 380.0
 ## How far into the contested square a bounced formation lunges before being
 ## turned back, as a fraction of a cell.
 const BOUNCE_LUNGE := 0.42
+## Where the drive ends and where the formation stops leaning on the refusal, as
+## fractions of the beat. Between them it is held against whatever stopped it.
+const BOUNCE_PUSH := 0.22
+const BOUNCE_HOLD := 0.42
 
 # piece_id -> Array of {beat:int, from:Vector2i, to:Vector2i, bounce:bool}
 var _march_steps: Dictionary = {}
@@ -1045,13 +1049,28 @@ func _march_offset(piece_id: int, cell: float) -> Vector2:
 				# Out and back inside one beat: the formation commits, is
 				# refused, and returns. A bounce otherwise animates as nothing
 				# at all, which reads as the order having been ignored.
-				visual = from_point.lerp(to_point, sin(progress * PI) * BOUNCE_LUNGE)
+				visual = from_point.lerp(to_point, _bounce_lunge(progress) * BOUNCE_LUNGE)
 			else:
 				visual = from_point.lerp(to_point, eased)
 			break
 		else:
 			break
 	return (visual - Vector2(game.pieces[piece_id].position)) * cell
+
+
+## How far out a bounce has driven, as a fraction of the full lunge. Being
+## stopped and stumbling are different things, and a symmetric curve can only
+## say the second, because it is slowest exactly where the formation ought to be
+## hitting something. This accelerates the whole way in, halts dead, leans on the
+## refusal for a moment, and only then gives the ground back.
+static func _bounce_lunge(progress: float) -> float:
+	if progress <= BOUNCE_PUSH:
+		var drive := progress / BOUNCE_PUSH
+		return drive * drive
+	if progress <= BOUNCE_HOLD:
+		return 1.0
+	var give := (progress - BOUNCE_HOLD) / (1.0 - BOUNCE_HOLD)
+	return 1.0 - give * give
 
 
 func show_combat(event: Dictionary) -> void:

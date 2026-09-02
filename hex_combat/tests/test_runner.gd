@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_bounce_reads_as_being_stopped()
 	_test_support_is_offered_on_a_friendly_formation()
 	_test_context_menu_actually_issues_support_and_join_volley()
 	_test_reinforcing_a_defender_joins_its_fight()
@@ -739,6 +740,26 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_bounce_reads_as_being_stopped() -> void:
+	# Shape, not pixels. A bounce has to have an impact in it: the formation is
+	# still gaining speed when it is refused, holds against it, and only then
+	# gives the ground back. The symmetric curve this replaced was slowest at
+	# exactly the moment it should have been hitting something.
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	_expect(is_equal_approx(view._bounce_lunge(0.0), 0.0), "a bounce starts at home")
+	_expect(view._bounce_lunge(0.11) < 0.3, "the drive accelerates rather than easing out of the gate")
+	_expect(is_equal_approx(view._bounce_lunge(view.BOUNCE_PUSH), 1.0), "and arrives at full extent still gaining")
+	_expect(is_equal_approx(view._bounce_lunge(0.3), 1.0) and is_equal_approx(view._bounce_lunge(view.BOUNCE_HOLD), 1.0), "it is held against whatever refused it")
+	_expect(view._bounce_lunge(0.6) > 0.8, "the ground is given back reluctantly at first")
+	_expect(is_equal_approx(view._bounce_lunge(1.0), 0.0), "and the formation ends the beat exactly where it began")
+	var previous := 1.1
+	for step in range(5, 11):
+		var sampled := view._bounce_lunge(float(step) / 10.0)
+		_expect(sampled <= previous, "the return never moves back toward the contested hex")
+		previous = sampled
+	view.free()
 
 
 func _test_support_is_offered_on_a_friendly_formation() -> void:
