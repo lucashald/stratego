@@ -1,0 +1,8 @@
+
+# Python bytecode from the asset tools
+__pycache__/
+*.pyc
+
+# Local visual checks and generated replay verification output
+/work/
+/replays/*.json

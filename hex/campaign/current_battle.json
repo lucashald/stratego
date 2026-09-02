@@ -1,0 +1,446 @@
+{
+  "name": "Battle 2 \u2014 Ashweir Bridge",
+  "grid": "hex_odd_q_flat",
+  "board_width": 20,
+  "board_height": 20,
+  "briefing": [
+    "Word of the Toll Road reached Ashweir inside a day. Vare's garrison commander did not send another toll company. He called up the muster.",
+    "The river runs the width of the field. One bridge crosses it, two spans wide, and Blue holds the near bank.",
+    "You do not need to take anything. You need to still be standing here when Vare gives up trying to cross.",
+    "They will not give up quickly. Eleven formations answer the muster this time, and their commander has read the reports from the Toll Road."
+  ],
+  "turn_limit": 30,
+  "private_battle_results": true,
+  "terrain": {
+    "water": [
+      [
+        0,
+        9
+      ],
+      [
+        1,
+        9
+      ],
+      [
+        2,
+        9
+      ],
+      [
+        3,
+        9
+      ],
+      [
+        4,
+        9
+      ],
+      [
+        5,
+        9
+      ],
+      [
+        6,
+        9
+      ],
+      [
+        7,
+        9
+      ],
+      [
+        8,
+        9
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        15,
+        9
+      ],
+      [
+        16,
+        9
+      ],
+      [
+        17,
+        9
+      ],
+      [
+        18,
+        9
+      ],
+      [
+        19,
+        9
+      ],
+      [
+        0,
+        10
+      ],
+      [
+        1,
+        10
+      ],
+      [
+        2,
+        10
+      ],
+      [
+        3,
+        10
+      ],
+      [
+        4,
+        10
+      ],
+      [
+        5,
+        10
+      ],
+      [
+        6,
+        10
+      ],
+      [
+        7,
+        10
+      ],
+      [
+        8,
+        10
+      ],
+      [
+        11,
+        10
+      ],
+      [
+        12,
+        10
+      ],
+      [
+        13,
+        10
+      ],
+      [
+        14,
+        10
+      ],
+      [
+        15,
+        10
+      ],
+      [
+        16,
+        10
+      ],
+      [
+        17,
+        10
+      ],
+      [
+        18,
+        10
+      ],
+      [
+        19,
+        10
+      ],
+      [
+        0,
+        11
+      ],
+      [
+        1,
+        11
+      ],
+      [
+        2,
+        11
+      ],
+      [
+        3,
+        11
+      ],
+      [
+        4,
+        11
+      ],
+      [
+        5,
+        11
+      ],
+      [
+        6,
+        11
+      ],
+      [
+        7,
+        11
+      ],
+      [
+        8,
+        11
+      ],
+      [
+        11,
+        11
+      ],
+      [
+        12,
+        11
+      ],
+      [
+        13,
+        11
+      ],
+      [
+        14,
+        11
+      ],
+      [
+        15,
+        11
+      ],
+      [
+        16,
+        11
+      ],
+      [
+        17,
+        11
+      ],
+      [
+        18,
+        11
+      ],
+      [
+        19,
+        11
+      ]
+    ],
+    "bridge": [
+      [
+        9,
+        9
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        10,
+        10
+      ],
+      [
+        9,
+        11
+      ],
+      [
+        10,
+        11
+      ]
+    ]
+  },
+  "objective": {
+    "kind": "survive",
+    "side": "blue",
+    "until_round": 28,
+    "reason": "held_the_bridge",
+    "also": {
+      "kind": "reach",
+      "side": "red",
+      "area": [
+        0,
+        15,
+        20,
+        5
+      ],
+      "strength": 18,
+      "reason": "forced_the_crossing"
+    }
+  },
+  "armies": {
+    "blue": [
+      {
+        "name": "Oakhand",
+        "type": "HI",
+        "at": [
+          9,
+          13
+        ],
+        "strength": 5
+      },
+      {
+        "name": "Stonewatch",
+        "type": "HI",
+        "at": [
+          10,
+          13
+        ],
+        "strength": 8
+      },
+      {
+        "name": "Marrow",
+        "type": "MI",
+        "at": [
+          9,
+          14
+        ],
+        "strength": 5
+      },
+      {
+        "name": "Thistle",
+        "type": "MI",
+        "at": [
+          10,
+          14
+        ],
+        "strength": 3
+      },
+      {
+        "name": "Harrow",
+        "type": "MA",
+        "at": [
+          9,
+          15
+        ],
+        "strength": 6
+      },
+      {
+        "name": "Wren",
+        "type": "LA",
+        "at": [
+          10,
+          15
+        ],
+        "strength": 5
+      },
+      {
+        "name": "Coldbrook",
+        "type": "LI",
+        "at": [
+          9,
+          16
+        ],
+        "strength": 6
+      }
+    ],
+    "red": [
+      {
+        "name": "Vare First",
+        "type": "HI",
+        "at": [
+          9,
+          3
+        ],
+        "strength": 8
+      },
+      {
+        "name": "Vare Second",
+        "type": "HI",
+        "at": [
+          11,
+          3
+        ],
+        "strength": 8
+      },
+      {
+        "name": "Bulwark",
+        "type": "HI",
+        "at": [
+          10,
+          2
+        ],
+        "strength": 8
+      },
+      {
+        "name": "Siegewright",
+        "type": "HA",
+        "at": [
+          10,
+          4
+        ],
+        "strength": 7
+      },
+      {
+        "name": "Warden",
+        "type": "MI",
+        "at": [
+          8,
+          4
+        ],
+        "strength": 7
+      },
+      {
+        "name": "Bailiff",
+        "type": "MI",
+        "at": [
+          12,
+          4
+        ],
+        "strength": 7
+      },
+      {
+        "name": "Tithe",
+        "type": "MA",
+        "at": [
+          10,
+          5
+        ],
+        "strength": 6
+      },
+      {
+        "name": "Levy",
+        "type": "MC",
+        "at": [
+          13,
+          3
+        ],
+        "strength": 7
+      },
+      {
+        "name": "Outrider",
+        "type": "LI",
+        "at": [
+          7,
+          3
+        ],
+        "strength": 6
+      },
+      {
+        "name": "Picket",
+        "type": "LI",
+        "at": [
+          13,
+          5
+        ],
+        "strength": 6
+      },
+      {
+        "name": "Fletch",
+        "type": "LA",
+        "at": [
+          9,
+          1
+        ],
+        "strength": 5
+      }
+    ]
+  }
+}

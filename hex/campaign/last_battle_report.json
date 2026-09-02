@@ -1,0 +1,419 @@
+{
+  "combat_log": [
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Harrow",
+      "target": "Picket"
+    },
+    {
+      "action": "ranged",
+      "damage": 5,
+      "result": "ranged_destroyed",
+      "shooter": "Tithe",
+      "target": "Thistle"
+    },
+    {
+      "action": "ranged_fizzle",
+      "damage": 0,
+      "result": "no_target",
+      "shooter": "Wren",
+      "target": ""
+    },
+    {
+      "action": "crossing_battle",
+      "participants": [
+        {
+          "name": "Stonewatch",
+          "outcome": "won"
+        },
+        {
+          "name": "Picket",
+          "outcome": "destroyed"
+        }
+      ],
+      "result": "win",
+      "winner": "Stonewatch"
+    },
+    {
+      "action": "ranged",
+      "damage": 6,
+      "result": "ranged_destroyed",
+      "shooter": "Harrow",
+      "target": "Fletch"
+    },
+    {
+      "action": "ranged",
+      "damage": 5,
+      "result": "ranged_destroyed",
+      "shooter": "Tithe",
+      "target": "Marrow"
+    },
+    {
+      "action": "ranged",
+      "damage": 2,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Tithe"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Tithe"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_destroyed",
+      "shooter": "Wren",
+      "target": "Tithe"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Warden"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_destroyed",
+      "shooter": "Wren",
+      "target": "Warden"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Bailiff"
+    },
+    {
+      "action": "ranged_fizzle",
+      "damage": 0,
+      "result": "out_of_range",
+      "shooter": "Harrow",
+      "target": ""
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_destroyed",
+      "shooter": "Harrow",
+      "target": "Bailiff"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_destroyed",
+      "shooter": "Wren",
+      "target": "Bailiff"
+    },
+    {
+      "action": "melee",
+      "participants": [
+        {
+          "name": "Levy",
+          "outcome": "destroyed"
+        },
+        {
+          "name": "Oakhand",
+          "outcome": "destroyed"
+        }
+      ],
+      "result": "bounce"
+    },
+    {
+      "action": "ranged",
+      "damage": 0,
+      "result": "ranged_hit",
+      "shooter": "Harrow",
+      "target": "Vare First"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Vare First"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Siegewright",
+      "target": "Coldbrook"
+    },
+    {
+      "action": "melee",
+      "participants": [
+        {
+          "name": "Coldbrook",
+          "outcome": "destroyed"
+        },
+        {
+          "name": "Siegewright",
+          "outcome": "won"
+        }
+      ],
+      "result": "win",
+      "winner": "Siegewright"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_destroyed",
+      "shooter": "Harrow",
+      "target": "Vare First"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_destroyed",
+      "shooter": "Wren",
+      "target": "Vare First"
+    },
+    {
+      "action": "ranged_fizzle",
+      "damage": 0,
+      "result": "no_target",
+      "shooter": "Siegewright",
+      "target": "Coldbrook"
+    },
+    {
+      "action": "ranged",
+      "damage": 0,
+      "result": "ranged_hit",
+      "shooter": "Siegewright",
+      "target": "Stonewatch"
+    },
+    {
+      "action": "ranged_fizzle",
+      "damage": 0,
+      "result": "no_target",
+      "shooter": "Harrow",
+      "target": ""
+    },
+    {
+      "action": "ranged_fizzle",
+      "damage": 0,
+      "result": "no_target",
+      "shooter": "Wren",
+      "target": ""
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Harrow",
+      "target": "Siegewright"
+    },
+    {
+      "action": "ranged",
+      "damage": 1,
+      "result": "ranged_hit",
+      "shooter": "Wren",
+      "target": "Siegewright"
+    },
+    {
+      "action": "ranged",
+      "damage": 6,
+      "result": "ranged_destroyed",
+      "shooter": "Siegewright",
+      "target": "Wren"
+    },
+    {
+      "action": "ranged",
+      "damage": 3,
+      "result": "ranged_destroyed",
+      "shooter": "Harrow",
+      "target": "Siegewright"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_hit",
+      "shooter": "Harrow",
+      "target": "Vare Second"
+    },
+    {
+      "action": "ranged",
+      "damage": 4,
+      "result": "ranged_destroyed",
+      "shooter": "Harrow",
+      "target": "Vare Second"
+    },
+    {
+      "action": "melee",
+      "participants": [
+        {
+          "name": "Outrider",
+          "outcome": "won"
+        },
+        {
+          "name": "Harrow",
+          "outcome": "destroyed"
+        }
+      ],
+      "result": "win",
+      "winner": "Outrider"
+    }
+  ],
+  "name": "Battle 2 — Ashweir Bridge",
+  "outcome": {
+    "game_over": true,
+    "reason": "held_the_bridge",
+    "rounds": 28,
+    "winner": "blue"
+  },
+  "roster": [
+    {
+      "alive": false,
+      "max_strength": 5,
+      "name": "Oakhand",
+      "side": "blue",
+      "strength": 0,
+      "type": "HI"
+    },
+    {
+      "alive": true,
+      "max_strength": 8,
+      "name": "Stonewatch",
+      "side": "blue",
+      "strength": 8,
+      "type": "HI"
+    },
+    {
+      "alive": false,
+      "max_strength": 5,
+      "name": "Marrow",
+      "side": "blue",
+      "strength": 0,
+      "type": "MI"
+    },
+    {
+      "alive": false,
+      "max_strength": 3,
+      "name": "Thistle",
+      "side": "blue",
+      "strength": 0,
+      "type": "MI"
+    },
+    {
+      "alive": false,
+      "max_strength": 6,
+      "name": "Harrow",
+      "side": "blue",
+      "strength": 0,
+      "type": "MA"
+    },
+    {
+      "alive": false,
+      "max_strength": 5,
+      "name": "Wren",
+      "side": "blue",
+      "strength": 0,
+      "type": "LA"
+    },
+    {
+      "alive": false,
+      "max_strength": 6,
+      "name": "Coldbrook",
+      "side": "blue",
+      "strength": 0,
+      "type": "LI"
+    },
+    {
+      "alive": false,
+      "max_strength": 8,
+      "name": "Vare First",
+      "side": "red",
+      "strength": 0,
+      "type": "HI"
+    },
+    {
+      "alive": false,
+      "max_strength": 8,
+      "name": "Vare Second",
+      "side": "red",
+      "strength": 0,
+      "type": "HI"
+    },
+    {
+      "alive": true,
+      "max_strength": 8,
+      "name": "Bulwark",
+      "side": "red",
+      "strength": 8,
+      "type": "HI"
+    },
+    {
+      "alive": false,
+      "max_strength": 7,
+      "name": "Siegewright",
+      "side": "red",
+      "strength": 0,
+      "type": "HA"
+    },
+    {
+      "alive": false,
+      "max_strength": 7,
+      "name": "Warden",
+      "side": "red",
+      "strength": 0,
+      "type": "MI"
+    },
+    {
+      "alive": false,
+      "max_strength": 7,
+      "name": "Bailiff",
+      "side": "red",
+      "strength": 0,
+      "type": "MI"
+    },
+    {
+      "alive": false,
+      "max_strength": 6,
+      "name": "Tithe",
+      "side": "red",
+      "strength": 0,
+      "type": "MA"
+    },
+    {
+      "alive": false,
+      "max_strength": 7,
+      "name": "Levy",
+      "side": "red",
+      "strength": 0,
+      "type": "MC"
+    },
+    {
+      "alive": true,
+      "max_strength": 6,
+      "name": "Outrider",
+      "side": "red",
+      "strength": 3,
+      "type": "LI"
+    },
+    {
+      "alive": false,
+      "max_strength": 6,
+      "name": "Picket",
+      "side": "red",
+      "strength": 0,
+      "type": "LI"
+    },
+    {
+      "alive": false,
+      "max_strength": 5,
+      "name": "Fletch",
+      "side": "red",
+      "strength": 0,
+      "type": "LA"
+    }
+  ]
+}
