@@ -99,7 +99,7 @@ const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
 const REPLAY_FORMAT := "wego-formations-replay"
-const REPLAY_VERSION := 6
+const REPLAY_VERSION := 7
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const PIECE_DEFINITIONS := {
@@ -1954,19 +1954,25 @@ func _participant_for(piece_id: int, participants: Array) -> Dictionary:
 
 func _retreat_intent(piece_id: int, participant: Dictionary, participants: Array, scores: Dictionary, crossing: bool) -> Dictionary:
 	var target: Vector2i
+	var anchor: Vector2i
+	var direction := -1
 	if bool(participant.is_attacker) and not crossing:
+		anchor = participant.to
 		target = participant.from
+		direction = HexGrid.direction_between(anchor, target)
 	else:
 		var source := _highest_opposing_participant(piece_id, participants, scores)
+		anchor = participant.from
 		target = participant.from
 		var away := (HexGrid.cell_center(participant.from, Vector2.ZERO, 1.0) - HexGrid.cell_center(source.from, Vector2.ZERO, 1.0)).normalized()
 		var best_alignment := -2.0
-		for direction in HexGrid.DIRECTION_COUNT:
-			var alignment := HexGrid.direction_screen_vector(direction).dot(away)
+		for candidate_direction in HexGrid.DIRECTION_COUNT:
+			var alignment := HexGrid.direction_screen_vector(candidate_direction).dot(away)
 			if alignment > best_alignment:
 				best_alignment = alignment
-				target = HexGrid.neighbor(participant.from, direction)
-	return {"piece_id": piece_id, "from": participant.from, "to": target}
+				direction = candidate_direction
+				target = HexGrid.neighbor(participant.from, candidate_direction)
+	return {"piece_id": piece_id, "from": participant.from, "to": target, "anchor": anchor, "direction": direction}
 
 
 func _highest_opposing_participant(piece_id: int, participants: Array, scores: Dictionary) -> Dictionary:
@@ -1987,19 +1993,52 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 	for retreat: Dictionary in retreats:
 		var id := int(retreat.piece_id)
 		if not pieces[id].alive: continue
-		var target: Vector2i = retreat.to
-		if not is_inside(target) or is_blocked_terrain(target) or not piece_at(target).is_empty():
+		var direct_target: Vector2i = retreat.to
+		var target := direct_target
+		var shunt_side := ""
+		var destroy_reason := ""
+		if not is_inside(direct_target):
+			destroy_reason = "off_board"
+		elif is_blocked_terrain(direct_target):
+			destroy_reason = "blocked_terrain"
+		else:
+			var blocker := piece_at(direct_target)
+			if not blocker.is_empty():
+				if not are_allied_players(int(pieces[id].player), int(blocker.player)):
+					destroy_reason = "enemy_blocked"
+				else:
+					# Treat directly away as 6 o'clock. Moving clockwise from there is
+					# the retreating formation's left-hand (7 o'clock) hex; only if
+					# that is unavailable do we try the right-hand (5 o'clock) hex.
+					var anchor: Vector2i = retreat.get("anchor", retreat.from)
+					var direction := int(retreat.get("direction", HexGrid.direction_between(anchor, direct_target)))
+					if direction >= 0:
+						for option in [["left", 1], ["right", -1]]:
+							var candidate_direction := (direction + int(option[1]) + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT
+							var candidate := HexGrid.neighbor(anchor, candidate_direction)
+							if is_inside(candidate) and not is_blocked_terrain(candidate) and piece_at(candidate).is_empty():
+								target = candidate
+								shunt_side = String(option[0])
+								break
+					if shunt_side.is_empty():
+						destroy_reason = "friendly_congestion"
+		if not destroy_reason.is_empty():
 			_remove_piece(id)
-			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id, "from": retreat.from, "to": target, "result": "retreat_destroyed", "combat": false})
+			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id, "from": retreat.from, "to": direct_target, "result": "retreat_destroyed", "reason": destroy_reason, "combat": false})
 		else:
 			if target not in valid_by_target: valid_by_target[target] = []
-			valid_by_target[target].append(retreat)
+			var resolved_retreat := retreat.duplicate(true)
+			resolved_retreat.to = target
+			resolved_retreat.direct_to = direct_target
+			resolved_retreat.shunt_side = shunt_side
+			valid_by_target[target].append(resolved_retreat)
 	for target in valid_by_target:
 		var group: Array = valid_by_target[target]
 		if group.size() == 1:
 			var retreat: Dictionary = group[0]
 			_place_piece(int(retreat.piece_id), target, retreat.from)
-			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": int(retreat.piece_id), "from": retreat.from, "to": target, "result": "retreated", "combat": false})
+			var shunt_side := String(retreat.get("shunt_side", ""))
+			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": int(retreat.piece_id), "from": retreat.from, "to": target, "direct_to": retreat.get("direct_to", target), "shunt_side": shunt_side, "result": "retreat_shunted" if not shunt_side.is_empty() else "retreated", "combat": false})
 			continue
 		var teams: Dictionary = {}
 		for retreat: Dictionary in group: teams[_team_for_piece(int(retreat.piece_id))] = true

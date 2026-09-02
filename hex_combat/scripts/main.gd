@@ -2524,6 +2524,8 @@ func _log_event(event: Dictionary) -> void:
 		"retreat":
 			if event.result == "retreat_destroyed":
 				_log_line("A blocked or off-map retreat destroyed a formation.")
+			elif event.result == "retreat_shunted":
+				_log_line("A friendly formation blocked the retreat; the loser shunted %s." % String(event.get("shunt_side", "left")))
 		"bounce":
 			if event.get("reason", "") == "allied_collision":
 				_log_line("Allied formations collided and bounced without combat.")

@@ -42,6 +42,7 @@ func _run() -> void:
 	_test_cavalry_always_leftover_toggle()
 	_test_phase_has_no_decision_ignores_idle_formations()
 	_test_blocked_retreat_destroys_loser()
+	_test_friendly_blocked_retreat_shunts()
 	_test_enemy_retreat_collision_battle()
 	_test_impulse_sighting_is_remembered()
 	_test_combat_reveal_requires_current_sight()
@@ -1132,6 +1133,40 @@ func _test_blocked_retreat_destroys_loser() -> void:
 	var retreat_events := _events_with_action(events, "retreat")
 	_expect(retreat_events.size() == 1 and retreat_events[0].result == "retreat_destroyed", "retreat off-map destroys the losing formation")
 	_expect(not game.pieces[defender_id].alive and game.pieces[attacker_id].position == Vector2i(0, 0), "winner occupies after the blocked defender retreat")
+
+
+func _test_friendly_blocked_retreat_shunts() -> void:
+	var anchor := Vector2i(8, 8)
+	var direction := HexGrid.SOUTH
+	var direct := HexGrid.neighbor(anchor, direction)
+	var left := HexGrid.neighbor(anchor, (direction + 1) % HexGrid.DIRECTION_COUNT)
+	var right := HexGrid.neighbor(anchor, (direction - 1 + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT)
+
+	var left_game := _test_game()
+	var left_loser := left_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	left_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, direct, 5)
+	var left_events := left_game._resolve_retreats([{"piece_id": left_loser, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(left_game.pieces[left_loser].position == left and left_events[0].result == "retreat_shunted" and left_events[0].shunt_side == "left", "a friendly formation directly behind the loser shunts it left first")
+
+	var right_game := _test_game()
+	var right_loser := right_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	right_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, direct, 5)
+	right_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, left, 5)
+	var right_events := right_game._resolve_retreats([{"piece_id": right_loser, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(right_game.pieces[right_loser].position == right and right_events[0].shunt_side == "right", "a blocked left shunt falls back to the right-hand hex")
+
+	var enemy_game := _test_game()
+	var enemy_blocked := enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	enemy_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, direct, 5)
+	var enemy_events := enemy_game._resolve_retreats([{"piece_id": enemy_blocked, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(not enemy_game.pieces[enemy_blocked].alive and enemy_events[0].reason == "enemy_blocked", "an enemy in the direct retreat hex still destroys the loser without a shunt")
+
+	var trapped_game := _test_game()
+	var trapped := trapped_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	for blocked in [direct, left, right]:
+		trapped_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, blocked, 5)
+	var trapped_events := trapped_game._resolve_retreats([{"piece_id": trapped, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(not trapped_game.pieces[trapped].alive and trapped_events[0].reason == "friendly_congestion", "a loser dies when the direct, left, and right retreat hexes are all unavailable")
 
 
 func _test_enemy_retreat_collision_battle() -> void:
