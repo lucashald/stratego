@@ -43,6 +43,10 @@ func _run() -> void:
 	_test_support_is_offered_on_a_friendly_formation()
 	_test_context_menu_actually_issues_support_and_join_volley()
 	_test_reinforcing_a_defender_joins_its_fight()
+	_test_support_ordered_before_the_attack_still_joins_it()
+	_test_support_arriving_with_the_attack_joins_it()
+	_test_a_heavier_relief_buys_its_side_the_weight_die()
+	_test_support_shares_the_defeat_it_walks_into()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
@@ -1173,6 +1177,96 @@ func _test_reinforcing_a_defender_joins_its_fight() -> void:
 	_expect(int(melees[0].damage[attacker]) == 2, "the attacker faces the pair rather than the formation it set out to fight")
 	_expect(game.pieces[holder].position == Vector2i(5, 5), "the formation that held the hex keeps it")
 	_expect(game.pieces[relief].position == Vector2i(6, 5), "and the relief that could not stack on it returns")
+
+
+func _test_support_ordered_before_the_attack_still_joins_it() -> void:
+	# The case a player actually plays: you see the attack coming and order the
+	# relief up front, so it reaches the ally's hex before anything is contesting
+	# it and has no fight to join yet. It bounces off its own line, keeps its
+	# retry because a stationary ally was what stopped it, and is still trying on
+	# the impulse the attack finally lands. Covered separately from the relief
+	# that arrives late, because only this path depends on the retry budget.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var attacker := game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
+	_expect(bool(game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5)).get("ok", false)), "support can be ordered before there is any fight to join")
+	# The Medium reaches the hex on impulse 2; the Heavy only attacks on impulse 3.
+	var events := _ready_and_resolve(game)
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1 and relief in melees[0].participants, "a relief that arrived early is still in the fight when it finally opens")
+	_expect(_events_with_action(events, "bounce").size() == 1, "it bounced off its own line once on the way, before the attack arrived")
+	_expect(int(game.pieces[relief].movement_used) == 2, "and paid a movement point for the bounce as well as for the arrival")
+	_expect(game.pieces[holder].position == Vector2i(5, 5), "the holder keeps the ground it was reinforced on")
+
+
+func _test_support_arriving_with_the_attack_joins_it() -> void:
+	# Support landing on the same impulse as the attack never sees an open fight
+	# to join: it is grouped with the attacker as one more arrival on a contested
+	# hex. A different path through the resolver than joining a fight that was
+	# opened on an earlier impulse, and worth its own cover.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
+	game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5))
+	var events := _ready_and_resolve(game)
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1 and melees[0].participants.size() == 3, "the holder, its relief and the attacker resolve as one fight")
+	_expect(_events_with_action(events, "bounce").is_empty(), "support that arrives with the attack is never treated as congestion")
+	_expect(melees[0].dice_pools[holder].size() == 3, "Blue rolls a die for each of its two bodies plus the braced holder's defence die")
+	_expect(melees[0].dice_pools[attacker].size() == 2, "while Red rolls one body and its charge")
+	# Everything the relief adds is in the pool. It cannot brace, because the
+	# enemy reached the hex no later than it did.
+	_expect(int(melees[0].bonus_dice[holder]) == 1, "the relief brings its body and no second defence die")
+
+
+func _test_a_heavier_relief_buys_its_side_the_weight_die() -> void:
+	# The comparative dice are scored off the best formation on each side, so
+	# support also changes which side is heaviest. A Medium stepping in beside a
+	# Light earns Blue a weight die against a Light attacker that the holder
+	# could never have earned alone.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
+	game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5))
+	var events := _ready_and_resolve(game)
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1 and relief in melees[0].participants, "the heavier relief is in the fight")
+	_expect(melees[0].dice_pools[holder].size() == 4, "two bodies, the braced holder's defence die, and the weight die the relief brought")
+
+	# The same relief against an enemy it cannot out-mass earns no weight die,
+	# which is what makes the die comparative rather than a flat bonus.
+	var matched := _test_game()
+	var matched_holder := matched.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var matched_relief := matched.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var heavy_attacker := matched.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	matched.set_unit_order(StrategoGame.RED, heavy_attacker, [Vector2i(5, 5)])
+	matched.set_support_order(StrategoGame.BLUE, matched_relief, Vector2i(5, 5))
+	var matched_melees := _events_with_action(_ready_and_resolve(matched), "melee")
+	_expect(matched_melees.size() == 1 and matched_melees[0].dice_pools[matched_holder].size() == 3, "against a Heavy the same relief brings only its body")
+
+
+func _test_support_shares_the_defeat_it_walks_into() -> void:
+	# Support is a commitment rather than a free die. Damage is paid per side, so
+	# a relief that joins a fight its side then loses pays the same margin as the
+	# formation it came to help, and can die for it.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 4)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 4)
+	# Heavier, stronger and charging, so Blue cannot outscore it on any roll.
+	var attacker := game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 12)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
+	game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5))
+	var events := _ready_and_resolve(game)
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1 and relief in melees[0].participants, "the relief joined the fight it could not win")
+	_expect(int(melees[0].damage[holder]) > 0, "the losing side pays a margin")
+	_expect(int(melees[0].damage[holder]) == int(melees[0].damage[relief]), "and every formation on it pays the same one, relief included")
 
 
 func _test_bracing_is_earned_by_arriving_first() -> void:

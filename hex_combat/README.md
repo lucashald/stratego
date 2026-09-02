@@ -211,8 +211,29 @@ attackers end up in the same fight whatever their speeds.
 Walking into your own line is refused by default, because it is usually a
 misclick. **Support** is the way to ask for it deliberately: right-click a
 formation on your own side and the adjacent selected formations are ordered onto
-its hex. Resolution is unchanged by the naming. If a fight is open on that hex
-when they arrive they join it; if the hex is quiet they bounce off harmlessly.
+its hex. The context menu is the only route to it; the direction arrows and a
+plain click still refuse the step.
+
+Resolution is unchanged by the naming. If a fight is open on that hex when the
+relief arrives it joins, and if the hex is quiet it bounces off its own line
+without penalty and keeps its retry, so it is still trying on later impulses. A
+relief ordered up before the attack lands therefore joins the fight anyway, at
+the cost of a movement point per bounce.
+
+What support actually buys the defending side, in dice:
+
+- **one more die**, because a side rolls one per formation it brought
+- **the comparative Weight or Strength die**, if the relief is heavier or
+  stronger than anything the enemy has present and the holder was not
+- **a charge die** if the relief is Cavalry, since it counts as unbraced
+
+It does not buy a second braced-Infantry die. A relief can never be braced,
+because its arrival is the impulse it actually lands on and it only lands once an
+enemy is contesting the hex, so an enemy always arrived no later than it did.
+
+Support is a commitment rather than a free die. Damage is paid per side, so a
+relief that joins a fight its side then loses pays the same margin as the
+formation it came to help, and can die for it.
 
 `strict_friendly` is a parameter on the order calls. The bot passes strict so
 that a rejection prunes its own colliding candidates. Permissive callers accept
@@ -913,11 +934,20 @@ without leaking Role or Strength. `UnitIconCatalog` is the single place a
 
 Everything below was measured at commit `a8986c8`.
 
-**The suite passes.** 589 checks, 0 failures. Coverage includes hex topology,
+**The suite passes.** 605 checks, 0 failures. Coverage includes hex topology,
 fog, impulse timing, movement and collisions, the side-based pool, bracing,
 placement order, crit cancelling, retreat widening, support, massed volleys,
 reposition, objectives, deployment, replay round trips and tamper rejection,
 four-bot rounds, and the LLM client's parsing.
+
+**Support was verified end to end** and works on every path: ordered before the
+attack arrives, arriving on the same impulse as it, arriving after it, from a
+Heavy with a single movement point, from two reliefs at once, and during
+reposition. Measured effect on a Medium Infantry holding against a Medium Cavalry
+charge, 400 seeded trials each way: the hex was held 240 times unsupported and
+273 times supported. The holder survived all 400 either way, because one melee
+cannot destroy a healthy formation, so what support buys is winning the ground
+rather than surviving the fight.
 
 **Bot-vs-bot balance, 120 games per scenario from seed 1.** Note these are the
 bot's results, and the bot underplays fast flanking armies.
