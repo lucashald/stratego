@@ -1716,7 +1716,17 @@ func _update_battle_card(event: Dictionary, revealed: bool = true) -> void:
 		var id := int(id_value)
 		if id >= 0 and id < game.pieces.size():
 			valid_ids.append(id)
-	_refresh_battle_cards(valid_ids)
+	# A side rolls once, so the card is built around sides. Ordering the banners
+	# by side and putting the blades between them says who is fighting whom
+	# before a number is read, which a flat list of participants cannot.
+	var sides := _battle_sides(valid_ids)
+	var ordered: Array[int] = []
+	var boundaries: Array[int] = []
+	for side: Array in sides:
+		if not ordered.is_empty(): boundaries.append(ordered.size())
+		for id_value in side: ordered.append(int(id_value))
+	if not ordered.is_empty(): valid_ids = ordered
+	_refresh_battle_cards(valid_ids, true, boundaries)
 	for child in battle_stats.get_children(): child.queue_free()
 	if valid_ids.is_empty():
 		# Nothing fought, so the outcome line is the whole card.
@@ -1735,13 +1745,17 @@ func _update_battle_card(event: Dictionary, revealed: bool = true) -> void:
 	var winner_id := int(event.get("winner_id", StrategoGame.EMPTY))
 	battle_result.text = _result_label(event, winner_id)
 	battle_result_detail.text = _result_detail(event, winner_id)
-	# Two participants is the ordinary case and reads far better as a comparison
-	# than as two stacked blocks. Multiway battles keep the list form.
-	if valid_ids.size() == 2:
-		_refresh_battle_stats(event, valid_ids)
-		battle_body.text = ""
-		battle_body.visible = false
+	# Two sides is the ordinary case, multiway included, and the head-to-head
+	# grid is the honest shape for it: every number above the line belongs to a
+	# side, and only Strength left standing belongs to a formation. Listing the
+	# roll per formation printed the same dice two or three times over.
+	if sides.size() == 2:
+		_refresh_battle_stats(event, [int(sides[0][0]), int(sides[1][0])])
+		battle_body.text = _side_formation_lines(event, sides)
+		battle_body.visible = battle_body.text != ""
 		return
+	# Three or more sides only happens in a four-player scramble. There is no
+	# head-to-head to draw, so each side gets its own block instead.
 	var content := ""
 	for index in valid_ids.size():
 		var piece: Dictionary = game.pieces[valid_ids[index]]
@@ -1865,10 +1879,53 @@ func _draw_swords(host: Control) -> void:
 
 
 ## Rebuild the facing cards for however many formations the event involves.
-func _refresh_battle_cards(ids: Array[int], reveal_participants: bool = true) -> void:
+## The fight's participants grouped into sides, in the order they turned up.
+## Allies from different players share a side, because the engine scores them
+## together and the card has to say the same thing the dice did.
+func _battle_sides(ids: Array[int]) -> Array:
+	var sides: Array = []
+	var seen: Dictionary = {}
+	for id_value in ids:
+		var id := int(id_value)
+		var team := game._team_for_piece(id)
+		if team not in seen:
+			seen[team] = sides.size()
+			sides.append([] as Array[int])
+		sides[int(seen[team])].append(id)
+	return sides
+
+
+## What is left of each formation once the side's roll has been accounted for.
+## Damage is one margin paid alike across a losing side, so it belongs in the
+## grid above; only Strength still standing, and whether the formation is still
+## standing at all, differ from one formation to the next.
+func _side_formation_lines(event: Dictionary, sides: Array) -> String:
+	var outcomes: Dictionary = event.get("outcomes", {})
+	var blocks: Array[String] = []
+	for side: Array in sides:
+		if side.size() < 2: continue
+		var lines: Array[String] = []
+		for id_value in side:
+			var id := int(id_value)
+			var piece: Dictionary = game.pieces[id]
+			var state := String(outcomes.get(id, outcomes.get(str(id), "")))
+			var tail := "  [color=#a9a294]%s[/color]" % state.replace("_", " ") if state != "" else ""
+			lines.append("%s   [b]%d[/b]/%d%s" % [String(StrategoGame.PIECE_NAMES.get(piece.type, "Formation")), int(piece.strength), int(piece.max_strength), tail])
+		blocks.append("[color=#efc77c][b]%s[/b][/color]
+%s" % [game.player_name(int(game.pieces[int(side[0])].player)).to_upper(), "
+".join(lines)])
+	return "
+
+".join(blocks)
+
+
+func _refresh_battle_cards(ids: Array[int], reveal_participants: bool = true, sword_before: Array[int] = []) -> void:
 	for child in battle_cards.get_children(): child.queue_free()
 	for index in ids.size():
-		if index > 0: battle_cards.add_child(_battle_swords())
+		# With no grouping given, every neighbour is an opponent. Given side
+		# boundaries, blades go between the sides and allies simply stack.
+		if index > 0 and (sword_before.is_empty() or index in sword_before):
+			battle_cards.add_child(_battle_swords())
 		var piece: Dictionary = game.pieces[ids[index]]
 		battle_cards.add_child(_battle_side_card(piece, "", reveal_participants or _piece_identity_is_visible(piece)))
 
@@ -1899,7 +1956,12 @@ func _refresh_battle_stats(event: Dictionary, ids: Array[int]) -> void:
 		var render := func(value: int) -> String: return "+%d" % value if value > 0 else "0"
 		rows.append([render.call(bonus_left), "BONUS DICE", render.call(bonus_right), Color("#9fdc8a")])
 	rows.append([str(_event_roll(event, ids[0], 0)), "KEPT", str(_event_roll(event, ids[1], 1)), plain])
-	rows.append([str(int(left.strength)), "STRENGTH", str(int(right.strength)), plain])
+	# The Strength that actually scored, which is the side's leading formation at
+	# the moment it rolled. Reading it off the pieces now would show whatever is
+	# left after the damage, which is not the number that produced the score.
+	var scoring_strength := func(index: int) -> int:
+		return _event_score(event, ids[index], index) - _event_roll(event, ids[index], index)
+	rows.append([str(scoring_strength.call(0)), "STRENGTH", str(scoring_strength.call(1)), plain])
 	rows.append([str(_event_score(event, ids[0], 0)), "SCORE", str(_event_score(event, ids[1], 1)), Color("#f3eee5")])
 	# Only the 6s that survived cross-side cancelling are worth a row: a 6 each
 	# adds nothing to anybody's damage, so showing them invites the reader to
@@ -1918,6 +1980,9 @@ func _refresh_battle_stats(event: Dictionary, ids: Array[int]) -> void:
 		rows.append([chip.call(net_left), "CRIT 6s", chip.call(net_right), Color("#e7c47d")])
 	rows.append([str(_event_damage(event, ids[0], 0)), "DAMAGE", str(_event_damage(event, ids[1], 1)), Color("#ff9d84")])
 	rows.append([str(int(left.strength)), "LEFT", str(int(right.strength)), plain])
+	# `left` and `right` are each side's first formation, so the LEFT row speaks
+	# for the whole side only when a side is one formation. Anything larger is
+	# listed underneath instead.
 	for row: Array in rows:
 		battle_stats.add_child(_stat_cell(String(row[0]), HORIZONTAL_ALIGNMENT_RIGHT, row[3], 16))
 		battle_stats.add_child(_stat_cell(String(row[1]), HORIZONTAL_ALIGNMENT_CENTER, Color("#a9a294"), 13))

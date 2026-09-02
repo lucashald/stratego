@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_the_battle_card_is_built_per_side()
 	_test_reposition_marches_like_the_main_phase()
 	_test_a_fight_holds_until_it_is_committed()
 	_test_a_bounce_reads_as_being_stopped()
@@ -742,6 +743,39 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_the_battle_card_is_built_per_side() -> void:
+	# A side rolls once, so printing the pool per formation printed the same
+	# dice two and three times over. Everything above the line belongs to a side
+	# now; only Strength still standing belongs to a formation.
+	var game := _test_game()
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
+	var weak := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 3), 4)
+	var strong := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(3, 2), 8)
+	game.set_player_team(StrategoGame.BLUE, 7)
+	game.set_player_team(StrategoGame.GREEN, 7)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(2, 2)])
+	game.set_unit_order(StrategoGame.BLUE, weak, [Vector2i(2, 2)])
+	game.set_unit_order(StrategoGame.GREEN, strong, [Vector2i(2, 2)])
+	var events := _ready_and_resolve(game, [1, 1, 2, 3, 3])
+	var battle := _events_with_action(events, "melee")[0]
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	var participants: Array[int] = []
+	for id_value in battle.participants: participants.append(int(id_value))
+	var sides: Array = presenter._battle_sides(participants)
+	_expect(sides.size() == 2, "three formations from two sides group into two")
+	_expect(int(sides[0].size()) == 1 and int(sides[1].size()) == 2, "and allies from different players share one side")
+	_expect(weak in sides[1] and strong in sides[1], "specifically the two that were scored together")
+	# Strength shown against the roll has to be what actually scored, which is
+	# the side's leading formation at the moment it rolled, not what survives.
+	_expect(int(battle.scores[attacker]) - int(battle.raw_rolls[attacker]) == 10, "the attacking side scored off its own Strength")
+	_expect(int(battle.scores[weak]) - int(battle.raw_rolls[weak]) == 8, "and the allied side scored off its strongest, not the formation listed first")
+	var lines: String = presenter._side_formation_lines(battle, sides)
+	_expect(lines.contains("Light Infantry"), "the side with more than one formation lists them")
+	_expect(not lines.contains("Light Cavalry"), "and a side of one is left to its banner, having nothing extra to say")
+	presenter.free()
 
 
 func _test_reposition_marches_like_the_main_phase() -> void:
