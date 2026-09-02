@@ -1545,10 +1545,19 @@ func _march_steps_from(events: Array[Dictionary]) -> Array:
 		elif action == "bounce":
 			# A bounce moves nobody, so without this the order simply appears to
 			# have been ignored. The lunge is what says "this was tried".
+			var origins: Dictionary = event.get("origins", {})
+			var stationary := int(event.get("stationary_id", StrategoGame.EMPTY))
 			for id_value in event.get("participants", []):
+				var bounced_id := int(id_value)
+				# The formation already standing there is named in the event
+				# because it was part of the congestion, but it never tried to
+				# move and has nothing to lunge at.
+				if bounced_id == stationary:
+					continue
 				steps.append({
-					"piece_id": int(id_value), "impulse": impulse,
-					"from": Vector2i(-1, -1), "to": event.get("to", Vector2i(-1, -1)),
+					"piece_id": bounced_id, "impulse": impulse,
+					"from": origins.get(bounced_id, origins.get(str(bounced_id), Vector2i(-1, -1))),
+					"to": event.get("to", Vector2i(-1, -1)),
 					"bounce": true,
 				})
 	return steps

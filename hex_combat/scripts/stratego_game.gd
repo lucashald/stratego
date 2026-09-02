@@ -1822,7 +1822,11 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String, d
 			if id == stationary:
 				continue
 			_mark_returned(id, stationary != EMPTY)
-		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision"))
+		# The stationary formation is named in the event because it was part of the
+		# congestion, but it never tried to move and must not be animated as if it
+		# had: it would lunge out of wherever it ends the round and back into the
+		# square it never left.
+		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision", stationary))
 	var retreat_intents: Array[Dictionary] = []
 	for battle: Dictionary in battles:
 		if defer:
@@ -2491,8 +2495,17 @@ func _movement_event(piece_id: int, from: Vector2i, to: Vector2i, batch_name: St
 	return {"ok": true, "action": "move", "batch": batch_name, "combat": false, "piece_id": piece_id, "from": from, "to": to, "result": "move", "visible_to": viewers}
 
 
-func _bounce_event(ids: Array[int], position: Vector2i, batch_name: String, reason: String) -> Dictionary:
-	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "to": position, "result": "bounce", "reason": reason}
+## Origins are captured here rather than worked out later. By the time a round is
+## drawn every formation already stands on its final square, so a formation that
+## bounced early and moved on afterwards cannot be animated from where it ended
+## up: it would lunge backwards, out of the square it eventually took and into
+## the one it had been refused. Both callers reach this with the bounced
+## formations standing where they were refused from.
+func _bounce_event(ids: Array[int], position: Vector2i, batch_name: String, reason: String, stationary_id: int = EMPTY) -> Dictionary:
+	var origins: Dictionary = {}
+	for id in ids:
+		if id >= 0 and id < pieces.size(): origins[id] = pieces[id].position
+	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "origins": origins, "stationary_id": stationary_id, "to": position, "result": "bounce", "reason": reason}
 
 
 ## The only penalized bounce: a highest-score tie spanning opposing teams.

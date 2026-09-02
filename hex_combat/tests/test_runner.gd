@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_bounce_lunges_from_where_it_actually_stood()
 	_test_the_battle_card_is_built_per_side()
 	_test_reposition_marches_like_the_main_phase()
 	_test_a_fight_holds_until_it_is_committed()
@@ -743,6 +744,41 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_bounce_lunges_from_where_it_actually_stood() -> void:
+	# A Light queues behind a Medium that has not moved yet, is refused, and both
+	# move on afterwards. Every formation stands on its final square by the time
+	# the round is drawn, so animating the bounce from there sent the Medium
+	# lunging backwards out of the square it took and into the one it had left.
+	var game := _test_game()
+	# Allied but not the same player: one player's own formations are stopped
+	# from queueing like this at planning time, so this is the shape it takes in
+	# a real game.
+	var slow := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.GREEN, Vector2i(4, 4), 8)
+	var fast := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 8)
+	game.set_player_team(StrategoGame.BLUE, 7)
+	game.set_player_team(StrategoGame.GREEN, 7)
+	game.set_unit_order(StrategoGame.GREEN, slow, [Vector2i(3, 4)])
+	game.set_unit_order(StrategoGame.BLUE, fast, [Vector2i(4, 4)])
+	var events := _ready_and_resolve(game)
+	var bounces := _events_with_action(events, "bounce")
+	_expect(bounces.size() >= 1, "the Light is refused the square the Medium has not left yet")
+	var bounce: Dictionary = bounces[0]
+	_expect(int(bounce.get("stationary_id", -99)) == slow, "the event names the formation that never tried to move")
+	_expect(bounce.origins.get(fast, Vector2i(-1, -1)) == Vector2i(5, 4), "and records the refused formation where it actually stood")
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	var steps: Array = presenter._march_steps_from(events)
+	var lunged: Array[int] = []
+	for step in steps:
+		if bool(step.get("bounce", false)): lunged.append(int(step.piece_id))
+	_expect(fast in lunged, "the refused formation still lunges, so the order does not look ignored")
+	_expect(slow not in lunged, "the stationary one does not, having nothing to lunge at")
+	for step in steps:
+		if bool(step.get("bounce", false)) and int(step.piece_id) == fast:
+			_expect(step.from == Vector2i(5, 4), "and it lunges from where it stood rather than from where it ended the round")
+	presenter.free()
 
 
 func _test_the_battle_card_is_built_per_side() -> void:
