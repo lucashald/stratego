@@ -99,7 +99,7 @@ const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
 const REPLAY_FORMAT := "wego-formations-replay"
-const REPLAY_VERSION := 7
+const REPLAY_VERSION := 8
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const PIECE_DEFINITIONS := {
@@ -873,11 +873,9 @@ func projected_main_destination(piece_id: int) -> Vector2i:
 
 ## Validates a declared shot and returns {ok, shot_type, message}.
 ##
-## Movement spent restricts what may be declared; the declared range sets the
-## price. A formation that has already ordered movement may only take a short
-## shot at an adjacent square. A stationary one may take either, and may aim
-## beyond range 2 as overwatch, which is a long shot that fires only if the
-## target closes. Targets must be visible: no blind fire into fog.
+## Every shot costs the same one movement point and may be declared at range 1
+## or 2 from the Archer's planned destination. Moving first is fine as long as
+## that aiming point remains. Targets must be visible: no blind fire into fog.
 func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], target: Vector2i, target_id: int) -> Dictionary:
 	if piece.role != ROLE_ARCHER:
 		return {"ok": false, "message": "Only Archers can receive ranged orders."}
@@ -897,10 +895,8 @@ func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], 
 	var declared_range := grid_distance(origin, target)
 	if declared_range == 0:
 		return {"ok": false, "message": "Archers cannot target their own hex."}
-	if not path.is_empty():
-		if declared_range != 1:
-			return {"ok": false, "message": "After moving, Archers may only target an adjacent hex."}
-		return {"ok": true, "shot_type": SHOT_SHORT}
+	if declared_range > 2:
+		return {"ok": false, "message": "Archers can only target a hex within range 2."}
 	return {"ok": true, "shot_type": SHOT_SHORT if declared_range == 1 else SHOT_LONG}
 
 
@@ -925,10 +921,7 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 		var declaration := _declared_shot_type(piece, player, normalized_path, ranged_target, ranged_target_id)
 		if not bool(declaration.get("ok", false)): return declaration
 		shot_type = String(declaration.shot_type)
-		# Aiming reserves one point during main movement whichever shot it is.
-		# A long shot spends the remainder in the ranged phase, but only if it
-		# actually fires, so the rest stays available to a shot that fizzles.
-		movement_cost += 1
+		movement_cost += AIM_COST
 	if leftover.x >= 0:
 		if not are_adjacent(previous, leftover) or not is_inside(leftover) or is_blocked_terrain(leftover):
 			return {"ok": false, "message": "Leftover movement is one adjacent passable hex."}
@@ -1092,8 +1085,6 @@ func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -
 	var order := supplied_order if not supplied_order.is_empty() else order_for_piece(piece_id)
 	var piece: Dictionary = pieces[piece_id]
 	var spent := int(order.get("path", []).size())
-	# Only the aim point is reserved at planning time. A long shot spends the
-	# rest during the ranged phase, and only if it actually fires.
 	if not String(order.get("shot_type", "")).is_empty():
 		spent += AIM_COST
 	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
@@ -1137,7 +1128,14 @@ func declared_shot_type_for(player: int, piece_id: int, target: Vector2i, target
 	for step in current.get("path", []):
 		typed_path.append(step)
 	var declaration := _declared_shot_type(piece, player, typed_path, target, target_id)
-	return String(declaration.get("shot_type", "")) if bool(declaration.get("ok", false)) else ""
+	if not bool(declaration.get("ok", false)):
+		return ""
+	var prospective_cost := typed_path.size() + AIM_COST
+	if current.get("leftover", Vector2i(-1, -1)).x >= 0:
+		prospective_cost += 1
+	if prospective_cost > movement_limit_for(piece):
+		return ""
+	return String(declaration.get("shot_type", ""))
 
 
 func ranged_order_is_available(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> bool:
@@ -2125,21 +2123,19 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		if not target.is_empty() and (are_allied_players(int(piece.player), int(target.player)) or target.type == FLAG):
 			target = {}
 		var shot_range := grid_distance(piece.position, target.position) if not target.is_empty() else -1
-		var maximum_range := 1 if shot_type == SHOT_SHORT else 2
-		if target.is_empty() or shot_range > maximum_range:
+		if target.is_empty() or shot_range < 1 or shot_range > 2:
 			fizzles.append({
 				"shooter_id": int(piece.id), "from": piece.position, "to": target_position,
 				"shot_type": shot_type, "target_id": target_id,
 				"reason": "no_target" if target.is_empty() else "out_of_range",
 			})
 			continue
+		# Range is determined when the arrow is actually loosed. A tracked target
+		# that closes to range 1 therefore grants the same accuracy die as any
+		# other adjacent target.
+		shot_type = SHOT_SHORT if shot_range == 1 else SHOT_LONG
 		var resolution := calculate_ranged(piece, target, shot_type)
-		# A long shot that finds its mark consumes everything the formation had.
-		var extra_cost := 0
-		if shot_type == SHOT_LONG:
-			extra_cost = maxi(0, movement_limit_for(piece) - int(piece.movement_used) - int(piece.aim_spent))
-		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": int(piece.aim_spent) + extra_cost, "resolution": resolution})
-		pieces[piece.id].movement_used = int(pieces[piece.id].movement_used) + extra_cost
+		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": int(piece.aim_spent), "resolution": resolution})
 		pieces[piece.id].participated_in_combat = true
 	var total_damage: Dictionary = {}
 	for shot: Dictionary in shots:

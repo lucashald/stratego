@@ -65,8 +65,8 @@ An archer doesn't need the target adjacent, and the target never shoots back.
 But it does get to try to ride out the shot, and it can simply outroll you.
 
 **The archer** rolls the base die, plus the **heavier** and **stronger** dice
-if they apply, plus **one more for a short shot** (range 1). A long shot
-(range 2) gets no extra die. Keep the best one, add Strength.
+if they apply, plus **one more when firing at range 1**. A range-2 shot gets no
+extra die. Keep the best one, add Strength.
 
 **The target** rolls the base die plus its own **heavier** and **stronger**
 dice. It gets no role die and no range die. Keep the best, add Strength.
@@ -82,9 +82,8 @@ literally nothing. The target's own 6s are its only defence against that. A
 shot that lost the contest and still drew blood is reported as a **graze**
 rather than a hit.
 
-That makes range a real decision rather than a cost. A short shot is both
-cheaper in movement *and* more accurate. A long shot buys you standoff distance
-and nothing else.
+That makes range a real decision rather than a special cost. A range-1 shot is
+more accurate. A range-2 shot buys you standoff distance and nothing else.
 
 ## Why both work the same way
 

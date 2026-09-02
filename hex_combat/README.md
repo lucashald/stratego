@@ -15,7 +15,7 @@ During planning:
 1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
 2. Click one of the six on-map direction arrows or use the inspector's six-direction **Move Selection** pad to draw the main path. Keyboard shortcuts are W for north, X/S for south, Q/A for northwest, E for northeast, Z for southwest, and D for southeast. With several formations selected, that direction is applied to every member that still has unused movement.
 3. Ghosts numbered 1–3 show the hex each formation intends to occupy on each impulse.
-4. Right-click a hex for **Examine**, and, with an Archer selected, **Shoot** or **Suppress**. Shoot follows a targeted formation if it moves; Suppress aims at the chosen hex. A moved Archer may target an adjacent hex. A stationary Archer may declare a long shot; distance one is short range and distance two is long range, with farther declarations serving as overwatch until the target closes.
+4. Right-click a hex for **Examine**, and, with an Archer selected, **Attack** or **Volley**. Attack follows a targeted formation if it moves; Volley aims at the chosen hex. Either may be ordered after moving when the Archer still has one movement point to aim. Both have a maximum range of two hexes.
 5. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
 6. Choose **End Planning** when planning is complete.
 
@@ -35,7 +35,7 @@ The game rejects orders from one player that would make friendly formations occu
 
 1. Main movement resolves simultaneously in three impulses: Light moves on 1, 2, and 3; Medium moves on 2 and 3; Heavy moves only on 3. Only movement steps actually attempted are spent, including an attempted entry that ends in a bounce.
 2. Every melee batch resolves, followed by all retreats from that batch simultaneously.
-3. Eligible Archer attacks resolve simultaneously. Aiming has already cost one movement point during main movement; a long shot that finds its target consumes the Archer's remaining movement, while a short shot or a shot that fizzles costs only the aim point.
+3. Eligible Archer attacks resolve simultaneously. Every shot costs the one movement point already spent on aiming, whether it hits or fizzles. The shot's final range determines its accuracy: range 1 adds one Archer die and range 2 does not.
 4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one hex.
 5. Victory is checked at the end of the round.
 
@@ -92,8 +92,8 @@ which is worth the margin. Surviving 6s are added on top and land either way,
 so an Archer that loses the contest outright still chips for any 6 the target
 failed to match - a hopeless shot is never fired for literally nothing, and the
 target's own 6s are its only answer. A miss that still drew blood is reported
-as a graze rather than a hit. So a short shot is both cheaper and more
-accurate, while a long shot keeps only its standoff range.
+as a graze rather than a hit. Range-1 fire is more accurate, while firing from
+range 2 keeps only the advantage of distance.
 
 Ranged focus fire is simultaneous. All valid shots resolve and excess damage is lost.
 

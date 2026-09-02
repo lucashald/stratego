@@ -1235,16 +1235,11 @@ func _handle_right_click(screen_position: Vector2) -> void:
 	if clicked.x < 0: return
 	if not selected_piece_ids.is_empty() and selected_piece_id != StrategoGame.EMPTY:
 		var clicked_piece := game.piece_at(clicked)
-		# An enemy square with an archer selected is exactly what the context
-		# menu's Attack/Volley split exists for. Trying a direct order there
-		# first would succeed as an aimed shot at whatever ranged_order_is_
-		# available finds first, and a successful order returns before the
-		# menu ever opens - silently deciding Attack-vs-Volley for the player
-		# and hiding Inspect too. Skip straight to the menu in that one case;
-		# every other square (empty, friendly, an enemy under a non-archer)
-		# still gets the quick-order shortcut.
-		var enemy_for_archer := not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and _selected_archer_id() != StrategoGame.EMPTY
-		if not enemy_for_archer:
+		# A legal Archer target needs the context menu before the quick movement
+		# shortcut. On an enemy this preserves the Attack/Volley choice; on an
+		# empty adjacent hex it makes Volley reachable instead of silently
+		# interpreting the right-click as movement.
+		if not _selected_archer_can_volley(clicked):
 			var result := _issue_order_to_square(clicked, clicked_piece, true)
 			if bool(result.get("ok", false)):
 				queue_redraw()
@@ -1319,6 +1314,14 @@ func _selected_archer_id() -> int:
 	for piece_id in selected_piece_ids:
 		if game.pieces[piece_id].role == StrategoGame.ROLE_ARCHER: return int(piece_id)
 	return StrategoGame.EMPTY
+
+
+## Right-click must offer Volley before treating a legal target hex as a move.
+## Kept as a small query so the input priority can be covered without opening a
+## real popup in the headless rules suite.
+func _selected_archer_can_volley(cell: Vector2i) -> bool:
+	var archer_id := _selected_archer_id()
+	return archer_id != StrategoGame.EMPTY and game.ranged_order_is_available(viewing_player, archer_id, cell)
 
 
 func _on_context_menu_pressed(id: int) -> void:

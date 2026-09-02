@@ -1144,7 +1144,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_child(replay_last_button)
 	ranged_toggle = CheckButton.new()
 	ranged_toggle.text = "Archer target mode"
-	ranged_toggle.tooltip_text = "Target at range 1 with unused movement, or range 2 if the Archer makes no main move."
+	ranged_toggle.tooltip_text = "Spend 1 movement to fire within range 2. Range 1 adds an accuracy die."
 	ranged_toggle.button_pressed = true
 	ranged_toggle.toggled.connect(_on_ranged_toggled)
 	box.add_child(ranged_toggle)

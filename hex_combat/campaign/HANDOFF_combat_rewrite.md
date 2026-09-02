@@ -70,12 +70,11 @@ Same shape, minus the role die.
 - Defender takes damage equal to the margin, plus any 6s that survived
   cancelling - and those land even when the shot loses the contest.
 
-Short/long shots already exist in the engine (`SHOT_SHORT` = range 1,
-`SHOT_LONG` = range 2). Today the only difference is movement cost: a **long**
-shot that connects burns the formation's remaining movement (expensive), a
-short shot only costs the aim action (cheap). This rule adds an accuracy
-dimension that doesn't exist today — short shots also get +1d6. So short
-becomes cheap *and* more accurate; long keeps only its standoff range.
+Every ranged order costs one movement point to aim and has a maximum range of
+two hexes, even if the Archer moved first. The shot's range at resolution sets
+its accuracy: range 1 gets +1d6, while range 2 keeps only its standoff distance.
+Declarations beyond range 2 and the former special long-shot movement cost no
+longer exist.
 
 ## Correction carried forward — read this before describing tie behavior
 
