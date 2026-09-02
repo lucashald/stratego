@@ -293,6 +293,7 @@ func _draw() -> void:
 		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
 			continue
 		_draw_piece(piece, origin, cell)
+	_draw_the_fallen(origin, cell)
 	# Selection outlines and direction controls stay above formation banners.
 	_draw_selection(origin, cell)
 	_draw_vignette(origin, board_size)
@@ -1081,6 +1082,40 @@ static func _bounce_lunge(progress: float) -> float:
 		return 1.0
 	var give := (progress - BOUNCE_HOLD) / (1.0 - BOUNCE_HOLD)
 	return 1.0 - give * give
+
+
+## A formation killed this round is off the board long before the round is
+## drawn, so a shot that killed its target had nothing left to land on: the
+## target vanished before the attack that removed it was ever shown. While the
+## shot is the event on screen, it is drawn back where it fell and struck
+## through, so the sequence reads attack first and death second.
+##
+## Ranged only, deliberately. A melee loser can die on the contested square the
+## winner now occupies, and stacking a corpse under the victor would read worse
+## than the card already reads.
+func _draw_the_fallen(origin: Vector2, cell: float) -> void:
+	if combat_event.is_empty() or String(combat_event.get("action", "")) != "ranged":
+		return
+	var target_id := int(combat_event.get("target_id", StrategoGame.EMPTY))
+	if target_id < 0 or target_id >= game.pieces.size():
+		return
+	var piece: Dictionary = game.pieces[target_id]
+	if bool(piece.get("alive", false)):
+		return
+	var fell_at: Vector2i = piece.get("fell_at", Vector2i(-1, -1))
+	if fell_at.x < 0 or not game.is_inside(fell_at) or not game.piece_at(fell_at).is_empty():
+		return
+	if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
+		return
+	var standing := piece.duplicate()
+	standing.position = fell_at
+	standing.alive = true
+	_draw_piece(standing, origin, cell)
+	var centre := _cell_center(fell_at, origin, cell)
+	var reach := cell * 0.32
+	var struck := Color(0.86, 0.24, 0.2, 0.9)
+	draw_line(centre + Vector2(-reach, -reach), centre + Vector2(reach, reach), struck, maxf(2.0, cell * 0.07))
+	draw_line(centre + Vector2(-reach, reach), centre + Vector2(reach, -reach), struck, maxf(2.0, cell * 0.07))
 
 
 func show_combat(event: Dictionary, committed: bool = true) -> void:

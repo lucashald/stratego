@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_formation_killed_by_a_shot_is_still_there_to_be_shot()
 	_test_a_bounce_lunges_from_where_it_actually_stood()
 	_test_the_battle_card_is_built_per_side()
 	_test_reposition_marches_like_the_main_phase()
@@ -744,6 +745,29 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_formation_killed_by_a_shot_is_still_there_to_be_shot() -> void:
+	# The round resolves entirely before any of it is drawn, so a target killed
+	# by an Archer was already off the board by the time its own death was due to
+	# be shown. It vanished, and then the attack that removed it was presented at
+	# an empty square.
+	var game := _test_game()
+	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
+	var doomed := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 1), 1)
+	_open_reposition(game)
+	game.set_ranged_order(StrategoGame.RED, archer, Vector2i(2, 1), doomed)
+	var events := _ready_and_resolve_reposition(game, [6, 1])
+	var shot := _events_with_action(events, "ranged")[0]
+	_expect(not game.pieces[doomed].alive, "the shot kills its target")
+	_expect(game.pieces[doomed].position == Vector2i(-1, -1), "which takes it off the board immediately, as it must")
+	_expect(game.pieces[doomed].fell_at == Vector2i(2, 1), "but where it fell is kept, so the shot has something to land on")
+	_expect(int(shot.target_id) == doomed, "and the event still names it as the target")
+	# state_digest lists its fields one by one, so the new one cannot disturb a
+	# replay by widening what gets hashed.
+	var digest := game.state_digest()
+	game.pieces[doomed].fell_at = Vector2i(9, 9)
+	_expect(game.state_digest() == digest, "where a formation fell is presentation, and stays out of the replay digest")
 
 
 func _test_a_bounce_lunges_from_where_it_actually_stood() -> void:

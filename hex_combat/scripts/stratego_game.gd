@@ -3443,6 +3443,12 @@ func _remove_piece(id: int) -> void:
 	_clear_piece_square(id)
 	pieces[id].alive = false
 	pieces[id].strength = 0
+	# Where it fell, kept because position is about to be blanked and the round
+	# is not drawn until well after this. A presentation that cannot say where a
+	# formation was standing has to make it vanish before showing what killed it.
+	# Not part of state_digest, which lists its fields explicitly, so replays are
+	# unaffected.
+	pieces[id].fell_at = pieces[id].position
 	pieces[id].position = Vector2i(-1, -1)
 	_visibility_dirty = true
 
