@@ -2139,12 +2139,17 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 					destroy_reason = "enemy_blocked"
 				else:
 					# Treat directly away as 6 o'clock. Moving clockwise from there is
-					# the retreating formation's left-hand (7 o'clock) hex; only if
-					# that is unavailable do we try the right-hand (5 o'clock) hex.
+					# the retreating formation's left-hand (7 o'clock) hex, then the
+					# right-hand (5 o'clock) one. Past those it will take any hex it
+					# can still reach, in widening order. Only the three nearest used
+					# to be tried, which meant a side that moved reinforcements up
+					# behind its own line killed the formations falling back into it,
+					# and losing one fight could cost several formations that had
+					# somewhere to go the whole time.
 					var anchor: Vector2i = retreat.get("anchor", retreat.from)
 					var direction := int(retreat.get("direction", HexGrid.direction_between(anchor, direct_target)))
 					if direction >= 0:
-						for option in [["left", 1], ["right", -1]]:
+						for option in [["left", 1], ["right", -1], ["wide left", 2], ["wide right", -2], ["backward", 3]]:
 							var candidate_direction := (direction + int(option[1]) + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT
 							var candidate := HexGrid.neighbor(anchor, candidate_direction)
 							if is_inside(candidate) and not is_blocked_terrain(candidate) and piece_at(candidate).is_empty():

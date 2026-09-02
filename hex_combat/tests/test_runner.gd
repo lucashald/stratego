@@ -1294,12 +1294,24 @@ func _test_friendly_blocked_retreat_shunts() -> void:
 	var enemy_events := enemy_game._resolve_retreats([{"piece_id": enemy_blocked, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
 	_expect(not enemy_game.pieces[enemy_blocked].alive and enemy_events[0].reason == "enemy_blocked", "an enemy in the direct retreat hex still destroys the loser without a shunt")
 
-	var trapped_game := _test_game()
-	var trapped := trapped_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	# Near retreats full is congestion, not a death sentence. This is the shape
+	# that used to wipe out several formations at once: a side advances to help,
+	# fills the hexes behind its own line, and its losers had nowhere the rule
+	# would look.
+	var crowded_game := _test_game()
+	var crowded := crowded_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
 	for blocked in [direct, left, right]:
-		trapped_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, blocked, 5)
-	var trapped_events := trapped_game._resolve_retreats([{"piece_id": trapped, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
-	_expect(not trapped_game.pieces[trapped].alive and trapped_events[0].reason == "friendly_congestion", "a loser dies when the direct, left, and right retreat hexes are all unavailable")
+		crowded_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, blocked, 5)
+	var crowded_events := crowded_game._resolve_retreats([{"piece_id": crowded, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(crowded_game.pieces[crowded].alive and crowded_events[0].result == "retreat_shunted", "a loser whose near retreats are all full keeps looking instead of dying")
+	_expect(StrategoGame.are_adjacent(anchor, crowded_game.pieces[crowded].position), "and falls back to a hex it can actually reach")
+
+	var boxed_game := _test_game()
+	var boxed := boxed_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, anchor, 5)
+	for step in HexGrid.DIRECTION_COUNT:
+		boxed_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, HexGrid.neighbor(anchor, step), 5)
+	var boxed_events := boxed_game._resolve_retreats([{"piece_id": boxed, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
+	_expect(not boxed_game.pieces[boxed].alive and boxed_events[0].reason == "friendly_congestion", "only a formation with no free neighbour at all is still lost to congestion")
 
 
 func _test_enemy_retreat_collision_battle() -> void:
