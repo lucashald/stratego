@@ -1867,6 +1867,22 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String, d
 		# and gained nothing at all. The first claimant takes the abandoned
 		# ground instead, settled the same way a won square is, and the rest
 		# bounce exactly as they always did.
+		# The occupant was expected to give the square up, and whether it managed
+		# to is only known now, after the ordinary moves have been placed. Its own
+		# step can be refused, and then these formations were booked as congestion
+		# on a prediction that turned out false while an enemy is still standing
+		# on the square they were sent at. They are attacking it after all.
+		if bool(collision.get("vacating", false)) and stationary == EMPTY and is_inside(collision.position) and not collision_ids.is_empty():
+			var holder := piece_at(collision.position)
+			if not holder.is_empty() and not are_allied_players(int(pieces[collision_ids[0]].player), int(holder.player)):
+				var participants: Array[Dictionary] = []
+				for arrival_value in collision.get("arrivals", []):
+					var arrival: Dictionary = arrival_value
+					participants.append(arrival.duplicate(true))
+					_clear_piece_square(int(arrival.piece_id))
+				participants.append({"piece_id": int(holder.id), "from": collision.position, "to": collision.position, "is_attacker": false, "arrival": 0})
+				battles.append({"participants": participants, "position": collision.position, "crossing": false})
+				continue
 		var claimant := EMPTY
 		if bool(collision.get("vacating", false)) and stationary == EMPTY and is_inside(collision.position) and piece_at(collision.position).is_empty():
 			for candidate_id in _placement_order(collision_ids, collision.get("arrivals", [])):

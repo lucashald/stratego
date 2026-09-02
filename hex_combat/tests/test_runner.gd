@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_an_attack_lands_when_the_defender_fails_to_slip_away()
 	_test_a_dodged_attack_still_takes_the_ground()
 	_test_every_way_of_issuing_an_order_queues_it()
 	_test_who_holds_the_ground_a_side_just_took()
@@ -751,6 +752,30 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_an_attack_lands_when_the_defender_fails_to_slip_away() -> void:
+	# Taken from a real exported round. Three formations were sent at one enemy
+	# hex, the enemy had its own reposition order, and nothing happened at all.
+	# Whether an occupant vacates is only settled once its own step is resolved,
+	# and this one's was refused: it bounced off an ally and never left. The
+	# attackers had already been booked as congestion on a prediction that turned
+	# out false, so no fight was ever created and the enemy stood there untouched.
+	var game := _test_game()
+	var defender := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 6)
+	var blocker := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 4), 6)
+	var first := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(4, 5), 9)
+	var second := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(6, 5), 9)
+	_open_reposition(game)
+	game.set_leftover_order(StrategoGame.BLUE, first, Vector2i(5, 5))
+	game.set_leftover_order(StrategoGame.BLUE, second, Vector2i(5, 5))
+	# Its escape is refused: the ally it is stepping onto is not going anywhere.
+	_expect(bool(game.set_leftover_order(StrategoGame.RED, defender, Vector2i(5, 4)).get("ok", false)), "the defender may try to step away")
+	var events := _ready_and_resolve_reposition(game)
+	_expect(game.pieces[blocker].position == Vector2i(5, 4), "the ally it aimed at holds its square")
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1, "so the escape fails and the attack it was running from actually happens")
+	_expect(first in melees[0].participants and second in melees[0].participants and defender in melees[0].participants, "with both attackers and the formation that could not leave")
 
 
 func _test_a_dodged_attack_still_takes_the_ground() -> void:
