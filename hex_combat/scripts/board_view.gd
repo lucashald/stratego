@@ -75,6 +75,7 @@ const CONTEXT_EXAMINE := 0
 const CONTEXT_SHOOT := 1
 const CONTEXT_SUPPRESS := 2
 const CONTEXT_CANCEL := 3
+const CONTEXT_SUPPORT := 4
 
 var _context_menu: PopupMenu = null
 var _context_menu_cell := Vector2i(-1, -1)
@@ -1314,6 +1315,22 @@ func _selected_archer_id() -> int:
 	for piece_id in selected_piece_ids:
 		if game.pieces[piece_id].role == StrategoGame.ROLE_ARCHER: return int(piece_id)
 	return StrategoGame.EMPTY
+
+
+## Which of the current selection could move up in support of the formation on
+## `cell`. A query rather than logic buried in the popup, so what the menu offers
+## can be covered headlessly, the same way Volley's availability is.
+func support_candidates_for(cell: Vector2i) -> Array[int]:
+	var candidates: Array[int] = []
+	if not interaction_enabled or game == null or game.phase != StrategoGame.PHASE_PLANNING: return candidates
+	var occupant := game.piece_at(cell)
+	if occupant.is_empty() or not game.are_allied_players(viewing_player, int(occupant.player)): return candidates
+	for piece_id in selected_piece_ids:
+		var id := int(piece_id)
+		if id == int(occupant.id) or int(game.pieces[id].player) != viewing_player: continue
+		if not game.is_movable(game.pieces[id]) or not StrategoGame.are_adjacent(game.pieces[id].position, cell): continue
+		candidates.append(id)
+	return candidates
 
 
 ## Right-click must offer Volley before treating a legal target hex as a move.

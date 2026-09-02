@@ -16,8 +16,9 @@ During planning:
 2. Click one of the six on-map direction arrows or use the inspector's six-direction **Move Selection** pad to draw the main path. Keyboard shortcuts are W for north, X/S for south, Q/A for northwest, E for northeast, Z for southwest, and D for southeast. With several formations selected, that direction is applied to every member that still has unused movement.
 3. Ghosts numbered 1–3 show the hex each formation intends to occupy on each impulse.
 4. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, group, and cancel-all changes.
-5. After the main clash resolves, every eligible formation receives one post-clash action. Move one adjacent hex, or select an Archer and right-click for **Attack** or **Volley**. Attack follows a targeted formation through reposition; Volley aims at a fixed hex. Both have a maximum range of two hexes.
-6. Choose **End Planning** when planning is complete.
+5. Right-click a formation on your own side to **Support** it: the selected formations adjacent to it move up onto its hex. That is the same order as walking into an ally, named so it reads as a decision. If a fight is open on the hex when they arrive they join it; if the hex is quiet they bounce off harmlessly. Walking into your own line without asking for support is still refused.
+6. After the main clash resolves, every eligible formation receives one post-clash action. Move one adjacent hex, or select an Archer and right-click for **Attack** or **Volley**. Attack follows a targeted formation through reposition; Volley aims at a fixed hex. Both have a maximum range of two hexes.
+7. Choose **End Planning** when planning is complete.
 
 Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, clicking or dragging on the minimap centres the main battlefield on that location, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
 

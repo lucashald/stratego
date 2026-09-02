@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_support_is_offered_on_a_friendly_formation()
 	_test_reinforcing_a_defender_joins_its_fight()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
@@ -701,6 +702,29 @@ func _test_follower_advances_into_a_vacated_attack_square() -> void:
 	_ready_and_resolve(light_game)
 	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
 	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
+
+
+func _test_support_is_offered_on_a_friendly_formation() -> void:
+	# The menu entry exists because walking into an ally does not read as an
+	# order. What it offers has to match what the engine will actually accept.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var neighbour := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var distant := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(1, 1), 10)
+	var enemy := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.viewing_player = StrategoGame.BLUE
+	view.selected_piece_ids.assign([neighbour])
+	_expect(view.support_candidates_for(Vector2i(5, 5)) == [neighbour], "an adjacent selected formation is offered as support")
+	_expect(view.support_candidates_for(Vector2i(4, 5)).is_empty(), "support is never offered onto an enemy")
+	_expect(view.support_candidates_for(Vector2i(9, 9)).is_empty(), "or onto empty ground")
+	view.selected_piece_ids.assign([distant])
+	_expect(view.support_candidates_for(Vector2i(5, 5)).is_empty(), "a formation that cannot reach the hex is not offered")
+	view.selected_piece_ids.assign([holder])
+	_expect(view.support_candidates_for(Vector2i(5, 5)).is_empty(), "and a formation is never offered as support for itself")
+	view.free()
+	_expect(enemy >= 0, "the enemy stands where support must not be offered")
 
 
 func _test_reinforcing_a_defender_joins_its_fight() -> void:
