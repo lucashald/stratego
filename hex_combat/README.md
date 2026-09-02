@@ -153,6 +153,21 @@ range 2 keeps only the advantage of distance.
 
 Ranged focus fire is simultaneous. All valid shots resolve and excess damage is lost.
 
+Archers aimed at the same hex may loose together or apart. Right-clicking a hex
+an ally is already volleying offers **Join Volley** beside Attack and Volley, and
+a joined Volley is one contest: a die per Archer, the comparative dice the best
+of them earns, an accuracy die for each Archer already at range 1, and the
+strongest Archer's Strength added to the kept die. The trade runs both ways.
+Massing turns several weak contests into one strong one, but it is a single
+contest paying a single margin, while firing apart gives independent chances that
+can each draw blood and each graze on a surviving 6 even after losing.
+
+Only a Volley can be joined. Aimed fire tracks a formation, and a pool of Archers
+tracking one moving target has no clean answer when it moves out from under some
+of them, so aimed shots stay solo. An Archer facing a hex somebody is volleying
+therefore has three choices: aim at what is standing there, volley the hex on its
+own account, or join the volley.
+
 ## Fog and information
 
 Fog uses a four-hex radius. Seeing an enemy during any impulse records that it was seen even if it leaves sight before the round ends. Observed speed intentionally reveals Weight. Combat reveals role, Weight, and current Strength while the target remains in sight. With private combat information enabled, detailed results go only to the participating players; spectator view is omniscient.

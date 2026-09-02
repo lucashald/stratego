@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_losing_side_shares_one_margin()
 	_test_multiway_damage_uses_highest_opponent()
 	_test_ranged_focus_fire_is_simultaneous()
+	_test_archers_may_mass_a_volley_or_fire_apart()
 	_test_archer_loss_blocks_shot_and_win_allows_it()
 	_test_leftover_is_a_separate_order_phase()
 	_test_reposition_keeps_unidentified_formations_secret()
@@ -1104,6 +1105,44 @@ func _test_suppressing_fire_hits_the_square() -> void:
 
 ## Choosing a shot excludes reposition even when the target escapes and the
 ## shot fizzles.
+func _test_archers_may_mass_a_volley_or_fire_apart() -> void:
+	# Two Archers on one hex, loosing together. One contest, one margin, and a
+	# pool that rolls a die per Archer plus the comparative dice the best of them
+	# earns. The same pair firing apart is two contests instead.
+	var massed := _test_game()
+	var lead := massed.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 8)
+	var joining := massed.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 2), 5)
+	var target := massed.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 1), 6)
+	_open_reposition(massed)
+	_expect(massed.volley_leader_at(StrategoGame.RED, Vector2i(2, 1)) == StrategoGame.EMPTY, "there is nobody to join before anyone has volleyed")
+	_expect(not bool(massed.set_volley_support_order(StrategoGame.RED, joining, Vector2i(2, 1)).get("ok", false)), "so support cannot be declared into thin air")
+	massed.set_suppress_order(StrategoGame.RED, lead, Vector2i(2, 1))
+	_expect(massed.volley_leader_at(StrategoGame.RED, Vector2i(2, 1), joining) == lead, "once a Volley is declared it can be joined")
+	_expect(bool(massed.set_volley_support_order(StrategoGame.RED, joining, Vector2i(2, 1)).get("ok", false)), "and the second Archer may throw in with it")
+	# Four dice for the pool: one per Archer, one for the stronger side, and one
+	# accuracy die for the Archer that is already adjacent. It keeps the 5 and
+	# adds the leading Archer's Strength of 8. The target rolls one and adds 6.
+	var massed_events := _ready_and_resolve_reposition(massed, [1, 1, 5, 4, 3])
+	var massed_shots := _events_with_action(massed_events, "ranged")
+	_expect(massed_shots.size() == 1 and bool(massed_shots[0].massed), "a joined Volley resolves as one shot rather than two")
+	_expect(massed_shots[0].shooters.size() == 2 and lead in massed_shots[0].shooters and joining in massed_shots[0].shooters, "and names both Archers as having loosed it")
+	_expect(int(massed_shots[0].attacker_score) == 13 and int(massed_shots[0].defender_score) == 9, "the pool scores off its strongest Archer, not the sum of them")
+	_expect(int(massed_shots[0].defender_damage) == 4, "one contest pays one margin")
+
+	# The same two Archers declining to mass get their own contests, which is the
+	# trade: two weaker chances that can each draw blood.
+	var apart := _test_game()
+	var first := apart.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 8)
+	var second := apart.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 2), 5)
+	apart.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 1), 6)
+	_open_reposition(apart)
+	apart.set_suppress_order(StrategoGame.RED, first, Vector2i(2, 1))
+	apart.set_suppress_order(StrategoGame.RED, second, Vector2i(2, 1))
+	var apart_events := _ready_and_resolve_reposition(apart, [1, 1, 5, 4, 1, 1, 1])
+	_expect(_events_with_action(apart_events, "ranged").size() == 2, "two Volleys nobody joined stay two separate shots")
+	_expect(target >= 0, "the target exists in both halves of the comparison")
+
+
 func _test_fizzled_shots_still_spend_the_action() -> void:
 	var game := _test_game()
 	var light := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)

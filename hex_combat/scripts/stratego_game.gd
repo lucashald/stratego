@@ -1193,7 +1193,7 @@ func ranged_order_is_available(player: int, piece_id: int, target: Vector2i, tar
 
 
 ## Aimed fire at a formation: it is shot wherever it stands, if still in range.
-func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> Dictionary:
+func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: int = -1, volley_support: bool = false) -> Dictionary:
 	var shot_type := declared_shot_type_for(player, piece_id, target, target_id)
 	if shot_type.is_empty():
 		return {"ok": false, "message": "That Archer cannot attack that target during reposition."}
@@ -1205,6 +1205,7 @@ func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: i
 	candidate.ranged_target = target
 	candidate.ranged_target_id = target_id
 	candidate.shot_type = shot_type
+	candidate.volley_support = volley_support and target_id < 0
 	candidate.leftover = Vector2i(-1, -1)
 	orders[player][piece_id] = candidate
 	return {"ok": true, "order": candidate.duplicate(true), "message": "Ranged attack set."}
@@ -1213,6 +1214,40 @@ func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: i
 ## Suppressing fire at a square: whatever is standing there gets shot.
 func set_suppress_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	return set_ranged_order(player, piece_id, target, -1)
+
+
+## Throw in with a Volley an ally has already declared on this hex, so the two
+## loose together as one contest rather than as two independent shots.
+##
+## Only a Volley can be joined. Aimed fire tracks a formation, and a pool of
+## Archers tracking one moving target has no clean answer when it moves out from
+## under some of them but not others, so aimed shots stay solo. An Archer facing
+## a hex somebody is already volleying therefore has three choices: aim at what
+## is standing there, volley the hex on its own, or join the volley.
+func set_volley_support_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	if volley_leader_at(player, target, piece_id) == EMPTY:
+		return {"ok": false, "message": "Nobody on your side is volleying that hex yet."}
+	return set_ranged_order(player, piece_id, target, -1, true)
+
+
+## The Archer a supporter would be joining: the lowest-numbered formation on this
+## side already volleying `target` on its own account. Lowest-numbered only to
+## keep the answer stable when two allies independently volley one hex, which
+## needs four Archers on one square to arise at all.
+func volley_leader_at(player: int, target: Vector2i, excluding: int = EMPTY) -> int:
+	var leader := EMPTY
+	for candidate_player in orders:
+		if not are_allied_players(player, int(candidate_player)): continue
+		for id_value in orders[candidate_player]:
+			var id := int(id_value)
+			if id == excluding: continue
+			var order: Dictionary = orders[candidate_player][id]
+			if String(order.get("shot_type", "")).is_empty(): continue
+			if int(order.get("ranged_target_id", -1)) >= 0: continue
+			if bool(order.get("volley_support", false)): continue
+			if order.get("ranged_target", Vector2i(-1, -1)) != target: continue
+			if leader == EMPTY or id < leader: leader = id
+	return leader
 
 
 func set_leftover_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
@@ -1386,6 +1421,7 @@ func clear_unit_order(player: int, piece_id: int) -> void:
 		order.ranged_target = Vector2i(-1, -1)
 		order.ranged_target_id = -1
 		order.shot_type = ""
+		order.volley_support = false
 		orders[player][piece_id] = order
 
 
@@ -1401,6 +1437,7 @@ func clear_player_orders(player: int) -> void:
 			order.ranged_target = Vector2i(-1, -1)
 			order.ranged_target_id = -1
 			order.shot_type = ""
+			order.volley_support = false
 			orders[player][piece_id] = order
 
 
@@ -2278,6 +2315,7 @@ func _resolve_retreat_battle(group: Array, target: Vector2i, batch_name: String)
 func _resolve_ranged_phase() -> Array[Dictionary]:
 	var shots: Array[Dictionary] = []
 	var fizzles: Array[Dictionary] = []
+	var declarations: Array[Dictionary] = []
 	for piece: Dictionary in pieces:
 		var order := order_for_piece(int(piece.id))
 		var shot_type := String(order.get("shot_type", ""))
@@ -2302,13 +2340,42 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 				"reason": "no_target" if target.is_empty() else "out_of_range",
 			})
 			continue
-		# Range is determined when the arrow is actually loosed. A tracked target
-		# that closes to range 1 therefore grants the same accuracy die as any
-		# other adjacent target.
-		shot_type = SHOT_SHORT if shot_range == 1 else SHOT_LONG
-		var resolution := calculate_ranged(piece, target, shot_type)
-		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": 0, "resolution": resolution})
-		pieces[piece.id].participated_in_combat = true
+		declarations.append({
+			"shooter_id": int(piece.id), "target": target, "target_position": target_position,
+			"aimed": target_id >= 0, "support": bool(order.get("volley_support", false)),
+			"range": shot_range,
+		})
+	# Allies who asked to mass a Volley on one hex loose as a single contest.
+	# Aimed fire never pools and a Volley nobody joined is still its own shot, so
+	# this only ever changes what a player explicitly asked for.
+	var volleys: Dictionary = {}
+	for declaration: Dictionary in declarations:
+		if bool(declaration.aimed):
+			shots.append(_single_shot(declaration))
+			continue
+		var hex: Vector2i = declaration.target_position
+		if hex not in volleys: volleys[hex] = []
+		volleys[hex].append(declaration)
+	for hex in volleys:
+		var group: Array = volleys[hex]
+		var supporters: Array = []
+		var independents: Array = []
+		for declaration: Dictionary in group:
+			if bool(declaration.support): supporters.append(declaration)
+			else: independents.append(declaration)
+		if supporters.is_empty():
+			for declaration: Dictionary in independents: shots.append(_single_shot(declaration))
+			continue
+		# The lowest-numbered ally volleying on its own account leads. If none of
+		# them is left to lead, the supporters still loose together rather than
+		# each spending an action on a shot nobody asked them to take alone.
+		independents.sort_custom(func(first: Dictionary, second: Dictionary) -> bool: return int(first.shooter_id) < int(second.shooter_id))
+		var pool: Array = supporters.duplicate()
+		if not independents.is_empty():
+			pool.append(independents[0])
+			independents.remove_at(0)
+		for declaration: Dictionary in independents: shots.append(_single_shot(declaration))
+		shots.append(_massed_shot(pool))
 	var total_damage: Dictionary = {}
 	for shot: Dictionary in shots:
 		var target_id := int(shot.target_id)
@@ -2326,6 +2393,7 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 			"ok": true, "action": "ranged", "batch": "ranged", "combat": true, "ranged": true,
 			"from": shot.from, "to": shot.to, "shooter_id": shooter_id, "target_id": target_id,
 			"range": int(shot.range), "movement_cost": int(shot.movement_cost),
+			"shooters": shot.get("shooters", [shooter_id]).duplicate(), "massed": bool(shot.resolution.get("massed", false)),
 			"attacker_score": int(shot.resolution.attacker_score), "attacker_raw_roll": int(shot.resolution.attacker_raw_roll),
 			"defender_score": int(shot.resolution.defender_score), "defender_raw_roll": int(shot.resolution.defender_raw_roll),
 			"attacker_dice": shot.resolution.attacker_dice.duplicate(), "defender_dice": shot.resolution.defender_dice.duplicate(),
@@ -2337,14 +2405,14 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 			# uncancelled 6. Worth its own result: reporting it as a miss beside
 			# a non-zero damage number reads as a bug.
 			"result": "ranged_destroyed" if not pieces[target_id].alive else ("ranged_hit" if bool(shot.resolution.hit) else ("ranged_graze" if int(shot.resolution.defender_damage) > 0 else "ranged_miss")),
-			"known_to": _battle_viewers_for_ids([shooter_id, target_id]),
+			"known_to": _battle_viewers_for_ids(_shot_participants(shot, target_id)),
 		}
 		# Trading fire identifies both parties, exactly as meeting in melee
 		# does. An Archer that looses a shot has given itself away, and whoever
 		# it hit has been seen closely enough to be named. Without this a
 		# ranged duel could run all match with neither side learning what it
 		# was shooting at, which melee never allows.
-		for id in [shooter_id, target_id]:
+		for id in _shot_participants(shot, target_id):
 			for viewer in event.known_to: reveal_piece_to(id, viewer)
 		battle_history.append(event.duplicate(true))
 		events.append(event)
@@ -2361,6 +2429,42 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		battle_history.append(fizzle_event.duplicate(true))
 		events.append(fizzle_event)
 	return events
+
+
+func _shot_participants(shot: Dictionary, target_id: int) -> Array[int]:
+	var ids: Array[int] = []
+	for id_value in shot.get("shooters", [int(shot.shooter_id)]): ids.append(int(id_value))
+	ids.append(target_id)
+	return ids
+
+
+func _single_shot(declaration: Dictionary) -> Dictionary:
+	var piece: Dictionary = pieces[int(declaration.shooter_id)]
+	var target: Dictionary = declaration.target
+	# Range is judged when the arrow is loosed, so a tracked target that closed
+	# to range 1 grants the same accuracy die as any other adjacent one.
+	var resolution := calculate_ranged(piece, target, SHOT_SHORT if int(declaration.range) == 1 else SHOT_LONG)
+	pieces[int(piece.id)].participated_in_combat = true
+	return {"shooter_id": int(piece.id), "shooters": [int(piece.id)], "target_id": int(target.id), "from": piece.position, "to": target.position, "range": int(declaration.range), "movement_cost": 0, "resolution": resolution}
+
+
+func _massed_shot(pool: Array) -> Dictionary:
+	pool.sort_custom(func(first: Dictionary, second: Dictionary) -> bool: return int(first.shooter_id) < int(second.shooter_id))
+	var archers: Array = []
+	var shooters: Array[int] = []
+	var short_shots := 0
+	var closest := 2
+	var target: Dictionary = pool[0].target
+	for declaration: Dictionary in pool:
+		var id := int(declaration.shooter_id)
+		shooters.append(id)
+		archers.append(pieces[id])
+		if int(declaration.range) == 1:
+			short_shots += 1
+			closest = 1
+		pieces[id].participated_in_combat = true
+	var resolution := calculate_massed_ranged(archers, target, short_shots)
+	return {"shooter_id": shooters[0], "shooters": shooters, "target_id": int(target.id), "from": pieces[shooters[0]].position, "to": target.position, "range": closest, "movement_cost": 0, "resolution": resolution}
 
 
 func _eligible_to_shoot(piece: Dictionary) -> bool:
@@ -2531,6 +2635,46 @@ func calculate_ranged(attacker: Dictionary, defender: Dictionary, shot_type: Str
 	}
 
 
+## A Volley several Archers loosed together, scored the way a side is scored in
+## melee so there is one idea here rather than two. One die per Archer, the
+## comparative dice earned by the best of them against the target, an accuracy
+## die for each Archer already at range 1, and the strongest Archer's Strength
+## added to the kept die.
+##
+## The trade is real in both directions. Massing turns several weak contests into
+## one strong one, but it is still a single contest paying a single margin, while
+## firing separately gives independent chances that can each draw blood and each
+## graze on a surviving 6 even when they lose.
+func calculate_massed_ranged(archers: Array, defender: Dictionary, short_shots: int, attacker_dice: Array = [], defender_dice: Array = []) -> Dictionary:
+	var best_strength := -1
+	var best_weight := -1
+	for archer: Dictionary in archers:
+		best_strength = maxi(best_strength, int(archer.strength))
+		best_weight = maxi(best_weight, _weight_rank(archer))
+	var attacker_count := archers.size() + short_shots
+	if best_weight > _weight_rank(defender): attacker_count += 1
+	if best_strength > int(defender.strength): attacker_count += 1
+	var defender_count := _combat_dice_count(defender, best_weight, best_strength, false)
+	var attacker_pool := _roll_dice_pool(attacker_count, attacker_dice)
+	var defender_pool := _roll_dice_pool(defender_count, defender_dice)
+	var attacker_score := int(attacker_pool.high) + best_strength
+	var defender_score := int(defender_pool.high) + int(defender.strength)
+	var net_attacker_sixes := maxi(0, int(attacker_pool.sixes) - int(defender_pool.sixes))
+	var hit := attacker_score > defender_score
+	return {
+		"attacker_raw_roll": int(attacker_pool.high), "defender_raw_roll": int(defender_pool.high),
+		"attacker_dice": attacker_pool.dice, "defender_dice": defender_pool.dice,
+		"attacker_bonus_dice": attacker_count - archers.size(), "defender_bonus_dice": defender_count - COMBAT_BASE_DICE,
+		"attacker_sixes": int(attacker_pool.sixes), "defender_sixes": int(defender_pool.sixes),
+		"attacker_score": attacker_score, "defender_score": defender_score,
+		"shot_type": SHOT_SHORT if short_shots > 0 else SHOT_LONG, "massed": true, "archers": archers.size(),
+		"hit": hit, "attacker_damage": 0,
+		"defender_damage": maxi(0, attacker_score - defender_score) + net_attacker_sixes,
+		"critical_attacker": net_attacker_sixes > 0, "critical_defender": false,
+		"score_winner": "attacker" if hit else "defender",
+	}
+
+
 ## Average of the single highest die in a pool of `count` d6.
 func expected_high_die(count: int) -> float:
 	var pool := maxi(1, count)
@@ -2663,6 +2807,7 @@ func _encode_leftover_orders() -> Array[Dictionary]:
 					"player": player, "piece_id": piece_id, "action": "ranged",
 					"target": _encode_position(ranged_target),
 					"target_id": int(order.get("ranged_target_id", -1)),
+					"support": bool(order.get("volley_support", false)),
 				})
 	return encoded
 
@@ -3055,7 +3200,7 @@ func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
 		if action == "move":
 			result = set_leftover_order(player, piece_id, target)
 		elif action == "ranged":
-			result = set_ranged_order(player, piece_id, target, int(entry.get("target_id", -1)))
+			result = set_ranged_order(player, piece_id, target, int(entry.get("target_id", -1)), bool(entry.get("support", false)))
 		else:
 			return {"ok": false, "message": "A recorded post-clash action has an unknown type."}
 		if not bool(result.get("ok", false)):

@@ -76,6 +76,7 @@ const CONTEXT_SHOOT := 1
 const CONTEXT_SUPPRESS := 2
 const CONTEXT_CANCEL := 3
 const CONTEXT_SUPPORT := 4
+const CONTEXT_JOIN_VOLLEY := 5
 
 var _context_menu: PopupMenu = null
 var _context_menu_cell := Vector2i(-1, -1)
