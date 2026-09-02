@@ -138,12 +138,19 @@ func plan_leftover(game: StrategoGame, player: int, rng: RandomNumberGenerator) 
 		for destination: Vector2i in StrategoGame.neighbors(piece.position):
 			if not game.is_inside(destination) or game.is_blocked_terrain(destination): continue
 			scored.append({"to": destination, "score": _score_destination(game, piece, player, destination, false)})
+		if piece.role == StrategoGame.ROLE_ARCHER:
+			scored.append_array(_ranged_candidates(game, piece, player))
 		# Standing still is a real option in the leftover phase, not a fallback.
 		var hold_score := _score_destination(game, piece, player, piece.position, true)
 		scored.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) > float(b.score))
 		for option: Dictionary in scored:
 			if float(option.score) + rng.randf_range(-0.2, 0.2) < hold_score: break
-			if bool(game.set_leftover_order(player, int(piece.id), option.to).get("ok", false)): break
+			var result: Dictionary
+			if option.get("ranged_target", Vector2i(-1, -1)).x >= 0:
+				result = game.set_ranged_order(player, int(piece.id), option.ranged_target, int(option.get("ranged_target_id", -1)))
+			else:
+				result = game.set_leftover_order(player, int(piece.id), option.to)
+			if bool(result.get("ok", false)): break
 
 
 func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, rng: RandomNumberGenerator) -> void:
@@ -151,8 +158,6 @@ func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, rng: Ra
 	for entry: Dictionary in _movement_candidates(game, piece, player):
 		entry["score"] = _score_destination(game, piece, player, entry.to, entry.path.is_empty()) - 0.25 * float(entry.path.size() - 1)
 		candidates.append(entry)
-	if piece.role == StrategoGame.ROLE_ARCHER:
-		candidates.append_array(_ranged_candidates(game, piece, player))
 	for candidate: Dictionary in candidates:
 		candidate.score = float(candidate.score) + rng.randf_range(-0.25, 0.25)
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.score) > float(b.score))
@@ -160,9 +165,7 @@ func _plan_formation(game: StrategoGame, piece: Dictionary, player: int, rng: Ra
 		var path: Array = candidate.get("path", [])
 		var typed_path: Array[Vector2i] = []
 		for step in path: typed_path.append(step)
-		var target: Vector2i = candidate.get("ranged_target", Vector2i(-1, -1))
-		var target_id := int(candidate.get("ranged_target_id", -1))
-		if bool(game.set_unit_order(player, int(piece.id), typed_path, target, Vector2i(-1, -1), target_id).get("ok", false)):
+		if bool(game.set_unit_order(player, int(piece.id), typed_path).get("ok", false)):
 			return
 	# A zero-cost hold keeps the bot's intent explicit when nothing else took.
 	if game.order_for_piece(int(piece.id)).is_empty():

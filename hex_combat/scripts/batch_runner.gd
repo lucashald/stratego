@@ -20,6 +20,13 @@ var starting_seed := 1
 var separation := 3
 var blue_roster: Array = StrategoGame.MEETING_ROSTER
 var red_roster: Array = StrategoGame.MEETING_ROSTER
+## Diagnostic-only normalization for army-composition comparisons. A positive
+## value gives every non-Flag formation the same starting/current Strength
+## after scenario setup, without changing the game's shipped unit definitions.
+var formation_strength_override := -1
+## Optional machine-readable companion to the console report. This lets balance
+## batches run concurrently without competing for Godot's shared project log.
+var result_file := ""
 var weight_overrides: Dictionary = {}
 var blue_weight_overrides: Dictionary = {}
 var red_weight_overrides: Dictionary = {}
@@ -27,7 +34,6 @@ var assume_blue: Dictionary = {}
 var assume_red: Dictionary = {}
 var side_wins: Dictionary = {}
 var team_wins: Dictionary = {}
-var cavalry_always_leftover := true
 var defender_wins_ties := false
 var defender_resists_charge_ties := false
 ## -1 (StrategoGame.DRAW) means no cheater: an ordinary symmetric run. Set by
@@ -45,11 +51,8 @@ func _initialize() -> void:
 	scenario = String(arguments.get("scenario", scenario))
 	starting_seed = int(arguments.get("seed", starting_seed))
 	separation = int(arguments.get("sep", separation))
-	# --cavalryleftover 1 lets Cavalry always take the leftover move, even
-	# after fully spending its main-phase movement. A/B this against a plain
-	# run of the same seeds to see whether it closes Heavy Cavalry's arrival
-	# gap in Meeting.
-	cavalry_always_leftover = String(arguments.get("cavalryleftover", "1")) == "1"
+	formation_strength_override = int(arguments.get("formation-strength", formation_strength_override))
+	result_file = String(arguments.get("result-file", result_file))
 	# --defenderties 1 makes an exact melee tie resolve to the defender instead
 	# of bouncing everyone off with no result. Off by default; run the same
 	# seeds with and without it to see what the rule actually changes.
@@ -202,7 +205,11 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)
 	elif scenario == "crossroads": game.setup_crossroads(seed_value)
 	else: game.setup_bridge(seed_value)
-	game.cavalry_always_leftover = cavalry_always_leftover
+	if formation_strength_override > 0:
+		for piece: Dictionary in game.pieces:
+			if piece.type == StrategoGame.FLAG: continue
+			piece.strength = formation_strength_override
+			piece.max_strength = formation_strength_override
 	game.defender_wins_ties = defender_wins_ties
 	game.defender_resists_charge_ties = defender_resists_charge_ties
 	# Bots accept the recommended formation as-is; nothing here optimizes a
@@ -271,12 +278,12 @@ func _play_one(seed_value: int, totals: Dictionary) -> String:
 	return game.end_reason
 
 
-## A stress test for the Cavalry-leftover toggle, not a shipped scenario: the
+## A stress test for universal reposition, not a shipped scenario: the
 ## opposite of Meeting's battle line. Meeting deliberately puts Heavies at the
 ## front rank to compensate for their low movement (see _place_battle_line);
 ## this puts them at the back instead, and Lights at the front across two
 ## ranks, so Light Cavalry starts as close to the objective as a formation can
-## get while also being the biggest beneficiary of the toggle. If LC is going
+## get and has frequent chances to turn reposition into pursuit. If LC is going
 ## to look overpowered anywhere, it should be here.
 func _setup_meeting_inverted(game: StrategoGame) -> void:
 	game.setup_empty()
@@ -318,10 +325,10 @@ func _setup_meeting_inverted(game: StrategoGame) -> void:
 ## Meeting's real battle line (front rank nearest the objective, same columns
 ## and MEETING_FRONT_DISTANCE), except the front rank is four Heavy Cavalry
 ## instead of the usual 2 Heavy Infantry + Heavy Archer + Heavy Cavalry mix.
-## The traffic jam that stopped Heavy Cavalry from using its leftover move in
+## The traffic jam that stopped Heavy Cavalry from using its post-clash move in
 ## the standard formation came from sharing that rank with slower heavies
-## competing for the same lanes; this isolates whether the jam was really
-## about the mixed company, not Cavalry-with-the-toggle inherently.
+## competing for the same lanes; this isolates whether the jam is really about
+## the mixed company rather than Heavy Cavalry itself.
 func _setup_meeting_heavy_cavalry(game: StrategoGame) -> void:
 	game.setup_empty()
 	game.scenario = StrategoGame.SCENARIO_MEETING
@@ -382,6 +389,7 @@ func _report(totals: Dictionary, outcomes: Dictionary, round_total: int) -> void
 	print("\n%d games of %s, seeds %d-%d" % [games, scenario, starting_seed, starting_seed + games - 1])
 	print("average length: %.1f rounds" % (float(round_total) / maxf(1.0, float(games))))
 	print("outcomes: %s" % JSON.stringify(outcomes))
+	if formation_strength_override > 0: print("formation Strength override: %d" % formation_strength_override)
 	if not weight_overrides.is_empty(): print("weight overrides: %s" % JSON.stringify(weight_overrides))
 	if not assume_blue.is_empty() or not assume_red.is_empty():
 		print("Blue assumes: %s" % JSON.stringify(assume_blue if not assume_blue.is_empty() else StrategoBotPolicy.ASSUMPTION_DEFAULTS))
@@ -424,6 +432,16 @@ func _report(totals: Dictionary, outcomes: Dictionary, round_total: int) -> void
 		print("arrival is the mean round a formation of that type first reached it.")
 	else:
 		print("net/s is dealt minus taken, per point of starting Strength.")
+	if not result_file.is_empty():
+		var rows := {}
+		for code: String in codes: rows[code] = totals[code]
+		var file := FileAccess.open(result_file, FileAccess.WRITE)
+		if file:
+			file.store_string(JSON.stringify({
+				"games": games, "scenario": scenario, "outcomes": outcomes,
+				"side_wins": side_wins, "average_rounds": float(round_total) / maxf(1.0, float(games)),
+				"formation_strength_override": formation_strength_override, "units": rows,
+			}, "  "))
 
 
 func _parse_arguments() -> Dictionary:

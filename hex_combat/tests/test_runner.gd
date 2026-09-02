@@ -39,7 +39,7 @@ func _run() -> void:
 	_test_reposition_keeps_unidentified_formations_secret()
 	_test_leftover_contingent_friendly_square_order()
 	_test_leftover_allows_second_melee_only_after_win()
-	_test_cavalry_always_leftover_toggle()
+	_test_universal_reposition_and_role_destinations()
 	_test_phase_has_no_decision_ignores_idle_formations()
 	_test_blocked_retreat_destroys_loser()
 	_test_friendly_blocked_retreat_shunts()
@@ -154,6 +154,36 @@ func _ready_and_resolve(game: StrategoGame, rolls: Array[int] = []) -> Array[Dic
 	return game.resolve_round()
 
 
+func _open_reposition(game: StrategoGame, rolls: Array[int] = []) -> Array[Dictionary]:
+	if not rolls.is_empty():
+		game.set_forced_rolls(rolls)
+	for player in game.active_players.duplicate():
+		game.mark_player_ready(player)
+	return game.resolve_main_and_ranged()
+
+
+func _ready_and_resolve_reposition(game: StrategoGame, rolls: Array[int] = []) -> Array[Dictionary]:
+	if not rolls.is_empty():
+		game.set_forced_rolls(rolls)
+	for player in game.active_players.duplicate():
+		game.mark_player_ready(player)
+	return game.resolve_leftover_phase()
+
+
+func _plan_and_resolve_bot_round(game: StrategoGame, bot: StrategoBotPolicy, planning_rng: RandomNumberGenerator) -> Array[Dictionary]:
+	for player in game.active_players.duplicate():
+		bot.plan_round(game, player, planning_rng)
+		game.mark_player_ready(player)
+	var events := game.resolve_main_and_ranged()
+	if game.game_over:
+		return events
+	for player in game.active_players.duplicate():
+		bot.plan_leftover(game, player, planning_rng)
+		game.mark_player_ready(player)
+	events.append_array(game.resolve_leftover_phase())
+	return events
+
+
 func _events_with_action(events: Array[Dictionary], action: String) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
 	for event: Dictionary in events:
@@ -223,20 +253,15 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	var collision := game.set_unit_order(StrategoGame.RED, friend_id, [Vector2i(2, 1)])
 	_expect(not bool(collision.ok), "same-player orders that meet on one impulse are rejected at order time")
 	_expect(game.projected_order_position(light_id, 1) == Vector2i(2, 1), "planned paths expose their impulse occupancy for ghost UI")
-	var archer_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(6, 6))
-	var range_two_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(8, 6))
+	var ranged_game := _test_game()
+	var archer_id := ranged_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(6, 6))
+	ranged_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(12, 12))
+	_open_reposition(ranged_game)
+	var range_two_shot := ranged_game.set_ranged_order(StrategoGame.RED, archer_id, Vector2i(8, 6))
 	_expect(bool(range_two_shot.ok), "Archers accept ranged targets up to two hexes away")
-	var beyond_range := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(9, 6))
+	var beyond_range := ranged_game.set_ranged_order(StrategoGame.RED, archer_id, Vector2i(9, 6))
 	_expect(not bool(beyond_range.ok), "Archers cannot declare speculative fire beyond range 2")
-	var moved_destination := HexGrid.neighbor(Vector2i(6, 6), HexGrid.SOUTH)
-	var moved_range_two := HexGrid.neighbor(HexGrid.neighbor(moved_destination, HexGrid.SOUTH_EAST), HexGrid.SOUTH_EAST)
-	var moved_shot := game.set_unit_order(StrategoGame.RED, archer_id, [moved_destination], moved_range_two)
-	_expect(bool(moved_shot.ok), "an Archer may fire at range 2 after moving when an aiming point remains")
-	var no_budget_path := [moved_destination, HexGrid.neighbor(moved_destination, HexGrid.SOUTH), HexGrid.neighbor(HexGrid.neighbor(moved_destination, HexGrid.SOUTH), HexGrid.SOUTH)]
-	var no_budget_target := HexGrid.neighbor(no_budget_path.back(), HexGrid.SOUTH_EAST)
-	var no_budget_shot := game.set_unit_order(StrategoGame.RED, archer_id, no_budget_path, no_budget_target)
-	_expect(not bool(no_budget_shot.ok), "an Archer cannot fire after spending its full movement allowance")
-	var unseen_shot := game.set_unit_order(StrategoGame.RED, archer_id, [], Vector2i(6, 15))
+	var unseen_shot := ranged_game.set_ranged_order(StrategoGame.RED, archer_id, Vector2i(6, 15))
 	_expect(not bool(unseen_shot.ok), "Archers cannot declare a target they cannot see")
 
 	var volley_game := _test_game()
@@ -244,15 +269,17 @@ func _test_order_paths_and_friendly_rejection() -> void:
 	volley_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(12, 12))
 	var first_step := HexGrid.neighbor(Vector2i(6, 6), HexGrid.SOUTH)
 	var second_step := HexGrid.neighbor(first_step, HexGrid.SOUTH)
-	var volley_hex := HexGrid.neighbor(second_step, HexGrid.SOUTH_EAST)
-	volley_game.set_unit_order(StrategoGame.RED, volley_archer, [first_step, second_step])
-	_expect(bool(volley_game.set_suppress_order(StrategoGame.RED, volley_archer, volley_hex).ok), "a moved Archer can order an adjacent volley with its final movement point")
+	var third_step := HexGrid.neighbor(second_step, HexGrid.SOUTH)
+	volley_game.set_unit_order(StrategoGame.RED, volley_archer, [first_step, second_step, third_step])
+	_open_reposition(volley_game)
+	var volley_hex := HexGrid.neighbor(third_step, HexGrid.SOUTH_EAST)
+	_expect(bool(volley_game.set_suppress_order(StrategoGame.RED, volley_archer, volley_hex).ok), "an Archer can move its full main distance and then choose an adjacent Volley instead of repositioning")
 	var board: StrategoBoardView = load("res://scripts/board_view.gd").new()
 	board.game = volley_game
 	board.viewing_player = StrategoGame.RED
 	board.selected_piece_id = volley_archer
 	board.selected_piece_ids.assign([volley_archer])
-	_expect(board._selected_archer_can_volley(volley_hex), "right-click recognizes an adjacent empty hex as a Volley target instead of forcing a move")
+	_expect(board._selected_archer_can_volley(volley_hex), "right-click recognizes an adjacent empty hex as a Volley target during reposition")
 	board.free()
 
 
@@ -265,10 +292,9 @@ func _test_ranged_combat_reveals_both_parties() -> void:
 	var target := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 10)
 	_expect(not game.is_piece_revealed_to(game.pieces[shooter], StrategoGame.BLUE), "the Archer starts unidentified to its target")
 	_expect(not game.is_piece_revealed_to(game.pieces[target], StrategoGame.RED), "and the target starts unidentified to the Archer")
-	game.set_unit_order(StrategoGame.RED, shooter, [], Vector2i(5, 4), Vector2i(-1, -1), target)
-	game.set_forced_rolls([4])
-	for player in game.active_players: game.mark_player_ready(player)
-	var events := game.resolve_main_and_ranged()
+	_open_reposition(game)
+	game.set_ranged_order(StrategoGame.RED, shooter, Vector2i(5, 4), target)
+	var events := _ready_and_resolve_reposition(game, [4])
 	_expect(_events_with_action(events, "ranged").size() == 1, "the shot resolves as a ranged event")
 	_expect(game.is_piece_revealed_to(game.pieces[shooter], StrategoGame.BLUE), "shooting reveals the Archer to the formation it fired on")
 	_expect(game.is_piece_revealed_to(game.pieces[target], StrategoGame.RED), "being shot reveals the target to the Archer that fired")
@@ -282,10 +308,9 @@ func _test_ranged_combat_reveals_both_parties() -> void:
 	var sniper := lethal.add_piece(StrategoGame.HEAVY_ARCHER, StrategoGame.RED, Vector2i(5, 5), 10)
 	var victim := lethal.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 4), 1)
 	lethal.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
-	lethal.set_unit_order(StrategoGame.RED, sniper, [], Vector2i(5, 4), Vector2i(-1, -1), victim)
-	lethal.set_forced_rolls([6, 1, 1, 1, 1])
-	for player in lethal.active_players: lethal.mark_player_ready(player)
-	lethal.resolve_main_and_ranged()
+	_open_reposition(lethal)
+	lethal.set_ranged_order(StrategoGame.RED, sniper, Vector2i(5, 4), victim)
+	_ready_and_resolve_reposition(lethal, [6, 1, 1, 1, 1])
 	_expect(not lethal.pieces[victim].alive, "the shot destroys a weak enough target")
 	_expect(lethal.is_piece_revealed_to(lethal.pieces[sniper], StrategoGame.BLUE), "a killing shot still gives the Archer away")
 
@@ -791,11 +816,11 @@ func _test_multiway_unique_winner() -> void:
 	var support := support_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(2, 3), 10)
 	support_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 10)
 	support_game.set_unit_order(StrategoGame.RED, leader, [Vector2i(2, 2)])
-	support_game.set_unit_order(StrategoGame.RED, support, [Vector2i(2, 2)], Vector2i(2, 1))
+	support_game.set_unit_order(StrategoGame.RED, support, [Vector2i(2, 2)])
 	support_game.set_forced_rolls([6, 1, 3, 2, 1, 1])
 	for player in support_game.active_players: support_game.mark_player_ready(player)
 	support_game.resolve_main_and_ranged()
-	_expect(support_game.pieces[support].round_status == StrategoGame.STATUS_READY and support_game.can_receive_leftover_order(StrategoGame.RED, support), "a friendly combat return remains eligible for later actions when movement remains")
+	_expect(support_game.pieces[support].round_status == StrategoGame.STATUS_READY and support_game.can_receive_leftover_order(StrategoGame.RED, support), "a friendly combat return remains eligible for its post-clash action")
 
 
 func _test_multiway_friendly_leader_tie() -> void:
@@ -842,25 +867,24 @@ func _test_ranged_focus_fire_is_simultaneous() -> void:
 	var first_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 2), 5)
 	var second_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(2, 1), 5)
 	var target_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 4)
-	game.set_unit_order(StrategoGame.RED, first_id, [], Vector2i(2, 2))
-	game.set_unit_order(StrategoGame.RED, second_id, [], Vector2i(2, 2))
-	var events := _ready_and_resolve(game, [5, 1, 1, 1, 4, 1, 1, 1])
+	_open_reposition(game)
+	game.set_ranged_order(StrategoGame.RED, first_id, Vector2i(2, 2), target_id)
+	game.set_ranged_order(StrategoGame.RED, second_id, Vector2i(2, 2), target_id)
+	var events := _ready_and_resolve_reposition(game, [5, 1, 1, 1, 4, 1, 1, 1])
 	_expect(_events_with_action(events, "ranged").size() == 2, "all scheduled focus-fire shots resolve even when the target is overkilled")
 	_expect(not game.pieces[target_id].alive, "simultaneous ranged damage destroys an overkilled target")
 	_expect(game.pieces[first_id].strength == 5 and game.pieces[second_id].strength == 5, "a target's defensive roll never wounds the Archer back")
 	var long_game := _test_game()
 	var long_archer := long_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
 	var long_target := long_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
-	long_game.set_unit_order(StrategoGame.RED, long_archer, [], Vector2i(3, 1))
-	long_game.set_forced_rolls([5, 1, 1])
-	for player in long_game.active_players.duplicate():
-		long_game.mark_player_ready(player)
-	var long_events := long_game.resolve_main_and_ranged()
+	_open_reposition(long_game)
+	long_game.set_ranged_order(StrategoGame.RED, long_archer, Vector2i(3, 1), long_target)
+	var long_events := _ready_and_resolve_reposition(long_game, [5, 1, 1])
 	var long_shots := _events_with_action(long_events, "ranged")
-	_expect(long_shots.size() == 1 and int(long_shots[0].range) == 2 and int(long_shots[0].movement_cost) == 1, "range-2 fire costs the same single aiming point as range-1 fire")
+	_expect(long_shots.size() == 1 and int(long_shots[0].range) == 2 and int(long_shots[0].movement_cost) == 0, "ranged fire spends the Archer's post-clash action rather than a movement point")
 	_expect(long_game.pieces[long_target].strength == 3, "range-2 fire still lands for its margin, without the short shot's accuracy die")
 	_expect(int(long_shots[0].attacker_bonus_dice) == 0, "range 2 buys no accuracy die")
-	_expect(long_game.movement_committed(long_game.pieces[long_archer]) == 1 and long_game.can_receive_leftover_order(StrategoGame.RED, long_archer), "range-2 fire leaves unused movement available for repositioning")
+	_expect(long_game.movement_committed(long_game.pieces[long_archer]) == 0, "shooting does not retroactively spend main movement")
 
 	# Range is an accuracy question now, not only a movement-cost one.
 	var archer_profile := {"strength": 6, "role": StrategoGame.ROLE_ARCHER, "weight": StrategoGame.WEIGHT_LIGHT}
@@ -882,7 +906,7 @@ func _test_ranged_focus_fire_is_simultaneous() -> void:
 	_expect(int(shrugged_crit.defender_damage) == 0, "and the target's own 6 cancels even that")
 	_test_aimed_fire_follows_its_target()
 	_test_suppressing_fire_hits_the_square()
-	_test_fizzled_shots_still_cost_the_aim_point()
+	_test_fizzled_shots_still_spend_the_action()
 
 
 ## Aimed fire tracks the formation: a target that moves but stays in range is
@@ -891,9 +915,10 @@ func _test_aimed_fire_follows_its_target() -> void:
 	var game := _test_game()
 	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
 	var target := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
-	game.set_unit_order(StrategoGame.RED, archer, [], Vector2i(3, 1), Vector2i(-1, -1), target)
-	game.set_unit_order(StrategoGame.BLUE, target, [Vector2i(2, 1)])
-	var events := _ready_and_resolve(game, [4, 1, 1, 1])
+	_open_reposition(game)
+	game.set_ranged_order(StrategoGame.RED, archer, Vector2i(3, 1), target)
+	game.set_leftover_order(StrategoGame.BLUE, target, Vector2i(2, 1))
+	var events := _ready_and_resolve_reposition(game, [4, 1, 1, 1])
 	var shots := _events_with_action(events, "ranged")
 	_expect(shots.size() == 1 and int(shots[0].target_id) == target, "aimed fire still hits a target that moved within range")
 	_expect(int(shots[0].range) == 1, "the shot resolves at the range the target actually ended up at")
@@ -901,9 +926,10 @@ func _test_aimed_fire_follows_its_target() -> void:
 	var away_game := _test_game()
 	var away_archer := away_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
 	var away_target := away_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
-	away_game.set_unit_order(StrategoGame.RED, away_archer, [], Vector2i(3, 1), Vector2i(-1, -1), away_target)
-	away_game.set_unit_order(StrategoGame.BLUE, away_target, [Vector2i(4, 1), Vector2i(5, 1), Vector2i(6, 1)])
-	var away_events := _ready_and_resolve(away_game)
+	_open_reposition(away_game)
+	away_game.set_ranged_order(StrategoGame.RED, away_archer, Vector2i(3, 1), away_target)
+	away_game.set_leftover_order(StrategoGame.BLUE, away_target, Vector2i(4, 1))
+	var away_events := _ready_and_resolve_reposition(away_game)
 	_expect(_events_with_action(away_events, "ranged").is_empty(), "aimed fire finds nothing when the target breaks out of range")
 	_expect(_events_with_action(away_events, "ranged_fizzle").size() == 1, "a shot that finds nothing is reported as a fizzle")
 
@@ -913,34 +939,30 @@ func _test_suppressing_fire_hits_the_square() -> void:
 	var game := _test_game()
 	var archer := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
 	var mover := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(4, 1), 6)
+	_open_reposition(game)
 	game.set_suppress_order(StrategoGame.RED, archer, Vector2i(3, 1))
-	game.set_unit_order(StrategoGame.BLUE, mover, [Vector2i(3, 1)])
-	var events := _ready_and_resolve(game, [4, 1, 1])
+	game.set_leftover_order(StrategoGame.BLUE, mover, Vector2i(3, 1))
+	var events := _ready_and_resolve_reposition(game, [4, 1, 1])
 	var shots := _events_with_action(events, "ranged")
 	_expect(shots.size() == 1 and int(shots[0].target_id) == mover, "suppressing fire hits whoever moves onto the targeted square")
 
 
-## The aim point is spent during main movement, so a shot that never fires still
-## costs it just like a shot that finds its target.
-func _test_fizzled_shots_still_cost_the_aim_point() -> void:
+## Choosing a shot excludes reposition even when the target escapes and the
+## shot fizzles.
+func _test_fizzled_shots_still_spend_the_action() -> void:
 	var game := _test_game()
 	var light := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 5)
 	var heavy := game.add_piece(StrategoGame.HEAVY_ARCHER, StrategoGame.RED, Vector2i(1, 5), 7)
 	var light_bait := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 1), 6)
 	var heavy_bait := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(3, 5), 6)
-	game.set_unit_order(StrategoGame.RED, light, [], Vector2i(3, 1), Vector2i(-1, -1), light_bait)
-	game.set_unit_order(StrategoGame.RED, heavy, [], Vector2i(3, 5), Vector2i(-1, -1), heavy_bait)
-	game.set_unit_order(StrategoGame.BLUE, light_bait, [Vector2i(4, 1), Vector2i(5, 1), Vector2i(6, 1)])
-	game.set_unit_order(StrategoGame.BLUE, heavy_bait, [Vector2i(4, 5), Vector2i(5, 5), Vector2i(6, 5)])
-	# Stop after main and ranged so leftover eligibility can still be inspected.
-	for player in game.active_players.duplicate():
-		game.mark_player_ready(player)
-	var events := game.resolve_main_and_ranged()
-	_expect(game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING, "the round pauses for leftover planning after ranged fire")
+	_open_reposition(game)
+	game.set_ranged_order(StrategoGame.RED, light, Vector2i(3, 1), light_bait)
+	game.set_ranged_order(StrategoGame.RED, heavy, Vector2i(3, 5), heavy_bait)
+	game.set_leftover_order(StrategoGame.BLUE, light_bait, Vector2i(4, 1))
+	game.set_leftover_order(StrategoGame.BLUE, heavy_bait, Vector2i(4, 5))
+	var events := _ready_and_resolve_reposition(game)
 	_expect(_events_with_action(events, "ranged_fizzle").size() == 2, "both legal shots fizzle when their targets move beyond range 2")
-	_expect(int(game.pieces[light].aim_spent) == 1 and int(game.pieces[heavy].aim_spent) == 1, "a fizzled shot still spends the aim point")
-	_expect(game.can_receive_leftover_order(StrategoGame.RED, light), "a Light Archer keeps a leftover move after a fizzled shot")
-	_expect(not game.can_receive_leftover_order(StrategoGame.RED, heavy), "aiming costs a Heavy Archer its entire round")
+	_expect(game.movement_committed(game.pieces[light]) == 0 and game.movement_committed(game.pieces[heavy]) == 0, "post-clash shooting does not spend main movement")
 
 
 func _test_archer_loss_blocks_shot_and_win_allows_it() -> void:
@@ -948,16 +970,30 @@ func _test_archer_loss_blocks_shot_and_win_allows_it() -> void:
 	var losing_archer := losing_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
 	losing_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(2, 1), 10)
 	var untouched_target := losing_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(2, 2), 10)
-	losing_game.set_unit_order(StrategoGame.RED, losing_archer, [Vector2i(2, 1)], Vector2i(2, 2))
-	var losing_events := _ready_and_resolve(losing_game, [1, 5, 1, 1])
-	_expect(_events_with_action(losing_events, "ranged").is_empty() and losing_game.pieces[untouched_target].strength == 10, "an Archer that loses and retreats cannot shoot")
+	losing_game.set_unit_order(StrategoGame.RED, losing_archer, [Vector2i(2, 1)])
+	_open_reposition(losing_game, [1, 5, 1, 1])
+	var losing_order := losing_game.set_ranged_order(StrategoGame.RED, losing_archer, losing_game.pieces[untouched_target].position, untouched_target)
+	_expect(not bool(losing_order.ok) and losing_game.pieces[untouched_target].strength == 10, "an Archer that lost the main melee cannot choose a post-clash shot")
 	var winning_game := _test_game()
 	var winning_archer := winning_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 10)
 	winning_game.add_piece(StrategoGame.HEAVY_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
 	var shot_target := winning_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(2, 2), 10)
-	winning_game.set_unit_order(StrategoGame.RED, winning_archer, [Vector2i(2, 1)], Vector2i(2, 2))
-	var winning_events := _ready_and_resolve(winning_game, [5, 1, 1, 4, 1, 1])
-	_expect(_events_with_action(winning_events, "ranged").size() == 1 and winning_game.pieces[shot_target].strength == 7, "an Archer that wins melee may shoot with unused movement")
+	winning_game.set_unit_order(StrategoGame.RED, winning_archer, [Vector2i(2, 1)])
+	_open_reposition(winning_game, [5, 1, 1])
+	winning_game.set_ranged_order(StrategoGame.RED, winning_archer, Vector2i(2, 2), shot_target)
+	var winning_events := _ready_and_resolve_reposition(winning_game, [4, 1, 1])
+	_expect(_events_with_action(winning_events, "ranged").size() == 1 and winning_game.pieces[shot_target].strength == 7, "an Archer that wins the main melee may choose to shoot afterward")
+
+	var cavalry_game := _test_game()
+	var threatened_archer := cavalry_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(5, 5), 6)
+	var cavalry := cavalry_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(5, 4), 10)
+	var distant_target := cavalry_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(6, 6), 10)
+	_open_reposition(cavalry_game)
+	cavalry_game.set_ranged_order(StrategoGame.RED, threatened_archer, Vector2i(6, 6), distant_target)
+	var cavalry_order := cavalry_game.set_leftover_order(StrategoGame.BLUE, cavalry, Vector2i(5, 5))
+	_expect(bool(cavalry_order.ok), "Cavalry may deliberately reposition into an enemy-held hex")
+	var cavalry_events := _ready_and_resolve_reposition(cavalry_game, [6, 1, 1, 1, 1])
+	_expect(_events_with_action(cavalry_events, "melee").size() == 1 and _events_with_action(cavalry_events, "ranged").is_empty(), "a Cavalry attack that defeats an Archer resolves before and cancels its shot")
 
 
 func _test_leftover_is_a_separate_order_phase() -> void:
@@ -1002,7 +1038,7 @@ func _test_leftover_contingent_friendly_square_order() -> void:
 	var guard := battle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
 	var follow_up := battle_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(5, 6), 10)
 	var second_follow_up := battle_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(6, 5), 10)
-	var attacker := battle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	var attacker := battle_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
 	battle_game.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
 	var contingent_order := battle_game.set_leftover_order(StrategoGame.BLUE, follow_up, Vector2i(5, 5))
 	_expect(bool(contingent_order.ok), "reposition accepts a contingent move into a stationary friendly formation's square")
@@ -1030,8 +1066,9 @@ func _test_leftover_allows_second_melee_only_after_win() -> void:
 	var move_game := _test_game()
 	var leftover_mover := move_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(4, 4), 8)
 	move_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(18, 18), 8)
+	_open_reposition(move_game)
 	move_game.set_leftover_order(StrategoGame.RED, leftover_mover, Vector2i(4, 3))
-	var move_events := _ready_and_resolve(move_game)
+	var move_events := _ready_and_resolve_reposition(move_game)
 	var leftover_moves: Array[Dictionary] = []
 	for event: Dictionary in _events_with_action(move_events, "move"):
 		if String(event.get("batch", "")) == "leftover": leftover_moves.append(event)
@@ -1049,62 +1086,60 @@ func _test_leftover_allows_second_melee_only_after_win() -> void:
 	var eligible_light := group_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
 	group_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
 	group_game.append_group_order_step(StrategoGame.BLUE, [exhausted_heavy, eligible_light], HexGrid.NORTH)
+	_open_reposition(group_game)
 	var group_leftover := group_game.set_group_leftover_step(StrategoGame.BLUE, [exhausted_heavy, eligible_light], HexGrid.SOUTH_WEST)
-	_expect(bool(group_leftover.ok) and int(group_leftover.count) == 1 and int(group_leftover.skipped) == 1, "group leftover orders skip formations with no movement remaining")
+	_expect(bool(group_leftover.ok) and int(group_leftover.count) == 2 and int(group_leftover.skipped) == 0, "every eligible formation receives the shared reposition direction regardless of spent movement")
 	var light_after_main := HexGrid.neighbor(Vector2i(10, 6), HexGrid.NORTH)
-	_expect(group_game.order_for_piece(exhausted_heavy).leftover.x < 0 and group_game.order_for_piece(eligible_light).leftover == HexGrid.neighbor(light_after_main, HexGrid.SOUTH_WEST), "eligible group members receive the shared leftover direction")
+	var heavy_after_main := HexGrid.neighbor(Vector2i(8, 6), HexGrid.NORTH)
+	_expect(group_game.order_for_piece(exhausted_heavy).leftover == HexGrid.neighbor(heavy_after_main, HexGrid.SOUTH_WEST) and group_game.order_for_piece(eligible_light).leftover == HexGrid.neighbor(light_after_main, HexGrid.SOUTH_WEST), "Heavy and Light formations both receive the universal reposition step")
 	var win_game := _test_game()
 	var cavalry_id := win_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
 	win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
 	win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.GREEN, Vector2i(2, 2), 10)
-	win_game.set_unit_order(StrategoGame.RED, cavalry_id, [Vector2i(2, 1)], Vector2i(-1, -1), Vector2i(2, 2))
-	var win_events := _ready_and_resolve(win_game, [4, 1, 1, 4, 1, 1])
+	win_game.set_unit_order(StrategoGame.RED, cavalry_id, [Vector2i(2, 1)])
+	var win_events := _open_reposition(win_game, [4, 1, 1])
+	win_game.set_leftover_order(StrategoGame.RED, cavalry_id, Vector2i(2, 2))
+	win_events.append_array(_ready_and_resolve_reposition(win_game, [4, 1, 1]))
 	_expect(_events_with_action(win_events, "melee").size() == 2 and int(win_game.pieces[cavalry_id].melee_count) == 2, "a winner can use leftover movement for at most a second intentional melee")
 	var bounce_game := _test_game()
 	var bounced_id := bounce_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
 	bounce_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
 	bounce_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.GREEN, Vector2i(2, 2), 10)
-	bounce_game.set_unit_order(StrategoGame.RED, bounced_id, [Vector2i(2, 1)], Vector2i(-1, -1), Vector2i(2, 2))
-	var bounce_events := _ready_and_resolve(bounce_game, [4, 1, 4])
+	bounce_game.set_unit_order(StrategoGame.RED, bounced_id, [Vector2i(2, 1)])
+	var bounce_events := _open_reposition(bounce_game, [4, 1, 4])
+	var blocked_followup := bounce_game.set_leftover_order(StrategoGame.RED, bounced_id, Vector2i(2, 2))
+	_expect(not bool(blocked_followup.ok), "a bounced formation cannot receive a reposition order")
 	_expect(_events_with_action(bounce_events, "melee").size() == 1 and bounce_game.pieces[bounced_id].round_status == StrategoGame.STATUS_BOUNCED, "a bounce ends the unit's round and prevents leftover re-engagement")
 
 
-func _test_cavalry_always_leftover_toggle() -> void:
-	var off_game := _test_game()
-	# The default flipped to true after playtesting, so "off" has to be said
-	# explicitly now rather than relied on as the starting state.
-	off_game.cavalry_always_leftover = false
-	var hc_off := off_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
-	off_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
-	off_game.set_unit_order(StrategoGame.BLUE, hc_off, [Vector2i(8, 5)])
-	for player in off_game.active_players: off_game.mark_player_ready(player)
-	off_game.resolve_main_and_ranged()
-	_expect(not off_game.can_receive_leftover_order(StrategoGame.BLUE, hc_off), "with the toggle off, a Heavy Cavalry that spent its one movement point is not leftover-eligible")
+func _test_universal_reposition_and_role_destinations() -> void:
+	var game := _test_game()
+	var cavalry := game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
+	var infantry := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
+	var enemy := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(9, 5))
+	game.set_unit_order(StrategoGame.BLUE, cavalry, [Vector2i(8, 5)])
+	game.set_unit_order(StrategoGame.BLUE, infantry, [Vector2i(10, 5)])
+	_open_reposition(game)
+	_expect(game.can_receive_leftover_order(StrategoGame.BLUE, cavalry) and game.can_receive_leftover_order(StrategoGame.BLUE, infantry), "exhausted Heavy Cavalry and Heavy Infantry both receive the universal reposition action")
+	_expect(bool(game.set_leftover_order(StrategoGame.BLUE, cavalry, game.pieces[enemy].position).ok), "Cavalry may deliberately reposition into an enemy-held hex")
+	var infantry_attack := game.set_leftover_order(StrategoGame.BLUE, infantry, game.pieces[enemy].position)
+	_expect(not bool(infantry_attack.ok), "Infantry may not deliberately reposition into an enemy-held hex")
+	game.pieces[infantry].round_status = StrategoGame.STATUS_LOST
+	_expect(not game.can_receive_leftover_order(StrategoGame.BLUE, infantry), "losing a fight still blocks the universal post-clash action")
 
-	var on_game := _test_game()
-	on_game.cavalry_always_leftover = true
-	var hc_on := on_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
-	var hi_on := on_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(10, 6))
-	on_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
-	on_game.set_unit_order(StrategoGame.BLUE, hc_on, [Vector2i(8, 5)])
-	on_game.set_unit_order(StrategoGame.BLUE, hi_on, [Vector2i(10, 5)])
-	for player in on_game.active_players: on_game.mark_player_ready(player)
-	on_game.resolve_main_and_ranged()
-	_expect(on_game.can_receive_leftover_order(StrategoGame.BLUE, hc_on), "with the toggle on, that same Cavalry can still take a leftover move")
-	_expect(not on_game.can_receive_leftover_order(StrategoGame.BLUE, hi_on), "the toggle is Cavalry-specific: an equally exhausted Heavy Infantry stays excluded")
-
-	on_game.pieces[hc_on].round_status = StrategoGame.STATUS_LOST
-	_expect(not on_game.can_receive_leftover_order(StrategoGame.BLUE, hc_on), "losing a fight still blocks the leftover move even with the toggle on")
+	var meeting := _test_game()
+	var red_infantry := meeting.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 4), 8)
+	var blue_infantry := meeting.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 6), 8)
+	meeting.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
+	_expect(bool(meeting.set_leftover_order(StrategoGame.RED, red_infantry, Vector2i(5, 5)).ok) and bool(meeting.set_leftover_order(StrategoGame.BLUE, blue_infantry, Vector2i(5, 5)).ok), "opposing Infantry may independently choose the same currently empty reposition hex")
+	var meeting_events := _ready_and_resolve_reposition(meeting, [5, 4])
+	var meeting_battles := _events_with_action(meeting_events, "melee")
+	_expect(meeting_battles.size() == 1 and int(meeting_battles[0].bonus_dice[red_infantry]) == 0 and int(meeting_battles[0].bonus_dice[blue_infantry]) == 0, "an accidental Infantry meeting becomes a battle with both formations counted as attackers")
 
 
 func _test_phase_has_no_decision_ignores_idle_formations() -> void:
-	# A formation nobody gave an order to is technically leftover-eligible
-	# too, since its whole movement budget is unspent - but that describes
-	# almost every formation in almost every round (anything left to hold
-	# position), so gating the interface's auto-skip on raw eligibility meant
-	# the reposition phase essentially never actually skipped in real play.
-	# Only a formation that did something this round should count as a real
-	# decision worth stopping and asking about.
+	# Reposition is now a universal post-clash action, so even a formation that
+	# held during main planning has a real move-or-hold decision afterward.
 	var idle_game := _test_game()
 	idle_game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6))
 	idle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
@@ -1112,43 +1147,8 @@ func _test_phase_has_no_decision_ignores_idle_formations() -> void:
 	idle_game.resolve_main_and_ranged()
 	var idle_presenter: Control = load("res://scripts/main.gd").new()
 	idle_presenter.game = idle_game
-	_expect(idle_presenter._phase_has_no_decision(), "a round where every formation sat idle has nothing to decide in reposition, even though idle formations are technically leftover-eligible")
+	_expect(not idle_presenter._phase_has_no_decision(), "an idle formation still receives a real universal reposition decision")
 	idle_presenter.free()
-
-	var partial_game := _test_game()
-	var partial_mover := partial_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(8, 6), 8)
-	partial_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
-	partial_game.set_unit_order(StrategoGame.BLUE, partial_mover, [Vector2i(8, 5)])
-	for player in partial_game.active_players: partial_game.mark_player_ready(player)
-	partial_game.resolve_main_and_ranged()
-	var partial_presenter: Control = load("res://scripts/main.gd").new()
-	partial_presenter.game = partial_game
-	_expect(not partial_presenter._phase_has_no_decision(), "a formation that spent only part of its movement budget still has a real reposition decision")
-	partial_presenter.free()
-
-	var win_game := _test_game()
-	var win_attacker := win_game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 1), 10)
-	var win_defender := win_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(2, 1), 10)
-	win_game.set_unit_order(StrategoGame.RED, win_attacker, [Vector2i(2, 1)])
-	win_game.set_forced_rolls([1, 1, 5])
-	for player in win_game.active_players: win_game.mark_player_ready(player)
-	win_game.resolve_main_and_ranged()
-	_expect(String(win_game.pieces[win_defender].round_status) == StrategoGame.STATUS_WON, "the defender in this setup wins the melee in place")
-	var win_presenter: Control = load("res://scripts/main.gd").new()
-	win_presenter.game = win_game
-	_expect(not win_presenter._phase_has_no_decision(), "a formation that won a fight in place still has a real decision: press the advantage")
-	win_presenter.free()
-
-	var toggle_game := _test_game()
-	toggle_game.cavalry_always_leftover = true
-	toggle_game.add_piece(StrategoGame.HEAVY_CAVALRY, StrategoGame.BLUE, Vector2i(8, 6))
-	toggle_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18))
-	for player in toggle_game.active_players: toggle_game.mark_player_ready(player)
-	toggle_game.resolve_main_and_ranged()
-	var toggle_presenter: Control = load("res://scripts/main.gd").new()
-	toggle_presenter.game = toggle_game
-	_expect(not toggle_presenter._phase_has_no_decision(), "with the toggle on, an otherwise-idle Cavalry formation still counts as a real decision")
-	toggle_presenter.free()
 
 
 func _test_blocked_retreat_destroys_loser() -> void:
@@ -1418,10 +1418,7 @@ func _test_deterministic_replay_export() -> void:
 	for round_index in range(6):
 		if game.game_over:
 			break
-		for player in game.active_players.duplicate():
-			policy.plan_round(game, player, planning_rng)
-			game.mark_player_ready(player)
-		game.resolve_round()
+		_plan_and_resolve_bot_round(game, policy, planning_rng)
 	var document := game.build_replay_document()
 	_expect(String(document.get("format", "")) == StrategoGame.REPLAY_FORMAT and int(document.get("version", 0)) == StrategoGame.REPLAY_VERSION, "replay export identifies its versioned deterministic format")
 	_expect(String(document.get("setup", {}).get("grid", "")) == StrategoGame.GRID_TYPE, "replay setup records the hex coordinate system")
@@ -1545,10 +1542,7 @@ func _test_crossroads_replay_round_trip() -> void:
 	planning_rng.seed = 314
 	for round_index in range(4):
 		if game.game_over: break
-		for player in game.active_players.duplicate():
-			bot.plan_round(game, player, planning_rng)
-			game.mark_player_ready(player)
-		game.resolve_round()
+		_plan_and_resolve_bot_round(game, bot, planning_rng)
 	var document := game.build_replay_document()
 	_expect(document.get("setup", {}).get("deployment", {}).size() == game.pieces.size(), "a crossroads replay records where every formation was actually deployed")
 	var parsed_value: Variant = JSON.parse_string(JSON.stringify(document))
@@ -1576,10 +1570,7 @@ func _test_bot_round_smoke() -> void:
 	var bot := StrategoBotPolicy.new()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	for player in game.active_players:
-		bot.plan_round(game, player, rng)
-		game.mark_player_ready(player)
-	var events := game.resolve_round()
+	var events := _plan_and_resolve_bot_round(game, bot, rng)
 	_expect(game.round_number == 2 and not events.is_empty(), "four bots can submit collision-validated WEGO orders and resolve a complete round")
 	var trainer := SelfPlayTrainer.new()
 	trainer.max_rounds = 4

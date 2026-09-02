@@ -1,5 +1,12 @@
 # UI Update Plan
 
+Status: the framed four-region layout, scrolling hex board, minimap, phase bar,
+top bar, formation/event sidebar, inspector/battle sidebar, context actions,
+painted terrain, and treeline are implemented in `hex_combat`. This document is
+now primarily a design record. The remaining open items are the event-log row
+schema and bot pathing note at the end; they are not blockers for the current
+interface.
+
 Target: replace the current floating-panel HUD with a framed, four-region layout
 in the style of the approved mockups — dark navy panels, thin gold borders and
 corner flourishes, serif small-caps headers.

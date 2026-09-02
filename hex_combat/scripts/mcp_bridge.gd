@@ -170,16 +170,14 @@ func _set_order(args: Dictionary) -> Dictionary:
 	var path: Array[Vector2i] = []
 	for step in args.get("path", []): path.append(_to_vector(step))
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
+		var ranged_target := _to_vector(args.get("ranged_target", null))
+		if ranged_target.x >= 0:
+			var ranged_result := game.set_ranged_order(controlled_player, piece_id, ranged_target, int(args.get("ranged_target_id", -1)))
+			return {"ok": bool(ranged_result.get("ok", false)), "message": String(ranged_result.get("message", ""))}
 		var leftover := _to_vector(args.get("leftover", args.get("path", []).back() if not path.is_empty() else null))
 		var leftover_result := game.set_leftover_order(controlled_player, piece_id, leftover)
 		return {"ok": bool(leftover_result.get("ok", false)), "message": String(leftover_result.get("message", ""))}
-	# ranged_target_id names a formation (aimed fire); omit it to suppress the
-	# square instead.
-	var result := game.set_unit_order(
-		controlled_player, piece_id, path,
-		_to_vector(args.get("ranged_target", null)), _to_vector(args.get("leftover", null)),
-		int(args.get("ranged_target_id", -1))
-	)
+	var result := game.set_unit_order(controlled_player, piece_id, path)
 	return {"ok": bool(result.get("ok", false)), "message": String(result.get("message", ""))}
 
 

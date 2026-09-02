@@ -16,7 +16,13 @@ func play_match(candidate: StrategoBotPolicy, champion: StrategoBotPolicy, candi
 			var policy := candidate if player == candidate_side else champion
 			policy.plan_round(game, player, rng)
 			game.mark_player_ready(player)
-		game.resolve_round()
+		game.resolve_main_and_ranged()
+		if game.game_over: break
+		for player in game.active_players.duplicate():
+			var policy := candidate if player == candidate_side else champion
+			policy.plan_leftover(game, player, rng)
+			game.mark_player_ready(player)
+		game.resolve_leftover_phase()
 	if not game.game_over:
 		game.game_over = true
 		game.phase = StrategoGame.PHASE_GAME_OVER

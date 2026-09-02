@@ -1,7 +1,9 @@
 # Hex map migration plan
 
-Status: implemented in the isolated `hex` project on 2026-09-01. The square-grid
-projects remain unchanged. Balance values are intentionally still provisional.
+Status: implemented in the combined `hex_combat` project on 2026-09-01. The
+square-grid `new` project remains unchanged as a control. This document is the
+migration record; its staged instructions are historical rather than an open
+implementation backlog. Balance values remain provisional.
 
 ## Goal
 

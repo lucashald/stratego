@@ -3,7 +3,7 @@
 Runtime textures live in faction folders such as `green/`. Approved
 high-resolution working art lives under `source/<faction>/`.
 
-The current Green proof set uses these canonical emblems:
+All four runtime faction sets use these canonical emblems:
 
 | Code | Formation | Emblem |
 |---|---|---|
@@ -22,10 +22,11 @@ centre point. Every banner occupies the same 472 x 472 registration box, leaving
 exactly 20 transparent pixels on each outer edge. Their Godot imports generate
 mipmaps for clean reduction to board, roster and battle-card sizes.
 
-Until the other faction sets are ready, `UnitIconCatalog` intentionally maps
-every movable formation to this Green set. Flags are not included yet.
+`UnitIconCatalog` maps each player to its own complete formation set, Flag, and
+unknown banner. Unknown banners deliberately omit Role and Strength.
 
-Regenerate the runtime set and proof sheet from the `new` project directory:
+Regenerate a runtime set and proof sheet from the `hex_combat` project directory
+(replace `green` with the faction being processed):
 
 ```powershell
 python tools/normalize_unit_icons.py `

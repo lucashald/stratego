@@ -88,7 +88,6 @@ const TERRAIN_WATER := "water"
 const TERRAIN_BRIDGE := "bridge"
 const SHOT_SHORT := "short"
 const SHOT_LONG := "long"
-const AIM_COST := 1
 const STATUS_READY := "ready"
 const STATUS_WON := "won"
 const STATUS_LOST := "lost"
@@ -99,7 +98,7 @@ const BRIDGE_COLUMNS := [8, 9, 10, 11]
 const BRIDGE_STRENGTH_TARGET := 20
 const DEFAULT_BRIDGE_TURN_LIMIT := 20
 const REPLAY_FORMAT := "wego-formations-replay"
-const REPLAY_VERSION := 8
+const REPLAY_VERSION := 9
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const PIECE_DEFINITIONS := {
@@ -188,17 +187,6 @@ var withdrawing_player := DRAW
 var last_eliminated_player := DRAW
 var last_elimination_reason := ""
 var private_battle_results := true
-## Off by default, so existing games and replays are unaffected. When on,
-## Cavalry ignores the "movement left in the bank" leftover-eligibility check
-## - a Heavy Cavalry formation that already spent its one point of main
-## movement can still take the leftover move, rather than being permanently
-## excluded from it the moment it moves at all.
-# Cavalry may take a leftover move even after using its full main-phase
-# movement, same fight-outcome rules as everyone else. On by default: playtesting
-# found heavies routinely arrive too late to matter in a fast-moving fight, and
-# this is the one lever that gives the slowest, hardest-hitting Role a way to
-# actually reach the fight in time.
-var cavalry_always_leftover := true
 ## Experimental, off by default: when a melee's top score is tied and one of
 ## the tied formations is the defender (not the one that moved into the
 ## square), the defender wins instead of the tie bouncing everyone off with
@@ -284,7 +272,6 @@ func setup_empty() -> void:
 	last_eliminated_player = DRAW
 	last_elimination_reason = ""
 	private_battle_results = true
-	cavalry_always_leftover = true
 	vision_range = DEFAULT_VISION_RANGE
 	bridge_attacker = BLUE
 	bridge_defender = RED
@@ -623,7 +610,7 @@ func add_piece(type: String, player: int, position: Vector2i, strength_override:
 		"id": id, "type": type, "player": player, "role": String(definition.role), "weight": weight,
 		"strength": starting_strength, "max_strength": starting_strength,
 		"position": position, "previous_position": position, "alive": true, "revealed_to": [], "seen_by": [],
-		"round_status": STATUS_READY, "movement_used": 0, "steps_taken": 0, "aim_spent": 0, "melee_count": 0, "participated_in_combat": false,
+		"round_status": STATUS_READY, "movement_used": 0, "steps_taken": 0, "melee_count": 0, "participated_in_combat": false,
 		"main_done": false, "move_count": 0, "recent_positions": [position],
 	})
 	board[position.y][position.x] = id
@@ -873,9 +860,8 @@ func projected_main_destination(piece_id: int) -> Vector2i:
 
 ## Validates a declared shot and returns {ok, shot_type, message}.
 ##
-## Every shot costs the same one movement point and may be declared at range 1
-## or 2 from the Archer's planned destination. Moving first is fine as long as
-## that aiming point remains. Targets must be visible: no blind fire into fog.
+## Every shot may be declared at range 1 or 2 during the post-clash action
+## phase. Targets must be visible: no blind fire into fog.
 func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], target: Vector2i, target_id: int) -> Dictionary:
 	if piece.role != ROLE_ARCHER:
 		return {"ok": false, "message": "Only Archers can receive ranged orders."}
@@ -891,8 +877,7 @@ func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], 
 			return {"ok": false, "message": "Archers can only target a formation they can see."}
 	elif not is_position_visible_to(target, player):
 		return {"ok": false, "message": "Archers can only target a hex they can see."}
-	var origin: Vector2i = piece.position if path.is_empty() else path.back()
-	var declared_range := grid_distance(origin, target)
+	var declared_range := grid_distance(piece.position, target)
 	if declared_range == 0:
 		return {"ok": false, "message": "Archers cannot target their own hex."}
 	if declared_range > 2:
@@ -915,23 +900,16 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 			return {"ok": false, "message": "Paths must use adjacent passable hexes."}
 		normalized_path.append(step)
 		previous = step
-	var movement_cost := normalized_path.size()
-	var shot_type := ""
 	if ranged_target.x >= 0:
-		var declaration := _declared_shot_type(piece, player, normalized_path, ranged_target, ranged_target_id)
-		if not bool(declaration.get("ok", false)): return declaration
-		shot_type = String(declaration.shot_type)
-		movement_cost += AIM_COST
+		return {"ok": false, "message": "Ranged attacks are chosen during reposition."}
 	if leftover.x >= 0:
-		if not are_adjacent(previous, leftover) or not is_inside(leftover) or is_blocked_terrain(leftover):
-			return {"ok": false, "message": "Leftover movement is one adjacent passable hex."}
-		movement_cost += 1
-	if movement_cost > movement_limit_for(piece):
+		return {"ok": false, "message": "Reposition orders are chosen after the main clash."}
+	if normalized_path.size() > movement_limit_for(piece):
 		return {"ok": false, "message": "That order exceeds the formation's movement allowance."}
 	var candidate := {
 		"piece_id": piece_id, "player": player, "path": normalized_path,
-		"ranged_target": ranged_target, "ranged_target_id": ranged_target_id if ranged_target.x >= 0 else -1,
-		"shot_type": shot_type, "leftover": leftover,
+		"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
+		"shot_type": "", "leftover": Vector2i(-1, -1),
 	}
 	if not _same_player_order_is_clear(player, piece_id, candidate, strict_friendly):
 		return {"ok": false, "message": "Friendly formations would collide on the same impulse."}
@@ -1084,12 +1062,7 @@ func planned_movement_reserved(piece_id: int, supplied_order: Dictionary = {}) -
 		return 0
 	var order := supplied_order if not supplied_order.is_empty() else order_for_piece(piece_id)
 	var piece: Dictionary = pieces[piece_id]
-	var spent := int(order.get("path", []).size())
-	if not String(order.get("shot_type", "")).is_empty():
-		spent += AIM_COST
-	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
-		spent += 1
-	return spent
+	return int(order.get("path", []).size())
 
 
 ## Step distance between two cells, ignoring terrain and occupancy.
@@ -1118,22 +1091,14 @@ static func cells_within_range(origin: Vector2i, reach: int) -> Array[Vector2i]:
 ## shot. Returns an empty string when the declaration would be rejected, so the
 ## UI can offer Shoot and Suppress only where they would take.
 func declared_shot_type_for(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> String:
-	if phase != PHASE_PLANNING or piece_id < 0 or piece_id >= pieces.size():
+	if phase != PHASE_LEFTOVER_PLANNING or piece_id < 0 or piece_id >= pieces.size():
 		return ""
 	var piece: Dictionary = pieces[piece_id]
-	if int(piece.player) != player or piece.role != ROLE_ARCHER:
+	if int(piece.player) != player or piece.role != ROLE_ARCHER or player in ready_players or not _eligible_for_leftover(piece):
 		return ""
-	var current := order_for_piece(piece_id)
 	var typed_path: Array[Vector2i] = []
-	for step in current.get("path", []):
-		typed_path.append(step)
 	var declaration := _declared_shot_type(piece, player, typed_path, target, target_id)
 	if not bool(declaration.get("ok", false)):
-		return ""
-	var prospective_cost := typed_path.size() + AIM_COST
-	if current.get("leftover", Vector2i(-1, -1)).x >= 0:
-		prospective_cost += 1
-	if prospective_cost > movement_limit_for(piece):
 		return ""
 	return String(declaration.get("shot_type", ""))
 
@@ -1144,8 +1109,20 @@ func ranged_order_is_available(player: int, piece_id: int, target: Vector2i, tar
 
 ## Aimed fire at a formation: it is shot wherever it stands, if still in range.
 func set_ranged_order(player: int, piece_id: int, target: Vector2i, target_id: int = -1) -> Dictionary:
-	var current := order_for_piece(piece_id)
-	return set_unit_order(player, piece_id, current.get("path", []), target, current.get("leftover", Vector2i(-1, -1)), target_id)
+	var shot_type := declared_shot_type_for(player, piece_id, target, target_id)
+	if shot_type.is_empty():
+		return {"ok": false, "message": "That Archer cannot attack that target during reposition."}
+	if player not in orders:
+		orders[player] = {}
+	var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
+	if candidate.is_empty():
+		candidate = {"piece_id": piece_id, "player": player, "path": []}
+	candidate.ranged_target = target
+	candidate.ranged_target_id = target_id
+	candidate.shot_type = shot_type
+	candidate.leftover = Vector2i(-1, -1)
+	orders[player][piece_id] = candidate
+	return {"ok": true, "order": candidate.duplicate(true), "message": "Ranged attack set."}
 
 
 ## Suppressing fire at a square: whatever is standing there gets shot.
@@ -1156,94 +1133,28 @@ func set_suppress_order(player: int, piece_id: int, target: Vector2i) -> Diction
 func set_leftover_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	if phase == PHASE_LEFTOVER_PLANNING:
 		return _set_leftover_phase_order(player, piece_id, target)
-	var current := order_for_piece(piece_id)
-	return set_unit_order(player, piece_id, current.get("path", []), current.get("ranged_target", Vector2i(-1, -1)), target, int(current.get("ranged_target_id", -1)))
+	return {"ok": false, "message": "Reposition orders are chosen after the main clash."}
 
 
 func set_group_leftover_step(player: int, piece_ids: Array[int], direction: int) -> Dictionary:
 	if phase == PHASE_LEFTOVER_PLANNING:
 		return _set_leftover_phase_group_order(player, piece_ids, direction)
-	if phase != PHASE_PLANNING or game_over or player in ready_players:
-		return {"ok": false, "message": "Orders can only be changed during planning."}
-	if direction < 0 or direction >= HexGrid.DIRECTION_COUNT:
-		return {"ok": false, "message": "Leftover movement must use one hex direction."}
-	var unique_ids: Array[int] = []
-	for piece_id in piece_ids:
-		if piece_id not in unique_ids:
-			unique_ids.append(piece_id)
-	if unique_ids.is_empty():
-		return {"ok": false, "message": "No formations are selected."}
-	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
-	if player not in orders:
-		orders[player] = {}
-	var candidates: Dictionary = {}
-	var eligible_ids: Array[int] = []
-	var skipped_for_speed := 0
-	for piece_id in unique_ids:
-		if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
-			orders[player] = original_orders
-			return {"ok": false, "message": "Every selected formation must belong to this player."}
-		# Skipped, not fatal: see _change_group_paths. A Flag in the selection
-		# must not cost everything else its leftover step.
-		if not is_movable(pieces[piece_id]):
-			skipped_for_speed += 1
-			continue
-		var current: Dictionary = original_orders.get(piece_id, {})
-		var path: Array = current.get("path", []).duplicate()
-		var ranged_target: Vector2i = current.get("ranged_target", Vector2i(-1, -1))
-		var spent_before_leftover := planned_movement_reserved(piece_id, current)
-		if spent_before_leftover >= movement_limit_for(pieces[piece_id]):
-			skipped_for_speed += 1
-			continue
-		var previous: Vector2i = pieces[piece_id].position if path.is_empty() else path.back()
-		var candidate := {
-			"piece_id": piece_id,
-			"player": player,
-			"path": path,
-			"ranged_target": ranged_target,
-			"leftover": HexGrid.neighbor(previous, direction),
-		}
-		candidates[piece_id] = candidate
-		orders[player][piece_id] = candidate
-		eligible_ids.append(piece_id)
-	if eligible_ids.is_empty():
-		orders[player] = original_orders
-		return {"ok": false, "count": 0, "skipped": skipped_for_speed, "message": "No selected formations have movement left for the leftover phase."}
-	var applied_ids: Array[int] = []
-	var skipped_for_conflict := 0
-	for piece_id in eligible_ids:
-		var candidate: Dictionary = candidates[piece_id]
-		var result := set_unit_order(player, piece_id, candidate.path, candidate.ranged_target, candidate.leftover)
-		if bool(result.get("ok", false)):
-			applied_ids.append(piece_id)
-			continue
-		skipped_for_conflict += 1
-		# As in _change_group_paths: one formation that cannot take this step
-		# does not undo the rest of an otherwise-valid group order.
-		if original_orders.has(piece_id):
-			orders[player][piece_id] = original_orders[piece_id]
-		else:
-			orders[player].erase(piece_id)
-	var skipped_total := skipped_for_speed + skipped_for_conflict
-	if applied_ids.is_empty():
-		orders[player] = original_orders
-		return {"ok": false, "count": 0, "skipped": skipped_total, "message": "No formations in the selection could take that leftover step."}
-	var message := "Leftover move set for %d formation%s." % [applied_ids.size(), "" if applied_ids.size() == 1 else "s"]
-	if skipped_total > 0:
-		message += " %d skipped." % skipped_total
-	return {"ok": true, "count": applied_ids.size(), "skipped": skipped_total, "message": message}
+	return {"ok": false, "message": "Reposition orders are chosen after the main clash."}
 
 
 func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	if game_over or player in ready_players:
-		return {"ok": false, "message": "Leftover orders can only be changed before ending the leftover phase."}
+		return {"ok": false, "message": "Post-clash actions can only be changed before ending reposition."}
 	if piece_id < 0 or piece_id >= pieces.size() or int(pieces[piece_id].player) != player:
 		return {"ok": false, "message": "That formation cannot receive this leftover order."}
 	if not can_receive_leftover_order(player, piece_id):
-		return {"ok": false, "message": "That formation has no leftover movement available."}
+		return {"ok": false, "message": "That formation has no post-clash action available."}
 	var piece: Dictionary = pieces[piece_id]
 	if not are_adjacent(piece.position, target) or not is_inside(target) or is_blocked_terrain(target):
-		return {"ok": false, "message": "Leftover movement is one adjacent passable hex."}
+		return {"ok": false, "message": "Reposition is one adjacent passable hex."}
+	var occupant := piece_at(target)
+	if not occupant.is_empty() and not are_allied_players(player, int(occupant.player)) and piece.role != ROLE_CAVALRY:
+		return {"ok": false, "message": "Only Cavalry may deliberately reposition into an enemy-held hex."}
 	var original_orders: Dictionary = orders.get(player, {}).duplicate(true)
 	if player not in orders:
 		orders[player] = {}
@@ -1251,18 +1162,21 @@ func _set_leftover_phase_order(player: int, piece_id: int, target: Vector2i) -> 
 	if candidate.is_empty():
 		candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
 	candidate.leftover = target
+	candidate.ranged_target = Vector2i(-1, -1)
+	candidate.ranged_target_id = -1
+	candidate.shot_type = ""
 	orders[player][piece_id] = candidate
 	if not _same_player_leftover_orders_are_clear(player):
 		orders[player] = original_orders
-		return {"ok": false, "message": "Friendly formations would collide during leftover movement."}
-	return {"ok": true, "order": candidate.duplicate(true), "message": "Leftover move set."}
+		return {"ok": false, "message": "Friendly formations would collide during reposition."}
+	return {"ok": true, "order": candidate.duplicate(true), "message": "Reposition set."}
 
 
 func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], direction: int) -> Dictionary:
 	if game_over or player in ready_players:
-		return {"ok": false, "message": "Leftover orders can only be changed before ending the leftover phase."}
+		return {"ok": false, "message": "Post-clash actions can only be changed before ending reposition."}
 	if direction < 0 or direction >= HexGrid.DIRECTION_COUNT:
-		return {"ok": false, "message": "Leftover movement must use one hex direction."}
+		return {"ok": false, "message": "Reposition must use one hex direction."}
 	var unique_ids: Array[int] = []
 	for piece_id in piece_ids:
 		if piece_id not in unique_ids:
@@ -1287,15 +1201,22 @@ func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], directi
 			# may still be fine, so only this formation is skipped.
 			skipped += 1
 			continue
+		var occupant := piece_at(target)
+		if not occupant.is_empty() and not are_allied_players(player, int(occupant.player)) and pieces[piece_id].role != ROLE_CAVALRY:
+			skipped += 1
+			continue
 		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
 		if candidate.is_empty():
 			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
 		candidate.leftover = target
+		candidate.ranged_target = Vector2i(-1, -1)
+		candidate.ranged_target_id = -1
+		candidate.shot_type = ""
 		orders[player][piece_id] = candidate
 		eligible_ids.append(piece_id)
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
-		return {"ok": false, "count": 0, "skipped": skipped, "message": "No selected formations have leftover movement available."}
+		return {"ok": false, "count": 0, "skipped": skipped, "message": "No selected formations have a post-clash action available."}
 	# _same_player_leftover_orders_are_clear only reports whether the whole
 	# player's leftover plan collides somewhere, not which formation is at
 	# fault - the collision could even involve a piece outside this
@@ -1313,7 +1234,7 @@ func _set_leftover_phase_group_order(player: int, piece_ids: Array[int], directi
 	if eligible_ids.is_empty():
 		orders[player] = original_orders
 		return {"ok": false, "count": 0, "skipped": skipped, "message": "No formations in the selection could take that leftover step."}
-	var message := "Leftover move set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
+	var message := "Reposition set for %d formation%s." % [eligible_ids.size(), "" if eligible_ids.size() == 1 else "s"]
 	if skipped > 0:
 		message += " %d skipped." % skipped
 	return {"ok": true, "count": eligible_ids.size(), "skipped": skipped, "message": message}
@@ -1377,6 +1298,9 @@ func clear_unit_order(player: int, piece_id: int) -> void:
 	elif phase == PHASE_LEFTOVER_PLANNING and piece_id in orders[player]:
 		var order: Dictionary = orders[player][piece_id]
 		order.leftover = Vector2i(-1, -1)
+		order.ranged_target = Vector2i(-1, -1)
+		order.ranged_target_id = -1
+		order.shot_type = ""
 		orders[player][piece_id] = order
 
 
@@ -1389,12 +1313,15 @@ func clear_player_orders(player: int) -> void:
 		for piece_id in orders[player].keys():
 			var order: Dictionary = orders[player][piece_id]
 			order.leftover = Vector2i(-1, -1)
+			order.ranged_target = Vector2i(-1, -1)
+			order.ranged_target_id = -1
+			order.shot_type = ""
 			orders[player][piece_id] = order
 
 
 func has_leftover_orders(player: int) -> bool:
 	for order: Dictionary in orders.get(player, {}).values():
-		if order.get("leftover", Vector2i(-1, -1)).x >= 0:
+		if order.get("leftover", Vector2i(-1, -1)).x >= 0 or order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
 			return true
 	return false
 
@@ -1578,7 +1505,6 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 	phase = PHASE_RESOLVING
 	last_round_events.clear()
 	_begin_round_state()
-	_charge_declared_aim()
 	_record_all_sightings()
 	for impulse in range(1, 4):
 		var proposals: Array[Dictionary] = []
@@ -1599,8 +1525,6 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 				proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": path[taken], "is_attacker": true, "impulse": impulse})
 		if not proposals.is_empty(): last_round_events.append_array(_resolve_movement_batch(proposals, "impulse_%d" % impulse))
 		_record_all_sightings()
-	last_round_events.append_array(_resolve_ranged_phase())
-	_record_all_sightings()
 	ready_players.clear()
 	phase = PHASE_LEFTOVER_PLANNING
 	_active_replay_round = {
@@ -1628,7 +1552,12 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 			leftover_proposals.append({"piece_id": int(piece.id), "from": piece.position, "to": target, "is_attacker": true, "impulse": 4})
 	if not leftover_proposals.is_empty():
 		leftover_events.append_array(_resolve_movement_batch(leftover_proposals, "leftover"))
-		last_round_events.append_array(leftover_events)
+	_record_all_sightings()
+	# Reposition orders and ranged orders are chosen together. Movement and any
+	# resulting battles resolve first; surviving Archers then fire from their
+	# final hexes at their targets' final hexes.
+	leftover_events.append_array(_resolve_ranged_phase())
+	last_round_events.append_array(leftover_events)
 	_record_all_sightings()
 	_finish_round()
 	if _active_replay_round.is_empty():
@@ -1642,22 +1571,12 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 	return leftover_events.duplicate(true)
 
 
-## Aiming is paid for during main movement, before anyone moves, so the point
-## is gone whether or not the shot finds a target later in the round.
-func _charge_declared_aim() -> void:
-	for piece: Dictionary in pieces:
-		if not piece.alive or piece.role != ROLE_ARCHER: continue
-		if String(order_for_piece(int(piece.id)).get("shot_type", "")).is_empty(): continue
-		pieces[piece.id].aim_spent = AIM_COST
-
-
 func _begin_round_state() -> void:
 	for piece: Dictionary in pieces:
 		if piece.alive:
 			pieces[piece.id].round_status = STATUS_READY
 			pieces[piece.id].movement_used = 0
 			pieces[piece.id].steps_taken = 0
-			pieces[piece.id].aim_spent = 0
 			pieces[piece.id].melee_count = 0
 			pieces[piece.id].participated_in_combat = false
 			pieces[piece.id].main_done = false
@@ -2114,7 +2033,7 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		var target_position: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
 		var target_id := int(order.get("ranged_target_id", -1))
 		# Aimed fire follows the formation; suppressing fire hits whoever holds
-		# the square. Either way the aim point is already spent.
+		# the square after reposition movement and its battles have resolved.
 		var target: Dictionary = {}
 		if target_id >= 0:
 			if target_id < pieces.size() and pieces[target_id].alive: target = pieces[target_id]
@@ -2135,7 +2054,7 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 		# other adjacent target.
 		shot_type = SHOT_SHORT if shot_range == 1 else SHOT_LONG
 		var resolution := calculate_ranged(piece, target, shot_type)
-		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": int(piece.aim_spent), "resolution": resolution})
+		shots.append({"shooter_id": int(piece.id), "target_id": int(target.id), "from": piece.position, "to": target.position, "range": shot_range, "movement_cost": 0, "resolution": resolution})
 		pieces[piece.id].participated_in_combat = true
 	var total_damage: Dictionary = {}
 	for shot: Dictionary in shots:
@@ -2176,14 +2095,14 @@ func _resolve_ranged_phase() -> Array[Dictionary]:
 			for viewer in event.known_to: reveal_piece_to(id, viewer)
 		battle_history.append(event.duplicate(true))
 		events.append(event)
-	# A shot that found nothing still happened, and the aim point is still gone.
-	# Reporting it keeps the log honest about why an Archer did not fire.
+	# A shot that found nothing still happened. Reporting it keeps the log
+	# honest about why an Archer did not fire.
 	for fizzle: Dictionary in fizzles:
 		var fizzle_event := {
 			"ok": true, "action": "ranged_fizzle", "batch": "ranged", "combat": false, "ranged": true,
 			"from": fizzle.from, "to": fizzle.to, "shooter_id": int(fizzle.shooter_id),
 			"target_id": int(fizzle.target_id), "shot_type": String(fizzle.shot_type),
-			"movement_cost": AIM_COST, "result": String(fizzle.reason),
+			"movement_cost": 0, "result": String(fizzle.reason),
 			"known_to": _battle_viewers_for_ids([int(fizzle.shooter_id)]),
 		}
 		battle_history.append(fizzle_event.duplicate(true))
@@ -2197,21 +2116,16 @@ func _eligible_to_shoot(piece: Dictionary) -> bool:
 	return not String(order_for_piece(int(piece.id)).get("shot_type", "")).is_empty()
 
 
-## Points a formation has already committed this round, movement plus aiming.
+## Main movement points a formation has already committed this round.
 func movement_committed(piece: Dictionary) -> int:
-	return int(piece.movement_used) + int(piece.aim_spent)
+	return int(piece.movement_used)
 
 
 func _eligible_for_leftover(piece: Dictionary) -> bool:
-	# The fight-outcome gate (round_status) and the twice-fought cap apply
-	# regardless of the toggle below - a Cavalry formation that lost still
-	# doesn't get to reposition. Only the "movement left in the bank" check is
-	# what the toggle bypasses.
-	if not is_movable(piece) or String(piece.round_status) not in [STATUS_READY, STATUS_WON] or int(piece.melee_count) >= 2:
-		return false
-	if cavalry_always_leftover and piece.role == ROLE_CAVALRY:
-		return true
-	return movement_committed(piece) < movement_limit_for(piece)
+	# Every surviving formation receives one post-clash action. Losing, an
+	# opposing-side tie, or already reaching the two-melee cap still ends its
+	# ability to act for the round.
+	return is_movable(piece) and String(piece.round_status) in [STATUS_READY, STATUS_WON] and int(piece.melee_count) < 2
 
 
 func _movement_event(piece_id: int, from: Vector2i, to: Vector2i, batch_name: String) -> Dictionary:
@@ -2452,9 +2366,6 @@ func _encode_main_orders() -> Array[Dictionary]:
 				"player": player,
 				"piece_id": piece_id,
 				"path": path,
-				"ranged_target": _encode_position(order.get("ranged_target", Vector2i(-1, -1))),
-				"ranged_target_id": int(order.get("ranged_target_id", -1)),
-				"leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
 			})
 	return encoded
 
@@ -2466,9 +2377,17 @@ func _encode_leftover_orders() -> Array[Dictionary]:
 		ids.sort()
 		for id_value in ids:
 			var piece_id := int(id_value)
-			var target: Vector2i = orders[player][piece_id].get("leftover", Vector2i(-1, -1))
-			if target.x >= 0:
-				encoded.append({"player": player, "piece_id": piece_id, "target": _encode_position(target)})
+			var order: Dictionary = orders[player][piece_id]
+			var move_target: Vector2i = order.get("leftover", Vector2i(-1, -1))
+			var ranged_target: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+			if move_target.x >= 0:
+				encoded.append({"player": player, "piece_id": piece_id, "action": "move", "target": _encode_position(move_target)})
+			elif ranged_target.x >= 0:
+				encoded.append({
+					"player": player, "piece_id": piece_id, "action": "ranged",
+					"target": _encode_position(ranged_target),
+					"target_id": int(order.get("ranged_target_id", -1)),
+				})
 	return encoded
 
 
@@ -2610,7 +2529,6 @@ func observed_state(player: int) -> Dictionary:
 			"planned_ranged": _encode_position(order.get("ranged_target", Vector2i(-1, -1))),
 			"planned_ranged_id": int(order.get("ranged_target_id", -1)),
 			"shot_type": String(order.get("shot_type", "")),
-			"aim_spent": int(piece.aim_spent),
 			"planned_leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
 		})
 	var terrain := {"lakes": [], "water": [], "bridge": []}
@@ -2715,10 +2633,10 @@ func state_digest() -> String:
 func build_replay_document() -> Dictionary:
 	if phase not in [PHASE_PLANNING, PHASE_LEFTOVER_PLANNING, PHASE_GAME_OVER]:
 		return {}
-	# Main movement, melee, and missiles are resolved as one authoritative batch
-	# before the UI presents them one contact at a time. During that review the
-	# game is already waiting for reposition orders, and this record contains
-	# everything needed to reproduce the current in-progress round exactly.
+	# Main movement and melee are resolved as one authoritative batch before the
+	# UI presents them one contact at a time. During that review the game is
+	# already waiting for post-clash actions, and this record contains everything
+	# needed to reproduce the current in-progress round exactly.
 	var partial_round: Dictionary = {}
 	if phase == PHASE_LEFTOVER_PLANNING:
 		if _active_replay_round.is_empty():
@@ -2737,7 +2655,6 @@ func build_replay_document() -> Dictionary:
 			"private_battle_results": private_battle_results, "vision_range": vision_range,
 			"bridge_attacker": bridge_attacker, "bridge_defender": bridge_defender,
 			"bridge_turn_limit": bridge_turn_limit, "bridge_strength_target": bridge_strength_target,
-			"cavalry_always_leftover": cavalry_always_leftover,
 			"meeting_hold_rounds": _meeting_hold_rounds, "meeting_turn_limit": _meeting_turn_limit,
 			"skirmish_turn_limit": _skirmish_turn_limit, "skirmish_separation": _skirmish_separation,
 			"teams": teams, "deployment": deployment_placements.duplicate(true),
@@ -2819,9 +2736,8 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 			path.append(_decode_position(position_value))
 		var candidate := {
 			"piece_id": piece_id, "player": player, "path": path,
-			"ranged_target": _decode_position(entry.get("ranged_target", [-1, -1])),
-			"ranged_target_id": int(entry.get("ranged_target_id", -1)),
-			"leftover": _decode_position(entry.get("leftover", [-1, -1])),
+			"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
+			"leftover": Vector2i(-1, -1),
 		}
 		if player not in orders:
 			orders[player] = {}
@@ -2834,7 +2750,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		# friendly formation holds may clear before the step comes off, and
 		# replay's job is to reproduce what was submitted, not to re-judge it
 		# under a stricter rule than was actually in force.
-		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, candidate.ranged_target, candidate.leftover, int(candidate.ranged_target_id), false)
+		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, Vector2i(-1, -1), Vector2i(-1, -1), -1, false)
 		if not bool(result.get("ok", false)):
 			orders.clear()
 			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
@@ -2843,7 +2759,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 
 func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
 	if phase != PHASE_LEFTOVER_PLANNING or not ready_players.is_empty():
-		return {"ok": false, "message": "Leftover replay orders require an open leftover phase."}
+		return {"ok": false, "message": "Post-clash replay actions require an open reposition phase."}
 	for player in active_players:
 		clear_player_orders(player)
 	var seen_ids: Dictionary = {}
@@ -2854,19 +2770,20 @@ func apply_replay_leftover_orders(encoded_orders: Array) -> Dictionary:
 		var entry: Dictionary = entry_value
 		var player := int(entry.get("player", DRAW))
 		var piece_id := int(entry.get("piece_id", EMPTY))
+		var action := String(entry.get("action", ""))
 		var target := _decode_position(entry.get("target", [-1, -1]))
 		if piece_id in seen_ids or not can_receive_leftover_order(player, piece_id):
 			return {"ok": false, "message": "A recorded leftover order references an ineligible formation."}
-		if not are_adjacent(pieces[piece_id].position, target) or not is_inside(target) or is_blocked_terrain(target):
-			return {"ok": false, "message": "A recorded leftover destination is invalid."}
 		seen_ids[piece_id] = true
-		if player not in orders:
-			orders[player] = {}
-		var candidate: Dictionary = order_for_piece(piece_id).duplicate(true)
-		if candidate.is_empty():
-			candidate = {"piece_id": piece_id, "player": player, "path": [], "ranged_target": Vector2i(-1, -1)}
-		candidate.leftover = target
-		orders[player][piece_id] = candidate
+		var result: Dictionary
+		if action == "move":
+			result = set_leftover_order(player, piece_id, target)
+		elif action == "ranged":
+			result = set_ranged_order(player, piece_id, target, int(entry.get("target_id", -1)))
+		else:
+			return {"ok": false, "message": "A recorded post-clash action has an unknown type."}
+		if not bool(result.get("ok", false)):
+			return {"ok": false, "message": "A recorded post-clash action was rejected: %s" % String(result.get("message", "invalid order"))}
 		if player not in touched_players:
 			touched_players.append(player)
 	for player in touched_players:
@@ -2926,10 +2843,6 @@ static func _game_from_replay_setup(document: Dictionary) -> Dictionary:
 		replay_game.resolve_deployment()
 	else:
 		return {"ok": false, "message": "The replay uses an unsupported scenario."}
-	# A toggle, not part of any one scenario's setup, so every setup_* branch
-	# above would otherwise leave it at its default regardless of what was
-	# actually in effect when the match was played.
-	replay_game.cavalry_always_leftover = bool(setup.get("cavalry_always_leftover", false))
 	replay_game.vision_range = int(setup.get("vision_range", DEFAULT_VISION_RANGE))
 	for team_value in setup.get("teams", []):
 		if team_value is Array and team_value.size() == 2:
@@ -2964,7 +2877,7 @@ static func run_replay(document: Dictionary) -> Dictionary:
 		if replay_game._roll_history.size() - roll_start != main_rolls.size():
 			return {"ok": false, "message": "Replay main-phase dice consumption diverged."}
 		if String(round_record.get("main_event_digest", "")) != _digest_value(main_events) or String(round_record.get("main_state_digest", "")) != replay_game.state_digest():
-			return {"ok": false, "message": "Replay diverged during the main or ranged phase of round %d." % replay_game.round_number}
+			return {"ok": false, "message": "Replay diverged during the main clash of round %d." % replay_game.round_number}
 		all_events.append_array(main_events)
 		var leftover_order_result := replay_game.apply_replay_leftover_orders(round_record.get("leftover_orders", []))
 		if not bool(leftover_order_result.get("ok", false)):
@@ -2981,7 +2894,7 @@ static func run_replay(document: Dictionary) -> Dictionary:
 		if replay_game._roll_history.size() - roll_start != leftover_rolls.size():
 			return {"ok": false, "message": "Replay leftover-phase dice consumption diverged."}
 		if String(round_record.get("leftover_event_digest", "")) != _digest_value(leftover_events) or String(round_record.get("final_state_digest", "")) != replay_game.state_digest():
-			return {"ok": false, "message": "Replay diverged during leftover movement in round %d." % int(round_record.get("round", -1))}
+			return {"ok": false, "message": "Replay diverged during post-clash actions in round %d." % int(round_record.get("round", -1))}
 		all_events.append_array(leftover_events)
 	var partial_value: Variant = document.get("partial_round", {})
 	if partial_value is Dictionary and not partial_value.is_empty():

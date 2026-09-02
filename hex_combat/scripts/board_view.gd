@@ -576,7 +576,7 @@ func _draw_order_ghosts(origin: Vector2, cell: float) -> void:
 				previous = position
 			if not path.is_empty():
 				_draw_hex(_cell_center(path.back(), origin, cell), cell * 0.48, Color(0.15, 0.48, 0.76, 0.2), Color("#75c2ff"), maxf(1.5, cell * 0.04))
-			var ranged_target: Vector2i = Vector2i(-1, -1) if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else order.get("ranged_target", Vector2i(-1, -1))
+			var ranged_target: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
 			if ranged_target.x >= 0:
 				var ranged_center := _cell_center(ranged_target, origin, cell)
 				draw_arc(ranged_center, cell * 0.36, 0.0, TAU, 32, RANGED_COLOR, maxf(2.0, cell * 0.06))
@@ -1305,12 +1305,12 @@ func _open_context_menu(screen_position: Vector2) -> void:
 func _piece_has_a_pending_order(piece_id: int) -> bool:
 	var order := game.order_for_piece(piece_id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
-		return order.get("leftover", Vector2i(-1, -1)).x >= 0
+		return order.get("leftover", Vector2i(-1, -1)).x >= 0 or order.get("ranged_target", Vector2i(-1, -1)).x >= 0
 	return not order.is_empty()
 
 
 func _selected_archer_id() -> int:
-	if not interaction_enabled or game.phase != StrategoGame.PHASE_PLANNING: return StrategoGame.EMPTY
+	if not interaction_enabled or game.phase != StrategoGame.PHASE_LEFTOVER_PLANNING: return StrategoGame.EMPTY
 	for piece_id in selected_piece_ids:
 		if game.pieces[piece_id].role == StrategoGame.ROLE_ARCHER: return int(piece_id)
 	return StrategoGame.EMPTY
@@ -1459,12 +1459,12 @@ func _issue_order_to_square(clicked: Vector2i, clicked_piece: Dictionary, silent
 			result = {"ok": false, "message": "Ranged orders are issued to one Archer at a time."}
 		else:
 			result = game.append_group_order_step(viewing_player, selected_piece_ids, direction, false)
-	elif leftover_mode:
-		result = game.set_leftover_order(viewing_player, selected_piece_id, clicked)
-	elif prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked, int(clicked_piece.id)):
+	elif leftover_mode and prefer_ranged and selected_piece.role == StrategoGame.ROLE_ARCHER and not clicked_piece.is_empty() and game.is_piece_visible_to(clicked_piece, viewing_player) and not game.are_allied_players(viewing_player, int(clicked_piece.player)) and game.ranged_order_is_available(viewing_player, selected_piece_id, clicked, int(clicked_piece.id)):
 		# Clicking a formation is aimed fire; suppressing a square is the
 		# right-click menu's job.
 		result = game.set_ranged_order(viewing_player, selected_piece_id, clicked, int(clicked_piece.id))
+	elif leftover_mode:
+		result = game.set_leftover_order(viewing_player, selected_piece_id, clicked)
 	else:
 		result = game.append_order_step(viewing_player, selected_piece_id, clicked, false)
 	var ok := bool(result.get("ok", false))
@@ -1487,7 +1487,7 @@ func _emit_selected_description() -> void:
 		var ordered := 0
 		for piece_id in selected_piece_ids:
 			var order := game.order_for_piece(piece_id)
-			if (order.get("leftover", Vector2i(-1, -1)).x >= 0) if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else not order.is_empty():
+			if ((order.get("leftover", Vector2i(-1, -1)).x >= 0 or order.get("ranged_target", Vector2i(-1, -1)).x >= 0) if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else not order.is_empty()):
 				ordered += 1
 		selection_changed.emit("%d formations selected · %d %s ordered · click a highlighted direction or use arrow keys to move all." % [selected_piece_ids.size(), ordered, "leftover" if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else "main"])
 		return
@@ -1496,7 +1496,7 @@ func _emit_selected_description() -> void:
 	var path: Array = order.get("path", [])
 	var text := "%s · %d/%d main impulses planned" % [game.piece_description(piece), path.size(), game.movement_limit_for(piece)]
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
-		text = "%s · %d movement remaining" % [game.piece_description(piece), maxi(0, game.movement_limit_for(piece) - int(piece.movement_used))]
+		text = "%s · choose one post-clash action" % game.piece_description(piece)
 	if order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
 		text += " · ranged shot set"
 	if order.get("leftover", Vector2i(-1, -1)).x >= 0:

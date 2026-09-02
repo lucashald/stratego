@@ -1,29 +1,27 @@
 # Unit Icon Replacement Plan
 
-Status: Green shared-set rollout implemented; faction variants pending
+Status: implemented for Blue, Red, Green, and Yellow, including Flags and
+faction-specific unknown banners. The planning sections below are retained as
+the production record, not as an active asset backlog.
 
 ## Implementation progress
 
-- Green proof set normalized under `res://assets/unit_icons/green/`.
-- Approved high-resolution Green sources retained under
-  `res://assets/unit_icons/source/green/`.
+- All four faction sets are normalized under `res://assets/unit_icons/`.
+- Approved high-resolution sources are retained under
+  `res://assets/unit_icons/source/<faction>/`.
 - Canonical Infantry, Archer and Cavalry emblems selected for all three Weights.
 - All nine runtime files are 512 x 512 with verified exterior alpha.
 - An actual-size review sheet is available at
   `res://docs/green_unit_icon_proof.png`.
 - All nine Green banners use the same 472 x 472 registration box and 20-pixel
   outer margins; no per-Role optical scaling is applied.
-- A central catalog now supplies the Green texture for every faction's movable
-  formations.
+- A player-aware central catalog supplies every faction's formations, Flag,
+  and unknown banner.
 - Board formations, roster thumbnails and battle cards now reuse that catalog.
-- Current Strength, selection, orders and a small faction-colour marker remain
-  live overlays.
-- Visible-but-unidentified enemies and Flags retain the safe procedural path.
+- Current Strength, selection, and orders remain live overlays.
+- Visible-but-unidentified enemies use faction-specific safe artwork.
 - Mipmaps are enabled for clean downscaling at board and roster sizes.
-- The deterministic game suite passes all 256 checks.
-
-Next: produce the Blue, Red and Yellow variants plus Flags, then make the
-catalog player-aware and remove the remaining procedural art fallback.
+- The deterministic game suite passes all 445 checks.
 
 ## Goal
 

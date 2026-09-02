@@ -15,31 +15,32 @@ During planning:
 1. Select a formation, Shift-click additional formations, or drag a selection rectangle. **Select All** and `Ctrl+A` select every movable formation.
 2. Click one of the six on-map direction arrows or use the inspector's six-direction **Move Selection** pad to draw the main path. Keyboard shortcuts are W for north, X/S for south, Q/A for northwest, E for northeast, Z for southwest, and D for southeast. With several formations selected, that direction is applied to every member that still has unused movement.
 3. Ghosts numbered 1–3 show the hex each formation intends to occupy on each impulse.
-4. Right-click a hex for **Examine**, and, with an Archer selected, **Attack** or **Volley**. Attack follows a targeted formation if it moves; Volley aims at the chosen hex. Either may be ordered after moving when the Archer still has one movement point to aim. Both have a maximum range of two hexes.
-5. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
+4. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, group, and cancel-all changes.
+5. After the main clash resolves, every eligible formation receives one post-clash action. Move one adjacent hex, or select an Archer and right-click for **Attack** or **Volley**. Attack follows a targeted formation through reposition; Volley aims at a fixed hex. Both have a maximum range of two hexes.
 6. Choose **End Planning** when planning is complete.
 
 Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, clicking or dragging on the minimap centres the main battlefield on that location, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
 
 The contextual movement-help panel can be dismissed with its **X** button. Dismissing it also hides the selected-formations inspector and Move Selection pad. Use **Help** beside the zoom controls to restore the contextual panels together.
 
-Resolution is presented event-by-event on the battlefield. In a human game, every combat, consequential retreat, and opposing-side tie remains on screen until **Next** is clicked; harmless friendly congestion is applied without adding a click-through card. **Order Leftover** on the final main-resolution event opens a dedicated **Leftover Movement** order phase after ranged attacks. Select one or more eligible formations, choose one direction, and then click **End Leftover**. Exhausted selections are skipped. The simultaneous leftover moves and any resulting battles then receive their own click-through review; **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card shows the revealed formations, rolls, final scores, damage, remaining Strength, and result. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, ranged attacks, and leftover movement.
+Resolution is presented event-by-event on the battlefield. In a human game, every combat, consequential retreat, and opposing-side tie remains on screen until **Next** is clicked; harmless friendly congestion is applied without adding a click-through card. **Order Reposition** on the final main-resolution event opens the post-clash action phase. Every eligible formation may hold or move one adjacent hex; an Archer instead may Attack a visible formation or Volley a visible hex within range two. Click **End Reposition** to reveal all choices. Reposition movement, its battles, and retreats resolve first, followed by all surviving Archer attacks. **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card shows the revealed formations, rolls, final scores, damage, remaining Strength, and result. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, reposition, and ranged attacks.
 
-The game rejects orders from one player that would make friendly formations occupy or swap through the same empty hex on the same impulse. During reposition, one or more formations may instead move into a hex held by a stationary friendly formation: an enemy arrival makes everyone there part of one multiway battle, while no enemy arrival produces harmless congestion. Multiple friendly attackers may also converge on a known enemy for a multiway battle.
+The game rejects orders from one player that would make friendly formations occupy or swap through the same empty hex on the same impulse. During reposition, Cavalry may deliberately enter an enemy-held hex; Infantry and Archers may enter only empty or friendly hexes. Opposing formations that simultaneously reposition into the same empty hex still fight, with every arrival counted as an attacker. Existing friendly congestion and bounce rules continue to handle formations following an ally or converging on one friendly-held hex.
 
 **Withdraw** is available during planning. It immediately concedes the scenario while preserving every surviving formation at its current Strength. It does not revive destroyed units. There is no automatic material-collapse rule yet.
 
-**Export Replay** is available between rounds, during the click-through combat review, while waiting for reposition orders, and after battle. It writes a timestamped JSON file to this project's `replays` folder and updates `replays/last_replay.json` for the **Replay Last** slot. An in-progress export includes the current round through movement, melee, and missiles, so an odd result can be saved before continuing. The versioned file records scenario setup, seed, orders, the exact dice stream, and verification digests. **Replay Last** rebuilds the saved state through the authoritative engine and rejects any divergence.
+**Export Replay** is available between rounds, during the click-through combat review, while waiting for post-clash actions, and after battle. It writes a timestamped JSON file to this project's `replays` folder and updates `replays/last_replay.json` for the **Replay Last** slot. An in-progress export includes the current round through the resolved main clash, so an odd result can be saved before continuing. The versioned file records scenario setup, seed, orders, the exact dice stream, and verification digests. **Replay Last** rebuilds the saved state through the authoritative engine and rejects any divergence.
 
 ## Round sequence
 
 1. Main movement resolves simultaneously in three impulses: Light moves on 1, 2, and 3; Medium moves on 2 and 3; Heavy moves only on 3. Only movement steps actually attempted are spent, including an attempted entry that ends in a bounce.
 2. Every melee batch resolves, followed by all retreats from that batch simultaneously.
-3. Eligible Archer attacks resolve simultaneously. Every shot costs the one movement point already spent on aiming, whether it hits or fizzles. The shot's final range determines its accuracy: range 1 adds one Archer die and range 2 does not.
-4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one hex.
-5. Victory is checked at the end of the round.
+3. The game pauses for post-clash actions. Every surviving formation that did not lose, suffer an opposing-side tie, or reach the two-melee limit may hold or reposition one hex. An Archer may shoot instead of repositioning.
+4. Reposition movement resolves simultaneously. Cavalry may deliberately attack an occupied enemy hex; other roles cannot. Opposing formations that meet in a formerly empty hex fight as attackers.
+5. Reposition battles and retreats finish, then every still-eligible Archer attack resolves simultaneously. The shot's final range determines its accuracy: range 1 adds one Archer die and range 2 does not.
+6. Victory is checked at the end of the round.
 
-Winning the main melee stops the unit's remaining main path, but it may still shoot during the ranged phase or use its one-hex leftover move if it has movement available. Losing, or tying for the highest score with an opposing side, ends the unit's actions for the round.
+Winning the main melee stops the unit's remaining main path, but it may still take its post-clash action. Losing, or tying for the highest score with an opposing side, ends the unit's actions for the round. An Archer that chooses to shoot loses that shot if it is defeated or tied in a reposition battle before ranged fire resolves.
 
 ## Combat
 
@@ -141,9 +142,8 @@ The deterministic suite covers flat-top odd-column neighbours, hex radius counts
 
 ## Formation banners
 
-Revealed movable formations use the shared Green banner set. The border and
-equipment artwork communicate Weight and Role, while the large live numeral
-shows current Strength. Until the other faction sets are produced, every army
-uses the same Green art with a small faction-colour marker for battlefield
-identification. Hidden enemy identities and Flags retain the information-safe
-procedural banner.
+Every faction has its own complete banner set, including Flags and an
+information-safe unknown banner. The cloth identifies the faction, while the
+border and equipment artwork communicate Weight and Role and the large live
+numeral shows current Strength. A visible but unidentified enemy uses its
+faction's unknown banner without leaking Role or Strength.

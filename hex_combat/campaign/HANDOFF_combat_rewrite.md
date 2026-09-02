@@ -1,9 +1,11 @@
 # Handoff: combat resolution rewrite
 
-Status as of 2026-09-01. **The variant below is implemented and shipped in
-this `combat/` fork.** The sibling `new/` fork is untouched and still runs the
-old d10-cap rules; keep it that way, it is the control. `hex/` is a separate
-experiment again.
+Status as of 2026-09-02. **The variant below is implemented in the combined
+`hex_combat/` project.** The sibling `new/` project remains the square-grid
+control, while `combat/` and `hex/` retain the earlier isolated experiments.
+The combined build uses flat-top hexes, replay version 9, universal post-clash
+actions, movement-before-ranged resolution, and friendly-blocked retreat
+shunts.
 
 What landed here:
 
@@ -17,7 +19,7 @@ What landed here:
 - `tools/melee_model.py` gained `baseline_v1`, `archer_baseline_v1_short` and
   `archer_baseline_v1_long`, cross-checked against the engine to within Monte
   Carlo noise over 200k trials per matchup.
-- 328 checks pass in `tests/test_runner.gd`.
+- 445 checks pass in `tests/test_runner.gd`.
 
 Two readings of the spec had to be settled to build it; both are called out in
 "Judgment calls" at the bottom of this document.
@@ -70,11 +72,14 @@ Same shape, minus the role die.
 - Defender takes damage equal to the margin, plus any 6s that survived
   cancelling - and those land even when the shot loses the contest.
 
-Every ranged order costs one movement point to aim and has a maximum range of
-two hexes, even if the Archer moved first. The shot's range at resolution sets
-its accuracy: range 1 gets +1d6, while range 2 keeps only its standoff distance.
-Declarations beyond range 2 and the former special long-shot movement cost no
-longer exist.
+Every eligible formation receives one post-clash action regardless of spent
+main movement. Infantry may reposition into empty or friendly hexes; Cavalry
+may also deliberately enter an enemy-held hex. Opposing Infantry that choose
+the same empty hex still meet as attackers. An Archer chooses either the
+one-hex reposition or a ranged order with a maximum range of two. Reposition
+movement, battles, and retreats resolve first, followed by all surviving
+Archer attacks. The final range sets accuracy: range 1 gets +1d6, while range 2
+keeps only its standoff distance.
 
 ## Correction carried forward — read this before describing tie behavior
 

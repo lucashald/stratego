@@ -61,7 +61,6 @@ var export_replay_button: Button
 var replay_last_button: Button
 var ranged_toggle: CheckButton
 var privacy_toggle: CheckButton
-var cavalry_leftover_toggle: CheckButton
 var battle_report_toggle: CheckButton
 var count_labels: Dictionary = {}
 var history: RichTextLabel
@@ -427,15 +426,15 @@ const PHASE_STEPS := [
 	{"name": "ORDERS", "dots": 1},
 	{"name": "MARCH", "dots": 3},
 	{"name": "MELEE", "dots": 3},
-	{"name": "MISSILES", "dots": 1},
 	{"name": "REPOSITION", "dots": 1},
+	{"name": "MISSILES", "dots": 1},
 	{"name": "END TURN", "dots": 1},
 ]
 const STEP_ORDERS := 0
 const STEP_MARCH := 1
 const STEP_MELEE := 2
-const STEP_MISSILES := 3
-const STEP_REPOSITION := 4
+const STEP_REPOSITION := 3
+const STEP_MISSILES := 4
 const STEP_END_TURN := 5
 
 var phase_step_panels: Array[PanelContainer] = []
@@ -1144,7 +1143,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_child(replay_last_button)
 	ranged_toggle = CheckButton.new()
 	ranged_toggle.text = "Archer target mode"
-	ranged_toggle.tooltip_text = "Spend 1 movement to fire within range 2. Range 1 adds an accuracy die."
+	ranged_toggle.tooltip_text = "During reposition, click an enemy to Attack or right-click a hex to Volley. Range 1 adds an accuracy die."
 	ranged_toggle.button_pressed = true
 	ranged_toggle.toggled.connect(_on_ranged_toggled)
 	box.add_child(ranged_toggle)
@@ -1157,11 +1156,6 @@ func _build_settings_drawer() -> void:
 	battle_report_toggle.button_pressed = true
 	battle_report_toggle.tooltip_text = "After each round's battles, a model narrates what you observed and adds it to the log. Needs the local bridge running on port 8787. Flavour only; it never affects play."
 	box.add_child(battle_report_toggle)
-	cavalry_leftover_toggle = CheckButton.new()
-	cavalry_leftover_toggle.text = "Cavalry always repositions"
-	cavalry_leftover_toggle.button_pressed = true
-	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. On by default; applies to the next game you start."
-	box.add_child(cavalry_leftover_toggle)
 	var counts := VBoxContainer.new()
 	counts.add_theme_constant_override("separation", 2)
 	box.add_child(counts)
@@ -1255,7 +1249,6 @@ func start_bridge_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_BRIDGE
 	game = StrategoGame.new()
 	game.setup_bridge(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, 20, privacy_toggle.button_pressed)
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Bridge battle started. You command the Blue attacker.", true)
@@ -1288,7 +1281,6 @@ func start_campaign_battle() -> void:
 	if not bool(applied.get("ok", false)):
 		_log_line("Campaign battle rejected: %s" % String(applied.get("message", "")), true)
 		return
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	campaign_piece_ids = applied.get("piece_ids", {})
 	_configure_board(false)
 	_clear_logs()
@@ -1323,7 +1315,6 @@ func start_meeting_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_MEETING
 	game = StrategoGame.new()
 	game.setup_meeting(rng.randi(), StrategoGame.BLUE, StrategoGame.RED, StrategoGame.DEFAULT_HOLD_ROUNDS, 20, privacy_toggle.button_pressed)
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Meeting engagement started. You command Blue.", true)
@@ -1340,7 +1331,6 @@ func start_crossroads_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_CROSSROADS
 	game = StrategoGame.new()
 	game.setup_crossroads(rng.randi(), StrategoGame.DEFAULT_HOLD_ROUNDS, 30, privacy_toggle.button_pressed)
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("The Crossroads started. You command Blue, allied with Yellow against Red and Green.", true)
@@ -1357,7 +1347,6 @@ func start_four_player_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(false)
 	_clear_logs()
 	_log_line("Four-player WEGO battle started. You command Blue.", true)
@@ -1374,7 +1363,6 @@ func start_spectator_game() -> void:
 	selected_scenario = StrategoGame.SCENARIO_FOUR_PLAYER
 	game = StrategoGame.new()
 	game.setup_random(rng.randi(), 4, privacy_toggle.button_pressed)
-	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
 	_configure_board(true)
 	_clear_logs()
 	_log_line("Four-bot simultaneous-order exhibition started.", true)
@@ -1460,13 +1448,11 @@ func _resolve_ready_round() -> void:
 	var resolved_round := game.round_number
 	var resolving_leftover := game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING
 	var events: Array[Dictionary]
-	if spectator_mode:
-		events = game.resolve_round()
-	elif resolving_leftover:
+	if resolving_leftover:
 		events = game.resolve_leftover_phase()
 	else:
 		events = game.resolve_main_and_ranged()
-	_log_line(("Round %d leftover movement resolved: %d events." if resolving_leftover else "Round %d movement, combat, and ranged attacks resolved: %d events.") % [resolved_round, events.size()], true)
+	_log_line(("Round %d post-clash actions resolved: %d events." if resolving_leftover else "Round %d main movement and combat resolved: %d events.") % [resolved_round, events.size()], true)
 	# Only the per-event lines are captured, not the header above: the header
 	# is bookkeeping the model would only parrot back.
 	_report_lines.clear()
@@ -1474,7 +1460,7 @@ func _resolve_ready_round() -> void:
 	for event: Dictionary in events:
 		_log_event(event)
 	_capturing_report_lines = false
-	if not resolving_leftover:
+	if resolving_leftover:
 		_request_battle_report(resolved_round)
 	board_view.begin_march(_march_steps_from(events))
 	_rebuild_log(events)
@@ -1587,7 +1573,7 @@ func _finish_resolution_presentation(active_session: int = -1) -> void:
 	# after this one - silently auto-submitting that next round's orders as
 	# empty before the player ever saw its planning screen.
 	if _phase_has_no_decision() and not spectator_mode and not replay_view_mode:
-		_log_line("No formations had movement left over from this round; reposition phase skipped.")
+		_log_line("No formations were eligible for a post-clash action; reposition skipped.")
 		_on_ready_pressed()
 		return
 	if spectator_mode and not replay_view_mode:
@@ -2164,20 +2150,7 @@ func _skip_to_end_of_round() -> void:
 func _phase_has_no_decision() -> bool:
 	if game.phase != StrategoGame.PHASE_LEFTOVER_PLANNING: return false
 	for piece: Dictionary in game.pieces:
-		if not game.can_receive_leftover_order(StrategoGame.BLUE, int(piece.id)): continue
-		# Eligibility alone is too generous a bar here: a formation nobody
-		# gave an order to this round is technically eligible too, since its
-		# whole movement budget is unspent - but every round has formations
-		# like that (anything left to hold position), so gating on raw
-		# eligibility meant this phase almost never actually skipped, forcing
-		# a click every round regardless of whether anything happened. Only
-		# count a formation that did something this round: spent part of its
-		# movement or committed to a shot and got stopped short, won a fight
-		# it could now press, or is a Cavalry formation the toggle explicitly
-		# wants offered a chance regardless of what it did.
-		if game.movement_committed(piece) > 0: return false
-		if String(piece.round_status) == StrategoGame.STATUS_WON: return false
-		if game.cavalry_always_leftover and piece.role == StrategoGame.ROLE_CAVALRY: return false
+		if game.can_receive_leftover_order(StrategoGame.BLUE, int(piece.id)): return false
 	return true
 
 
@@ -2221,7 +2194,7 @@ func _update_interface(update_detail: bool = true) -> void:
 		phase_subtitle.text = "Deployment · Drag formations within your own zone, then lock in"
 	elif leftover_planning:
 		phase_title.text = _battle_title()
-		phase_subtitle.text = "Round %d · Issue one optional move to formations with movement remaining" % game.round_number
+		phase_subtitle.text = "Round %d · Choose one post-clash move or Archer attack" % game.round_number
 	else:
 		phase_title.text = _battle_title()
 		phase_subtitle.text = "Round %d · Issue orders to all formations" % game.round_number
@@ -2263,12 +2236,12 @@ func _update_interface(update_detail: bool = true) -> void:
 	withdraw_button.disabled = not main_planning or read_only
 	export_replay_button.disabled = replay_view_mode or game.phase not in [StrategoGame.PHASE_PLANNING, StrategoGame.PHASE_LEFTOVER_PLANNING, StrategoGame.PHASE_GAME_OVER]
 	replay_last_button.disabled = not FileAccess.file_exists(LAST_REPLAY_PATH)
-	ranged_toggle.disabled = not main_planning or read_only
+	ranged_toggle.disabled = not leftover_planning or read_only
 	# The phase owns this outright. There used to be a checkbox here, but it
 	# was permanently disabled and driven from the phase, so it showed state
 	# while looking like a control.
 	board_view.leftover_mode = leftover_planning
-	board_view.prefer_ranged = main_planning and ranged_toggle.button_pressed
+	board_view.prefer_ranged = leftover_planning and ranged_toggle.button_pressed
 	board_view.interaction_enabled = (planning or deploying) and not read_only
 	# Deployment is not a step of the round cycle the chevron bar shows; lighting
 	# one of its steps (ORDERS, by default) before the game has even started
@@ -2423,7 +2396,9 @@ func _order_footer(piece_id: int) -> String:
 	var order := game.order_for_piece(piece_id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))
-		return "REPOSITION TO %s" % str(leftover) if leftover.x >= 0 else "NO REPOSITION SET"
+		var aimed: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+		if aimed.x >= 0: return "RANGED ATTACK AT %s" % str(aimed)
+		return "REPOSITION TO %s" % str(leftover) if leftover.x >= 0 else "NO POST-CLASH ACTION"
 	if order.is_empty(): return "NO ORDER ISSUED"
 	var path: Array = order.get("path", [])
 	var aimed: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
@@ -2458,13 +2433,13 @@ func _update_inspector() -> void:
 			total_strength += int(member.strength)
 			minimum_move = mini(minimum_move, game.movement_limit_for(member))
 			var member_order := game.order_for_piece(piece_id)
-			if (member_order.get("leftover", Vector2i(-1, -1)).x >= 0) if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else not member_order.is_empty():
+			if ((member_order.get("leftover", Vector2i(-1, -1)).x >= 0 or member_order.get("ranged_target", Vector2i(-1, -1)).x >= 0) if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else not member_order.is_empty()):
 				ordered += 1
 			if board_view._piece_has_unused_movement(piece_id):
 				can_move_now += 1
 		inspector_title.text = "%d FORMATIONS SELECTED" % board_view.selected_piece_ids.size()
-		inspector_stats.text = "[table=2][cell]Combined Strength[/cell][cell][right]%d[/right][/cell][cell]Slowest Movement[/cell][cell][right]%d[/right][/cell][cell]Can Move Next[/cell][cell][right]%d / %d[/right][/cell][cell]%s Orders[/cell][cell][right]%d / %d[/right][/cell][/table]" % [total_strength, minimum_move, can_move_now, board_view.selected_piece_ids.size(), "Leftover" if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else "Main", ordered, board_view.selected_piece_ids.size()]
-		inspector_order.text = "Choose the group's one-hex post-ranged move. Exhausted formations are skipped." if board_view.leftover_mode else "Each command moves every selected formation with unused movement. Exhausted formations are skipped automatically."
+		inspector_stats.text = "[table=2][cell]Combined Strength[/cell][cell][right]%d[/right][/cell][cell]Slowest Movement[/cell][cell][right]%d[/right][/cell][cell]Can Act Now[/cell][cell][right]%d / %d[/right][/cell][cell]%s Orders[/cell][cell][right]%d / %d[/right][/cell][/table]" % [total_strength, minimum_move, can_move_now, board_view.selected_piece_ids.size(), "Post-clash" if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else "Main", ordered, board_view.selected_piece_ids.size()]
+		inspector_order.text = "Choose the group's one-hex post-clash move. Ineligible formations are skipped." if board_view.leftover_mode else "Each command moves every selected formation with unused movement. Exhausted formations are skipped automatically."
 		return
 	var id := board_view.selected_piece_id
 	if id < 0 or id >= game.pieces.size():
@@ -2479,7 +2454,13 @@ func _update_inspector() -> void:
 	var order := game.order_for_piece(id)
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		var leftover: Vector2i = order.get("leftover", Vector2i(-1, -1))
-		inspector_order.text = "Leftover move set to %s" % str(leftover) if leftover.x >= 0 else ("Choose one adjacent hex" if game.can_receive_leftover_order(StrategoGame.BLUE, id) else "No leftover movement available")
+		var aimed: Vector2i = order.get("ranged_target", Vector2i(-1, -1))
+		if aimed.x >= 0:
+			inspector_order.text = "Ranged attack set at %s" % str(aimed)
+		elif leftover.x >= 0:
+			inspector_order.text = "Reposition set to %s" % str(leftover)
+		else:
+			inspector_order.text = "Choose one adjacent move or Archer attack" if game.can_receive_leftover_order(StrategoGame.BLUE, id) else "No post-clash action available"
 		return
 	if order.is_empty():
 		inspector_order.text = "No order issued"
@@ -2495,7 +2476,7 @@ func _update_inspector() -> void:
 	if order.get("ranged_target", Vector2i(-1, -1)).x >= 0:
 		message += "\nRanged target set"
 	if order.get("leftover", Vector2i(-1, -1)).x >= 0:
-		message += "\nLeftover move set"
+		message += "\nReposition set"
 	inspector_order.text = message
 
 

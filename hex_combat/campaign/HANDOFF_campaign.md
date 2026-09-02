@@ -82,23 +82,23 @@ Blue won decisively. Three formations lost.
 Note: Claude did **not** get to play Vare for this one. The user hit a usage
 limit mid-battle and finished against the bot.
 
-## Battle 2 — Ashweir Bridge (written, verified, NOT played)
+## Battle 2 — Ashweir Bridge (played, won, debriefed)
 
 Files: `campaign/battles/02_ashweir_bridge.json` + `.md`. Copied to
 `campaign/current_battle.json`, so it's the active loadable battle.
 
-Blue (7 formations) defends the near bank of a river against an 11-formation
-Vare muster. Rows 9-11 water, cols 9-10 a two-wide bridge gap. Paired
-asymmetric objectives: Blue `survive` until round 28; Vare `reach` area
-`[0,15,20,5]` with Strength 18.
+Blue defended the near bank with seven formations against an eleven-formation
+Vare muster. The river was three hex-rows tall with a two-hex-wide bridge.
+Blue's objective was to survive the hold-out window; Vare needed to force 18
+Strength into the far-bank area.
 
 Designed directly from Battle 1's debrief: a chokepoint the heavies can plant
 themselves in, so the fight comes to them. Also the first outing for the
 `reach`/`survive` attacker/defender objective pair.
 
-**Verification playthrough (bot vs bot):** Vare forced the crossing at round 14
-of 28, losing 4 of 11 to Blue's 2 of 7 (Blue ended at 5 alive). Neither a
-curbstomp nor a stalemate.
+**Played result:** Blue held to the turn limit and won, but only Stonewatch
+survived. Nine of Vare's eleven formations were destroyed. The complete result
+and conversational debrief are recorded in `battles/02_ashweir_bridge.md`.
 
 **Recruitment choice:** offered Light Cavalry vs Light Archer; user chose
 Light Archer ("I think i want more archers") → Wren. Leaves the roster with no
@@ -112,7 +112,7 @@ Play mode 1: user in the app, Claude commanding Vare over MCP.
 Launch (PowerShell):
 
 ```bash
-& "C:\situation-room\Godot_v4.3-stable_win64.exe" --path C:\stratego\new -- --remote
+& "C:\situation-room\Godot_v4.3-stable_win64.exe" --path C:\stratego\hex_combat -- --remote
 ```
 
 (Same without the `&` in cmd.exe. Bridge listens on port 8791 — `Test-NetConnection`
@@ -159,14 +159,14 @@ findings promoted to `design_log.md`, chronicle started (`chronicle.md`).
 - `SCENARIO_CAMPAIGN` + persisted `campaign_battle_data`, so a campaign battle's
   replay reconstructs the actual army instead of silently falling back to
   `MEETING_ROSTER`.
-- Replay format gaps fixed: `cavalry_always_leftover` is now captured in the
-  replay setup (it never was, for *any* scenario), and replay application passes
-  `strict_friendly=false` — a recorded order is a fact to reproduce, not a
-  proposal to re-judge.
+- Replay application passes `strict_friendly=false` — a recorded main order is
+  a fact to reproduce, not a proposal to re-judge. Replay version 9 separately
+  records post-clash reposition and ranged actions.
 - Battles now auto-export to `campaign/last_battle_report.json` and
   `campaign/last_battle_replay.json` on game end.
-- `cavalry_always_leftover` is now the **default on**, per the user liking the
-  rule.
+- The former Cavalry-only leftover toggle has been replaced by a universal
+  post-clash action. Cavalry alone may deliberately use that step to enter an
+  enemy-held hex; Archers choose between repositioning and shooting.
 
 ## Melee tie-break investigation — closed, no change shipped
 

@@ -64,6 +64,14 @@ faster than the Strength numbers alone suggest.
 An archer doesn't need the target adjacent, and the target never shoots back.
 But it does get to try to ride out the shot, and it can simply outroll you.
 
+Ranged attacks are chosen during the universal post-clash action phase. An
+Archer chooses either one adjacent reposition step or one ranged attack. All
+reposition movement and its battles resolve first; surviving Archers then fire
+from their final hexes at their targets' final hexes. Cavalry can therefore
+defeat an Archer before it shoots, while a target at range 2 can escape to
+range 3. Aimed fire follows a selected formation, and Volley attacks whoever
+finishes on a selected hex.
+
 **The archer** rolls the base die, plus the **heavier** and **stronger** dice
 if they apply, plus **one more when firing at range 1**. A range-2 shot gets no
 extra die. Keep the best one, add Strength.
