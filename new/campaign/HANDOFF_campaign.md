@@ -8,12 +8,19 @@ continues as the wider war against Vare under a **new faction**, pending the
 commander's choice of which. The in-world story is in `campaign/chronicle.md`
 (chapters I–V close the Ashmere Line).
 
-**Decision pending with the commander:** raise a fresh Blue levy to defend the
-homeland, or switch to Green (proposed: the Marchwood — fast, skirmish/ambush) or
-Yellow (proposed: Halgate — rich, small, elite/heavy). Recommendation given:
-switch, because permadeath just cost the whole cast and a Blue-2.0 cheapens it,
-and the war-spreads framing answers the campaign's now-central question ("can
-anyone stop Vare?"). Faction identity and first battle are unbuilt until chosen.
+**New faction chosen: Yellow / Halgate**, a rich walled city. The campaign is now
+"The Red Tide." Structure redesigned so a single lost battle can't wipe the
+faction (Blue's fatal flaw): Halgate fields multiple **companies**, commits one
+per battle, keeps the rest, and rebuilds from a treasury. Turn loop and rules are
+in `system.md`; state (treasury, two companies, reserve, economy) in `roster.json`;
+Blue's closed record preserved in `ashmere_line.json`.
+
+**Turn 1 is live and waiting on the commander:** `dispatch_01.md` — Vare's fast
+vanguard (Warrant LC, Escheat MC, Distress + Summons LI, Quarrel LA) rides for the
+Cassewick granaries. Commander picks a company (Gate Guard = wall / Charter
+Company = speed), reinforces/hires from the 15-crown treasury, then the Cassewick
+battle gets built to that force and **verified winnable bot-vs-bot before
+handover**. Battle scenario not built yet — it depends on the deployment choice.
 
 ## The premise
 
