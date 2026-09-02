@@ -1540,6 +1540,10 @@ func _march_steps_from(events: Array[Dictionary]) -> Array:
 
 func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary]:
 	var visible: Array[Dictionary] = []
+	# Reposition is one decision the whole army takes at once, so it reads as one
+	# card. Carding each move separately meant clicking Next once per formation
+	# to sit through a phase with no contest anywhere in it.
+	var repositions := -1
 	for event: Dictionary in events:
 		if not replay_view_mode and not _event_is_known_to_viewer(event):
 			continue
@@ -1547,11 +1551,20 @@ func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary
 		var is_leftover_move := action == "move" and String(event.get("batch", "")) == "leftover"
 		# Pure movement congestion still animates and remains in the log/replay,
 		# but it has no lasting penalty and does not need a click-through card.
-		if bool(event.get("combat", false)) or action in ["retreat", "retreat_collision"] or is_leftover_move:
-			var presentation_event := event.duplicate(true)
-			if is_leftover_move:
-				presentation_event.action = "leftover_move"
+		if not (bool(event.get("combat", false)) or action in ["retreat", "retreat_collision"] or is_leftover_move):
+			continue
+		var presentation_event := event.duplicate(true)
+		if not is_leftover_move:
 			visible.append(presentation_event)
+			continue
+		var step := {"piece_id": int(event.get("piece_id", StrategoGame.EMPTY)), "from": event.get("from", Vector2i.ZERO), "to": event.get("to", Vector2i.ZERO)}
+		if repositions < 0:
+			presentation_event.action = "leftover_move"
+			presentation_event["moves"] = [step]
+			repositions = visible.size()
+			visible.append(presentation_event)
+			continue
+		visible[repositions]["moves"].append(step)
 	return visible
 
 
@@ -1642,17 +1655,38 @@ func _update_battle_card(event: Dictionary) -> void:
 	battle_result.text = ""
 	battle_result_detail.text = ""
 	if action == "leftover_move":
-		var piece_id := int(event.get("piece_id", StrategoGame.EMPTY))
+		var moves: Array = event.get("moves", [{"piece_id": int(event.get("piece_id", StrategoGame.EMPTY)), "from": event.get("from", Vector2i.ZERO), "to": event.get("to", Vector2i.ZERO)}])
 		var moved: Array[int] = []
-		if piece_id >= 0 and piece_id < game.pieces.size(): moved.append(piece_id)
+		for step_value in moves:
+			var step: Dictionary = step_value
+			var step_id := int(step.get("piece_id", StrategoGame.EMPTY))
+			if step_id >= 0 and step_id < game.pieces.size(): moved.append(step_id)
 		# Reposition is movement, not combat. Seeing it happen may disclose a
 		# formation's Weight through its speed, but it must not grant the Role or
 		# Strength that only combat reveals.
-		_refresh_battle_cards(moved, false)
+		#
+		# Banners only for a lone move. A whole line repositioning would push a
+		# column of them past the panel, and the list below already says who went
+		# where.
+		var banner_ids: Array[int] = moved if moves.size() == 1 else ([] as Array[int])
+		_refresh_battle_cards(banner_ids, false)
 		for child in battle_stats.get_children(): child.queue_free()
 		battle_body.visible = true
-		battle_body.text = "[center]%s  ->  %s[/center]" % [str(event.get("from", Vector2i.ZERO)), str(event.get("to", Vector2i.ZERO))]
-		battle_result.text = "MOVE COMPLETED"
+		var lines: Array[String] = []
+		for step_value in moves:
+			var step: Dictionary = step_value
+			var step_id := int(step.get("piece_id", StrategoGame.EMPTY))
+			var route := "%s  ->  %s" % [str(step.get("from", Vector2i.ZERO)), str(step.get("to", Vector2i.ZERO))]
+			if moves.size() == 1:
+				lines.append(route)
+				continue
+			var label := "Formation"
+			if step_id >= 0 and step_id < game.pieces.size() and _piece_identity_is_visible(game.pieces[step_id]):
+				label = String(StrategoGame.PIECE_NAMES.get(game.pieces[step_id].type, "Formation"))
+			lines.append("%s   %s" % [label, route])
+		battle_body.text = "[center]%s[/center]" % "
+".join(lines)
+		battle_result.text = "MOVE COMPLETED" if moves.size() == 1 else "%d FORMATIONS REPOSITIONED" % moves.size()
 		return
 	var ids: Array = event.get("participants", [])
 	if action == "ranged":

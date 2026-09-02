@@ -43,6 +43,7 @@ func _run() -> void:
 	_test_archers_may_mass_a_volley_or_fire_apart()
 	_test_archer_loss_blocks_shot_and_win_allows_it()
 	_test_leftover_is_a_separate_order_phase()
+	_test_reposition_moves_collapse_into_one_card()
 	_test_reposition_keeps_unidentified_formations_secret()
 	_test_leftover_contingent_friendly_square_order()
 	_test_leftover_allows_second_melee_only_after_win()
@@ -1210,6 +1211,29 @@ func _test_leftover_is_a_separate_order_phase() -> void:
 	var events := game.resolve_leftover_phase()
 	_expect(_events_with_action(events, "move").size() == 1 and game.pieces[mover].position == Vector2i(4, 2), "ending the leftover phase resolves its simultaneous movement")
 	_expect(game.phase == StrategoGame.PHASE_PLANNING and game.round_number == 2, "the next planning round starts only after leftover movement finishes")
+
+
+func _test_reposition_moves_collapse_into_one_card() -> void:
+	# Reposition has no contest in it, so clicking Next once per formation was
+	# pure toll. The whole phase is one card; anything that actually resolves
+	# something still gets its own.
+	var game := _test_game()
+	var presenter: Control = load("res://scripts/main.gd").new()
+	presenter.game = game
+	presenter.replay_view_mode = true
+	var events: Array[Dictionary] = [
+		{"action": "move", "batch": "leftover", "piece_id": 0, "from": Vector2i(1, 1), "to": Vector2i(1, 2), "combat": false},
+		{"action": "move", "batch": "leftover", "piece_id": 1, "from": Vector2i(2, 1), "to": Vector2i(2, 2), "combat": false},
+		{"action": "move", "batch": "leftover", "piece_id": 2, "from": Vector2i(3, 1), "to": Vector2i(3, 2), "combat": false},
+		{"action": "melee", "batch": "leftover", "combat": true, "participants": [0, 1]},
+		{"action": "move", "batch": "impulse_1", "piece_id": 3, "from": Vector2i(4, 1), "to": Vector2i(4, 2), "combat": false},
+	]
+	var visible: Array = presenter._visible_presentation_events(events)
+	_expect(visible.size() == 2, "three repositions and a battle are two cards, not four")
+	_expect(String(visible[0].action) == "leftover_move" and visible[0].moves.size() == 3, "every reposition is gathered onto the one card")
+	_expect(String(visible[1].action) == "melee", "a battle in the same phase still gets its own")
+	_expect(int(visible[0].moves[2].piece_id) == 2, "and the card keeps who went where, in order")
+	presenter.free()
 
 
 func _test_reposition_keeps_unidentified_formations_secret() -> void:
