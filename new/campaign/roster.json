@@ -1,19 +1,66 @@
 {
-  "campaign": "The Ashmere Line",
-  "commander": "Blue",
-  "battle_number": 1,
-  "supply": 2,
-  "notes": "Strength values are current, not maximum. A formation that dies is struck from this file and never returns.",
-  "formations": [
-    { "name": "Oakhand",    "type": "HI", "strength": 8, "battles": 0, "history": [] },
-    { "name": "Stonewatch", "type": "HI", "strength": 8, "battles": 0, "history": [] },
-    { "name": "Marrow",     "type": "MI", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Thistle",    "type": "MI", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Coldbrook",  "type": "LI", "strength": 6, "battles": 0, "history": [] },
-    { "name": "Harrow",     "type": "MA", "strength": 6, "battles": 0, "history": [] },
-    { "name": "Kestrel",    "type": "LA", "strength": 5, "battles": 0, "history": [] },
-    { "name": "Ferrant",    "type": "MC", "strength": 7, "battles": 0, "history": [] },
-    { "name": "Ash",        "type": "LC", "strength": 6, "battles": 0, "history": [] }
+  "campaign": "The Red Tide",
+  "commander": "Yellow",
+  "faction": "Halgate",
+  "predecessor": "The Ashmere Line (Blue) — fallen, Battles 1–3. Record in ashmere_line.json and chronicle.md.",
+  "premise": "Halgate is a rich walled trade-city south of the fallen Ashmere frontier. Where Blue was a single poor levy that put its whole existence on the field every battle, Halgate fields companies — it commits one to a fight and keeps the rest, and its coffers rebuild what a battle costs. A lost battle costs a company's blood, not the war.",
+  "campaign_turn": 4,
+  "treasury_crowns": 8,
+  "income_per_turn": 8,
+  "last_battle": "Battle 6 — Cassewick Again: LOST (Vare held the yard, round 4). Halgate won the fighting (killed Distress, Cess, Writ) and lost the town — again — because an archer-heavy company holds no ground once its one lance dies. Errant and Quill fell; the Charter Company is now two Medium Archers. Two offensives, two losses of the same kind: you cannot seize-and-hold with bows. Treasury 0 + 8 income = 8. The Gate Guard is now the faction's only real army.",
+  "last_battle": "Battle 5 — The Weirgate: WON decisively (held the causeway; Vare's heavy host destroyed to the last formation, round 11). Halgate lost only Bastion. Bulwark — the oldest enemy thread — shot dead on the causeway. The three-bow gunline curb-stomped a passive assault; a lopsided win, and a note that static ranged defence is a solved problem versus the bot. Treasury 5 + 8 income = 13.",
+  "economy": {
+    "reinforce": "1 crown per Strength point restored, up to a formation's max.",
+    "recruit": "A new formation costs (its Strength) + 2 crowns to hire.",
+    "note": "Halgate is rich on purpose. Between-battle spending should keep the committed company competitive with the strike force it faces — a won or lost battle both still leave a faction that can field its next company. The recruitment-economy rule (learned from Blue) is load-bearing here."
+  },
+  "rules": {
+    "permanent_death": "A destroyed formation is struck from its company and moved to fallen. Still absolute — losses are real and permanent. What changed from Blue is scope: only the committed company is ever at risk in a battle, so death costs a detachment, never the faction.",
+    "faction_survivable": "Only one company deploys per battle. The others, plus the city and its treasury, remain. A single lost battle cannot end the campaign.",
+    "between_battle_choices": "Each campaign turn: (1) intelligence — where Vare strikes and what is known of their force; (2) choose which company to send; (3) reinforce chosen formations toward full and/or recruit new ones from the treasury; (4) fight; (5) collect income and repeat.",
+    "veteran_reroll": "Survive a battle in which you fought and mattered to earn Veteran status: one reroll per battle, GM-applied. Carried over from Blue's campaign as a standing rule."
+  },
+  "companies": {
+    "gate_guard": {
+      "name": "The Gate Guard",
+      "character": "Halgate's own professional core. Heavy, slow, well-drilled, with real bows behind it — the coffers buy good archers. The wall that does not break, and the answer of 'become the harder thing.' Weak to being outrun or outmanoeuvred.",
+      "formations": [
+        { "name": "Portcullis", "type": "HI", "strength": 8, "max_strength": 8, "battles": 1, "history": ["Anchored the Weirgate line and came off it untouched. Still unbloodied after a battle it won — the wall nothing reached."] },
+        { "name": "Halberd",    "type": "MI", "strength": 5, "max_strength": 7, "battles": 1, "history": ["Battle 5 — the Weirgate: killed Amerce when the cavalry tried the flank the water was meant to guard. Took wounds holding the line; down to 5."] },
+        { "name": "Sable",      "type": "HA", "strength": 7, "max_strength": 7, "battles": 1, "veteran": true, "veteran_reason": "The heavy bow at the centre of the Weirgate gunline. Landed the killing shots on Bulwark and destroyed Assize, Vare's own Heavy Archer — the two most dangerous formations in the host — and came off untouched.", "history": ["Battle 5 — the Weirgate: killed Assize and put Bulwark down. The bow Ashmere could never afford, doing the work Ashmere's archers died wishing they could. Earned Veteran status — one reroll per battle."] },
+        { "name": "Sterling",   "type": "MA", "strength": 6, "max_strength": 6, "battles": 1, "history": ["Battle 5 — the Weirgate: opened the assault, breaking Mandate and Sergeant, then helped drop the Heavies. Unwounded."] },
+        { "name": "Merlon",     "type": "MA", "strength": 6, "max_strength": 6, "battles": 1, "hired": "Turn 2, 8 crowns, for the Weirgate", "history": ["Hired to put a third bow on the parapet. Justified it: shared in killing Bulwark, Assize, Sessions and more, unwounded. A merlon is the stone you shelter behind to shoot from — named for the job."] }
+      ]
+    },
+    "charter_company": {
+      "name": "The Charter Company",
+      "character": "What is left of the hired horse and skirmishers: two Medium Archers, Vellum and Ledger. Twice sent to take and hold ground, twice it won the fighting and held nothing, because bows take every exchange and cannot stand on a square. Spent as an offensive company until it is rebuilt with a body that can hold. Fast and sharp; no longer an army.",
+      "formations": [
+        { "name": "Vellum",  "type": "MA", "strength": 6, "max_strength": 6, "battles": 2, "hired": "Turn 1, 8 crowns, for Cassewick", "history": ["Hired for the Cassewick raid — the second bow. Killed Summons with its first shots and came home unwounded. Worth the eight crowns even in a loss.", "Battle 6 — Cassewick Again: helped kill Writ, the relief's lance; came off a lost battle unwounded. One of the two bows that are all the Charter Company now is."] },
+        { "name": "Ledger",  "type": "MA", "strength": 6, "max_strength": 6, "battles": 1, "hired": "Turn 3, 8 crowns, for the Cassewick counterattack", "history": ["Hired to give the rebuilt Charter Company a third bow. Battle 6 — Cassewick Again: killed Cess and shared the kill on Writ, unwounded. Survived; the company around it did not."] }
+      ]
+    }
+  },
+  "reserve": {
+    "note": "Formations the city can hire between battles, treasury permitting, and fold into whichever company deploys. Costs = (Strength) + 2 crowns.",
+    "available": [
+      { "name": "(hire) Heavy Infantry", "type": "HI", "strength": 8, "cost": 10 },
+      { "name": "(hire) Medium Archer",  "type": "MA", "strength": 6, "cost": 8 },
+      { "name": "(hire) Light Cavalry",  "type": "LC", "strength": 6, "cost": 8 }
+    ]
+  },
+  "fallen": [
+    { "name": "Errant",  "type": "LC", "battle": "Battle 6 — Cassewick Again", "detail": "The Charter Company's veteran and, after Cassewick, its only lance. Killed Warrant on the Fen Road, survived the first Cassewick at Strength 1, was reinforced to full for the counterattack — and died in the first round of it, meeting Distress on the objective out of the fog and then cut down by Writ's charge. With the lance gone the company had nothing to hold the yard, and the town was lost a second time. Two battles, one banner: the last of the horse Halgate ever fielded." },
+    { "name": "Quill",   "type": "LA", "battle": "Battle 6 — Cassewick Again", "detail": "Light Archer of the Charter Company. Ridden down by Chattel's light horse in the assault on Cassewick. Two battles, both losses, little to show but the arrows it spent." },
+    { "name": "Bastion",  "type": "HI", "battle": "Battle 5 — The Weirgate", "detail": "Held the Weirgate line and was killed by Assize, Vare's Heavy Archer — the one enemy bow that reached the wall. The only Halgate loss of a battle that destroyed the whole enemy host. Died winning." },
+    { "name": "Argent",  "type": "MC", "battle": "Battle 4 — Cassewick", "detail": "The Charter Company's heavy lance. Killed Escheat, Vare's own lance, and was then cut down by Distress — the cheapest formation on the field — while Halgate held the winning side of the fight and the losing side of the objective." },
+    { "name": "Ferrule", "type": "LI", "battle": "Battle 4 — Cassewick", "detail": "Traded itself with Quarrel, the Vare bow; both destroyed in the exchange." },
+    { "name": "Ingot",   "type": "LI", "battle": "Battle 4 — Cassewick", "detail": "Cut down by Escheat in the storm on the yard." }
   ],
-  "fallen": []
+  "enemy_threads": [
+    { "name": "Distress", "type": "LI", "faction": "Vare", "detail": "The lone survivor of the Cassewick vanguard, at Strength 2. Seized the granary on a reposition and held it with the last breath of the raid — killed Argent doing it. The cheapest unit Vare had and the one that won them a battle it lost four-fifths of a column to. A face to remember." }
+  ],
+  "closed_threads": [
+    { "name": "Bulwark", "type": "HI", "faction": "Vare", "closed": "Battle 5 — The Weirgate", "detail": "The campaign's oldest enemy thread — the Vare Heavy that watched Ashmere break at the bridge, carried the tide's word south, and led the heavy host that was meant to open the road to Halgate. Shot dead on the Weirgate causeway without landing a blow, by the kind of bows the people it helped destroy never had. The thread that ran from Ashweir Bridge to the Weirgate is closed." }
+  ]
 }

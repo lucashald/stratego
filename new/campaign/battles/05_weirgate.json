@@ -1,0 +1,48 @@
+{
+  "name": "Battle 5 — The Weirgate",
+  "briefing": [
+    "The raid was the tide feeling ahead of itself. Now the main host comes on — heavy, slow, and led by Bulwark, who watched Ashmere break and has carried the tide's word ever since.",
+    "The Weirgate carries the south road over the millwater on a narrow causeway. Water guards both flanks; the road is the only way across, three spans wide.",
+    "Hold the near end and the host is stalled at the water. Let enough of them across into your rear and the road to the city is open.",
+    "You sent the Gate Guard — two Heavies, a wall of foot, and three bows on the parapet. This is the fight it was built for: stand still and let them break on you."
+  ],
+  "turn_limit": 12,
+  "private_battle_results": true,
+  "terrain": {
+    "water": [
+      [0, 9], [1, 9], [2, 9], [3, 9], [4, 9], [5, 9], [6, 9], [7, 9],
+      [11, 9], [12, 9], [13, 9], [14, 9], [15, 9], [16, 9], [17, 9], [18, 9], [19, 9]
+    ]
+  },
+  "objective": {
+    "kind": "survive",
+    "side": "blue",
+    "until_round": 12,
+    "reason": "held_the_weirgate",
+    "also": {
+      "kind": "reach",
+      "side": "red",
+      "area": [8, 14, 3, 4],
+      "strength": 19,
+      "reason": "forced_the_weirgate"
+    }
+  },
+  "armies": {
+    "blue": [
+      { "name": "Portcullis", "type": "HI", "at": [8, 10],  "strength": 8 },
+      { "name": "Halberd",    "type": "MI", "at": [9, 10],  "strength": 7 },
+      { "name": "Bastion",    "type": "HI", "at": [10, 10], "strength": 8 },
+      { "name": "Sable",      "type": "HA", "at": [8, 11],  "strength": 7 },
+      { "name": "Sterling",   "type": "MA", "at": [9, 11],  "strength": 6 },
+      { "name": "Merlon",     "type": "MA", "at": [10, 11], "strength": 6 }
+    ],
+    "red": [
+      { "name": "Sessions",  "type": "HI", "at": [8, 5],  "strength": 8 },
+      { "name": "Bulwark",   "type": "HI", "at": [9, 5],  "strength": 8 },
+      { "name": "Amerce",    "type": "MC", "at": [10, 5], "strength": 7 },
+      { "name": "Assize",    "type": "HA", "at": [9, 4],  "strength": 7 },
+      { "name": "Mandate",   "type": "MI", "at": [8, 6],  "strength": 7 },
+      { "name": "Sergeant",  "type": "MI", "at": [10, 6], "strength": 7 }
+    ]
+  }
+}

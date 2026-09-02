@@ -6,6 +6,7 @@ signal examine_requested(piece_id: int)
 signal selection_changed(description: String)
 signal zoom_changed(percent: int)
 signal undo_availability_changed(available: bool)
+signal view_changed
 
 const BLUE_COLOR := Color("#1b4a86")
 const BLUE_EDGE := Color("#7fc2ff")
@@ -80,6 +81,7 @@ var _context_menu_cell := Vector2i(-1, -1)
 var _context_menu_piece := -1
 var middle_panning := false
 var order_undo_stack: Array[Dictionary] = []
+var overview_target: StrategoBoardView = null
 
 
 func _ready() -> void:
@@ -131,6 +133,24 @@ func reset_view() -> void:
 	zoom_level = 1.0
 	pan_offset = Vector2.ZERO
 	zoom_changed.emit(int(round(zoom_level * 100.0)))
+	view_changed.emit()
+	queue_redraw()
+
+
+## Put one board-space point at the centre of the playable view. The minimap
+## uses continuous board coordinates so clicking between cells feels like map
+## navigation rather than unit selection.
+func center_on_board_point(board_point: Vector2) -> void:
+	var geometry := _board_geometry()
+	var side := float(geometry.side)
+	var centered_origin := (size - Vector2(side, side)) * 0.5
+	var bounded := Vector2(
+		clampf(board_point.x, 0.0, float(StrategoGame.BOARD_SIZE)),
+		clampf(board_point.y, 0.0, float(StrategoGame.BOARD_SIZE)),
+	)
+	pan_offset = size * 0.5 - centered_origin - bounded * (side / float(StrategoGame.BOARD_SIZE))
+	_clamp_pan()
+	view_changed.emit()
 	queue_redraw()
 
 
@@ -217,6 +237,7 @@ func _set_zoom(value: float, focus: Vector2) -> void:
 	pan_offset = focus - centered_origin - board_point * (new_side / float(StrategoGame.BOARD_SIZE))
 	_clamp_pan()
 	zoom_changed.emit(int(round(zoom_level * 100.0)))
+	view_changed.emit()
 	queue_redraw()
 
 
@@ -267,9 +288,10 @@ func _draw() -> void:
 ## The whole board at panel scale, plus a frame showing what the main view is
 ## currently looking at.
 func _draw_overview() -> void:
-	var side := minf(size.x, size.y) - 8.0
-	var origin := (size - Vector2(side, side)) * 0.5
-	var cell := side / float(StrategoGame.BOARD_SIZE)
+	var geometry := _overview_geometry()
+	var side := float(geometry.side)
+	var origin: Vector2 = geometry.origin
+	var cell := float(geometry.cell)
 	draw_rect(Rect2(origin, Vector2(side, side)), Color("#20301f"), true)
 	for y in StrategoGame.BOARD_SIZE:
 		for x in StrategoGame.BOARD_SIZE:
@@ -289,7 +311,42 @@ func _draw_overview() -> void:
 		var colors := _player_colors(int(piece.player))
 		var centre := origin + (Vector2(piece.position) + Vector2(0.5, 0.5)) * cell
 		draw_circle(centre, maxf(1.6, cell * 0.34), colors.edge)
+	if overview_target != null:
+		var visible_board := _overview_viewport_board_rect()
+		var visible_rect := Rect2(origin + visible_board.position * cell, visible_board.size * cell)
+		draw_rect(visible_rect, Color(0.72, 0.9, 1.0, 0.12), true)
+		draw_rect(visible_rect, Color("#c7e9ff"), false, 2.0)
 	draw_rect(Rect2(origin, Vector2(side, side)), GOLD, false, 1.0)
+
+
+func _overview_geometry() -> Dictionary:
+	var side := maxf(1.0, minf(size.x, size.y) - 8.0)
+	var origin := (size - Vector2(side, side)) * 0.5
+	return {"origin": origin, "side": side, "cell": side / float(StrategoGame.BOARD_SIZE)}
+
+
+func _overview_board_point(local_point: Vector2) -> Vector2:
+	var geometry := _overview_geometry()
+	var point := (local_point - Vector2(geometry.origin)) / float(geometry.cell)
+	return Vector2(
+		clampf(point.x, 0.0, float(StrategoGame.BOARD_SIZE)),
+		clampf(point.y, 0.0, float(StrategoGame.BOARD_SIZE)),
+	)
+
+
+func _overview_viewport_board_rect() -> Rect2:
+	if overview_target == null:
+		return Rect2(Vector2.ZERO, Vector2(StrategoGame.BOARD_SIZE, StrategoGame.BOARD_SIZE))
+	var target_geometry := overview_target._board_geometry()
+	var target_origin: Vector2 = target_geometry.origin
+	var target_cell := float(target_geometry.cell)
+	var top_left := (-target_origin) / target_cell
+	var bottom_right := (overview_target.size - target_origin) / target_cell
+	top_left.x = clampf(top_left.x, 0.0, float(StrategoGame.BOARD_SIZE))
+	top_left.y = clampf(top_left.y, 0.0, float(StrategoGame.BOARD_SIZE))
+	bottom_right.x = clampf(bottom_right.x, 0.0, float(StrategoGame.BOARD_SIZE))
+	bottom_right.y = clampf(bottom_right.y, 0.0, float(StrategoGame.BOARD_SIZE))
+	return Rect2(top_left, (bottom_right - top_left).max(Vector2.ZERO))
 
 
 ## A treeline framing the play area, rather than the drifting bokeh discs that
@@ -1001,10 +1058,21 @@ func _player_colors(player: int) -> Dictionary:
 func _gui_input(event: InputEvent) -> void:
 	if game == null:
 		return
+	if overview_mode:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			left_button_down = event.pressed
+			if event.pressed and overview_target != null:
+				overview_target.center_on_board_point(_overview_board_point(event.position))
+				accept_event()
+		elif event is InputEventMouseMotion and left_button_down and overview_target != null:
+			overview_target.center_on_board_point(_overview_board_point(event.position))
+			accept_event()
+		return
 	if event is InputEventMouseMotion:
 		if middle_panning:
 			pan_offset += event.relative
 			_clamp_pan()
+			view_changed.emit()
 			queue_redraw()
 			accept_event()
 			return

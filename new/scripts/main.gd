@@ -3,7 +3,8 @@ extends Control
 const HUD_BLUE := Color("#79b9ff")
 const HUD_GOLD := Color("#c9a25e")
 const PANEL_BG := Color(0.035, 0.055, 0.095, 0.96)
-const LAST_REPLAY_PATH := "user://replays/last_replay.json"
+const REPLAY_DIRECTORY := "res://../replays"
+const LAST_REPLAY_PATH := REPLAY_DIRECTORY + "/last_replay.json"
 
 var game := StrategoGame.new()
 var bot := StrategoBotPolicy.new()
@@ -187,6 +188,7 @@ func _build_interface() -> void:
 	board_view.examine_requested.connect(_on_examine_requested)
 	board_view.selection_changed.connect(_on_selection_changed)
 	board_view.zoom_changed.connect(_on_zoom_changed)
+	board_view.view_changed.connect(_on_board_view_changed)
 	board_view.undo_availability_changed.connect(_on_undo_availability_changed)
 	add_child(board_view)
 	_build_objective_panel()
@@ -214,6 +216,7 @@ func _fit_to_board_region(control: Control) -> void:
 
 func _on_window_resized() -> void:
 	if board_view != null: board_view.queue_redraw()
+	if minimap != null: minimap.queue_redraw()
 
 
 ## One framed strip across the reserved top region, replacing the three panels
@@ -348,7 +351,10 @@ func _build_minimap() -> void:
 	minimap = StrategoBoardView.new()
 	minimap.overview_mode = true
 	minimap.interaction_enabled = false
-	minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	minimap.overview_target = board_view
+	minimap.mouse_filter = Control.MOUSE_FILTER_STOP
+	minimap.mouse_default_cursor_shape = Control.CURSOR_CROSS
+	minimap.tooltip_text = "Click or drag to centre the battlefield view here."
 	minimap.custom_minimum_size = Vector2(0, 170)
 	minimap.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(minimap)
@@ -1153,7 +1159,8 @@ func _build_settings_drawer() -> void:
 	box.add_child(battle_report_toggle)
 	cavalry_leftover_toggle = CheckButton.new()
 	cavalry_leftover_toggle.text = "Cavalry always repositions"
-	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. Off by default; applies to the next game you start."
+	cavalry_leftover_toggle.button_pressed = true
+	cavalry_leftover_toggle.tooltip_text = "Cavalry may take a leftover move even after spending its main-phase movement, same fight-outcome rules as everyone else. On by default; applies to the next game you start."
 	box.add_child(cavalry_leftover_toggle)
 	var counts := VBoxContainer.new()
 	counts.add_theme_constant_override("separation", 2)
@@ -1262,6 +1269,11 @@ func start_bridge_game() -> void:
 ## fresh every time rather than caching: the next battle appears simply by the
 ## file changing.
 const CAMPAIGN_BATTLE_PATH := "res://campaign/current_battle.json"
+const CAMPAIGN_REPORT_PATH := "res://campaign/last_battle_report.json"
+const CAMPAIGN_REPLAY_PATH := "res://campaign/last_battle_replay.json"
+## Formation name -> engine piece id, kept for the length of the battle so the
+## report written when it ends can use the names the scenario gave them.
+var campaign_piece_ids: Dictionary = {}
 
 
 func start_campaign_battle() -> void:
@@ -1270,13 +1282,14 @@ func start_campaign_battle() -> void:
 		_log_line(String(loaded.get("message", "Could not read the campaign battle.")), true)
 		return
 	var data: Dictionary = loaded.data
-	selected_scenario = StrategoGame.SCENARIO_SKIRMISH
+	selected_scenario = StrategoGame.SCENARIO_CAMPAIGN
 	game = StrategoGame.new()
 	var applied: Dictionary = CampaignScenario.apply(game, data)
 	if not bool(applied.get("ok", false)):
 		_log_line("Campaign battle rejected: %s" % String(applied.get("message", "")), true)
 		return
 	game.cavalry_always_leftover = cavalry_leftover_toggle.button_pressed
+	campaign_piece_ids = applied.get("piece_ids", {})
 	_configure_board(false)
 	_clear_logs()
 	_log_line(String(data.get("name", "Campaign battle")), true)
@@ -1284,6 +1297,22 @@ func start_campaign_battle() -> void:
 		_log_line(String(line))
 	settings_drawer.visible = false
 	_update_interface()
+
+
+## Writes the report and the verifiable replay the moment a campaign battle
+## ends, both under campaign/ where a project browser or the next session can
+## simply find them - no export click to remember, and nothing to reconstruct
+## afterward from orders and dice, since the report is built from combat the
+## engine already computed rather than replayed.
+func _save_campaign_battle_record() -> void:
+	var report := CampaignScenario.build_battle_report(game, campaign_piece_ids)
+	var report_file := FileAccess.open(CAMPAIGN_REPORT_PATH, FileAccess.WRITE)
+	if report_file != null:
+		report_file.store_string(JSON.stringify(report, "  "))
+		report_file.close()
+	var replay_result: Dictionary = game.save_replay(CAMPAIGN_REPLAY_PATH)
+	_log_line("Battle record saved: %s and %s" % [CAMPAIGN_REPORT_PATH, CAMPAIGN_REPLAY_PATH]
+		if bool(replay_result.get("ok", false)) else "Battle report saved; replay could not be: %s" % String(replay_result.get("message", "")), true)
 
 
 func start_meeting_game() -> void:
@@ -1514,7 +1543,9 @@ func _visible_presentation_events(events: Array[Dictionary]) -> Array[Dictionary
 			continue
 		var action := String(event.get("action", ""))
 		var is_leftover_move := action == "move" and String(event.get("batch", "")) == "leftover"
-		if bool(event.get("combat", false)) or action in ["bounce", "retreat", "retreat_collision"] or is_leftover_move:
+		# Pure movement congestion still animates and remains in the log/replay,
+		# but it has no lasting penalty and does not need a click-through card.
+		if bool(event.get("combat", false)) or action in ["retreat", "retreat_collision"] or is_leftover_move:
 			var presentation_event := event.duplicate(true)
 			if is_leftover_move:
 				presentation_event.action = "leftover_move"
@@ -1848,6 +1879,8 @@ func _event_damage(event: Dictionary, piece_id: int, index: int) -> int:
 func _result_label(event: Dictionary, winner_id: int) -> String:
 	if winner_id >= 0 and winner_id < game.pieces.size():
 		return "RESULT: %s WINS" % game.player_name(int(game.pieces[winner_id].player)).to_upper()
+	if String(event.get("result", "")) == "team_win":
+		return "RESULT: ALLIED SIDE WINS"
 	return "RESULT: %s" % String(event.get("result", "bounce")).replace("_", " ").to_upper()
 
 
@@ -1857,7 +1890,9 @@ func _result_detail(event: Dictionary, winner_id: int) -> String:
 	if winner_id >= 0:
 		return "Opposing formations retreat; winner may continue"
 	if String(event.get("result", "")) == "bounce":
-		return "No unique winner; tied leaders bounce"
+		return "Opposing sides tied; every surviving participant returns and is done"
+	if String(event.get("result", "")) == "team_win":
+		return "Opposing formations retreat; tied allies return without a status penalty"
 	return "No formation controls the contested square"
 
 
@@ -1925,7 +1960,7 @@ func _on_withdraw() -> void:
 
 func _on_export_replay() -> void:
 	var stamp := Time.get_datetime_string_from_system(false, false).replace(":", "-").replace("T", "_")
-	var timestamped_path := "user://replays/wego-replay-%s.json" % stamp
+	var timestamped_path := "%s/wego-replay-%s.json" % [REPLAY_DIRECTORY, stamp]
 	var result: Dictionary = game.save_replay(timestamped_path)
 	if not bool(result.get("ok", false)):
 		detail_label.text = String(result.get("message", "Replay export failed."))
@@ -2023,6 +2058,11 @@ func _on_selection_changed(description: String) -> void:
 func _on_zoom_changed(percent: int) -> void:
 	if zoom_label != null:
 		zoom_label.text = "%d%%" % percent
+
+
+func _on_board_view_changed() -> void:
+	if minimap != null:
+		minimap.queue_redraw()
 
 
 func _on_undo_availability_changed(_available: bool) -> void:
@@ -2221,6 +2261,7 @@ func _battle_title() -> String:
 		StrategoGame.SCENARIO_MEETING: "Battle of Oakfield",
 		StrategoGame.SCENARIO_SKIRMISH: "Skirmish",
 		StrategoGame.SCENARIO_CROSSROADS: "The Crossroads",
+		StrategoGame.SCENARIO_CAMPAIGN: String(game.campaign_battle_data.get("name", "Campaign Battle")),
 	}
 	return "%s  ·  Round %d" % [String(name_by_scenario.get(game.scenario, "Battle")), game.round_number]
 
@@ -2479,6 +2520,8 @@ func _log_game_end() -> void:
 		_log_line("Battle ended without a sole winner: %s." % game.end_reason.replace("_", " "), true)
 	else:
 		_log_line("%s wins by %s." % [game.player_name(game.winner), game.end_reason.replace("_", " ")], true)
+	if game.scenario == StrategoGame.SCENARIO_CAMPAIGN:
+		_save_campaign_battle_record()
 
 
 func _clear_logs() -> void:

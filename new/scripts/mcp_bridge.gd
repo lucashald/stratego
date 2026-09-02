@@ -124,7 +124,7 @@ func _get_history(args: Dictionary) -> Dictionary:
 
 
 func _save_replay(args: Dictionary) -> Dictionary:
-	var path := String(args.get("path", "user://replays/mcp_match.json"))
+	var path := String(args.get("path", "res://../replays/mcp_match.json"))
 	var result := game.save_replay(path)
 	return {
 		"ok": bool(result.get("ok", false)), "path": String(result.get("path", path)),

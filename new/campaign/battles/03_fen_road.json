@@ -1,0 +1,42 @@
+{
+  "name": "Battle 3 — The Fen Road",
+  "briefing": [
+    "Vare did not wait for Ashmere to become an army again. They knew exactly how thin the Line had been left, and they sent riders to catch it while it was one heavy and a handful of remounted survivors.",
+    "The muster ground is south, down the Fen Road, past the marsh at the neck. Reach it and the Line lives to be rebuilt. Fail to, and there will be nothing left to rebuild.",
+    "Stonewatch cannot be hurried — she moves at a wall's pace. Ember can outrun anything on the field, and has to spend every length of it buying the road for someone slower.",
+    "Vare's column is fast, and it has a bow. Ashmere has none this time. You cannot answer their arrows. You can only get out from under them."
+  ],
+  "turn_limit": 14,
+  "private_battle_results": true,
+  "terrain": {
+    "water": [
+      [0, 12], [1, 12], [2, 12], [3, 12], [4, 12], [5, 12], [6, 12], [7, 12],
+      [12, 12], [13, 12], [14, 12], [15, 12], [16, 12], [17, 12], [18, 12], [19, 12]
+    ]
+  },
+  "objective": {
+    "kind": "reach",
+    "side": "blue",
+    "area": [4, 17, 12, 3],
+    "strength": 8,
+    "reason": "withdrew_to_the_muster",
+    "also": {
+      "kind": "survive",
+      "side": "red",
+      "until_round": 14,
+      "reason": "ran_them_down"
+    }
+  },
+  "armies": {
+    "blue": [
+      { "name": "Stonewatch", "type": "HI", "at": [10, 8], "strength": 8 },
+      { "name": "Ember",      "type": "MC", "at": [9, 8],  "strength": 4 }
+    ],
+    "red": [
+      { "name": "Outrider",  "type": "LI", "at": [10, 4], "strength": 5 },
+      { "name": "Warrant",   "type": "LC", "at": [8, 4],  "strength": 5 },
+      { "name": "Distraint", "type": "LC", "at": [12, 4], "strength": 5 },
+      { "name": "Quarrel",   "type": "LA", "at": [10, 3], "strength": 4 }
+    ]
+  }
+}

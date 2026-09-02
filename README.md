@@ -85,8 +85,8 @@ Then add role bonuses:
 - Infantry defending: +3
 - Archer: no role modifier
 A higher battle score wins.
-A tie does not count as a defender victory.
-Instead, ties cause a bounce.
+A tie does not count as a defender victory. A highest-score tie across opposing
+sides causes a bounce; an allied tie for the best score still wins for that side.
 Damage
 Every unit deals damage based on its own battle score.
 Damage is reduced by the target’s Armor.
@@ -108,13 +108,13 @@ The unit retreats.
 Its actions are finished for the rest of the round.
 If it cannot retreat legally, it is destroyed.
 Bounce
-Nobody wins the space.
-The unit returns to the square it occupied before the collision and is finished for the round.
+Opposing sides tied for the highest score, so nobody wins the space.
+Every surviving participant returns to the square it occupied before the collision and is finished for the round.
 A bounce is not the same thing as losing.
 For an attacker, bounce and loss may put it back on the same square, but for a defender:
 - bounce = stays in place
 - loss = forced away
-Bounces can also happen without combat, such as when allied armies controlled by different players accidentally collide.
+Friendly movement congestion also returns formations to their prior squares, but carries no round-status penalty and is skipped during click-through review.
 Multi-unit combat
 More than two units may participate in the same battle.
 For example, two Cavalry units may attack one Infantry unit.
@@ -124,14 +124,14 @@ Damage from multiple enemies does not stack together.
 A single unique highest scorer wins the space.
 If two friendly units attack together and one clearly wins:
 - the winning unit occupies the square
-- the other friendly attacker bounces
+- the other friendly attacker returns without a status penalty
 If two friendly attackers tie each other for the highest score while both beat the enemy:
 - the enemy loses and retreats
-- both friendly attackers bounce
+- both friendly attackers return without a status penalty
 - the contested square ends empty
 If the highest score is tied across opposing sides:
 - nobody wins
-- the tied units bounce
+- every surviving participant bounces and is finished for the round
 Retreat battles
 If retreating enemies collide in the same newly available square, they fight a retreat battle.
 Retreat battles represent disorganized formations crashing into each other.
@@ -181,7 +181,7 @@ Combat reveals:
 - weight
 - current Strength
 Allied units still physically block one another.
-Different allied players can accidentally collide because they cannot see each other’s secret orders. Such a collision causes both units to bounce and lose the rest of their round.
+Different allied players can accidentally collide because they cannot see each other’s secret orders. Such congestion returns the moving units to their prior squares without preventing later actions that round.
 Scenario design
 The game is scenario-driven rather than centered on total annihilation.
 Scenario components can vary independently:

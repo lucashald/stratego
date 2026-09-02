@@ -1,0 +1,1073 @@
+{
+  "battle_history": [
+    {
+      "action": "melee",
+      "batch": "impulse_3",
+      "capped_rolls": {
+        "0": 2,
+        "4": 2
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "0": 5,
+        "4": 5
+      },
+      "known_to": [
+        0,
+        1
+      ],
+      "ok": true,
+      "outcomes": {
+        "0": "bounced",
+        "4": "destroyed"
+      },
+      "participants": [
+        0,
+        4
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "0": 2,
+        "4": 7
+      },
+      "result": "bounce",
+      "role_bonuses": {
+        "0": 3,
+        "4": 3
+      },
+      "scores": {
+        "0": 5,
+        "4": 5
+      },
+      "to": "(10, 9)",
+      "winner_id": -1,
+      "winner_team": -1
+    },
+    {
+      "action": "ranged",
+      "attacker_raw_roll": 5,
+      "attacker_score": 5,
+      "batch": "ranged",
+      "combat": true,
+      "defender_damage": 5,
+      "from": "(10, 11)",
+      "known_to": [
+        0,
+        1
+      ],
+      "movement_cost": 2,
+      "ok": true,
+      "range": 2,
+      "ranged": true,
+      "result": "ranged_destroyed",
+      "shooter_id": 3,
+      "target_id": 5,
+      "to": "(10, 9)"
+    },
+    {
+      "action": "melee",
+      "batch": "leftover",
+      "capped_rolls": {
+        "0": 1,
+        "6": 3
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "0": 6,
+        "6": 2
+      },
+      "known_to": [
+        0,
+        1
+      ],
+      "ok": true,
+      "outcomes": {
+        "0": "destroyed",
+        "6": "won"
+      },
+      "participants": [
+        0,
+        6
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "0": 9,
+        "6": 3
+      },
+      "result": "win",
+      "role_bonuses": {
+        "0": 3,
+        "6": 3
+      },
+      "scores": {
+        "0": 4,
+        "6": 6
+      },
+      "to": "(10, 9)",
+      "winner_id": 6,
+      "winner_team": 1
+    },
+    {
+      "action": "melee",
+      "batch": "impulse_3",
+      "capped_rolls": {
+        "1": 4,
+        "7": 4
+      },
+      "combat": true,
+      "crossing": false,
+      "damage": {
+        "1": 7,
+        "7": 4
+      },
+      "known_to": [
+        1,
+        0
+      ],
+      "ok": true,
+      "outcomes": {
+        "1": "destroyed",
+        "7": "won"
+      },
+      "participants": [
+        7,
+        1
+      ],
+      "ranged": false,
+      "raw_rolls": {
+        "1": 4,
+        "7": 4
+      },
+      "result": "win",
+      "role_bonuses": {
+        "1": 0,
+        "7": 3
+      },
+      "scores": {
+        "1": 4,
+        "7": 7
+      },
+      "to": "(8, 9)",
+      "winner_id": 7,
+      "winner_team": 1
+    },
+    {
+      "action": "ranged",
+      "attacker_raw_roll": 1,
+      "attacker_score": 1,
+      "batch": "ranged",
+      "combat": true,
+      "defender_damage": 0,
+      "from": "(10, 11)",
+      "known_to": [
+        0,
+        1
+      ],
+      "movement_cost": 2,
+      "ok": true,
+      "range": 2,
+      "ranged": true,
+      "result": "ranged_hit",
+      "shooter_id": 3,
+      "target_id": 6,
+      "to": "(10, 9)"
+    },
+    {
+      "action": "ranged",
+      "attacker_raw_roll": 1,
+      "attacker_score": 1,
+      "batch": "ranged",
+      "combat": true,
+      "defender_damage": 0,
+      "from": "(12, 9)",
+      "known_to": [
+        0,
+        1
+      ],
+      "movement_cost": 2,
+      "ok": true,
+      "range": 2,
+      "ranged": true,
+      "result": "ranged_destroyed",
+      "shooter_id": 2,
+      "target_id": 6,
+      "to": "(10, 9)"
+    },
+    {
+      "action": "ranged",
+      "attacker_raw_roll": 7,
+      "attacker_score": 6,
+      "batch": "ranged",
+      "combat": true,
+      "defender_damage": 5,
+      "from": "(10, 11)",
+      "known_to": [
+        0,
+        1
+      ],
+      "movement_cost": 2,
+      "ok": true,
+      "range": 2,
+      "ranged": true,
+      "result": "ranged_destroyed",
+      "shooter_id": 3,
+      "target_id": 6,
+      "to": "(10, 9)"
+    }
+  ],
+  "final_state_digest": "3d96f527942f82120fa2d7074c17ec4675f1e2ac005d25e1da65e49996ea40ef",
+  "format": "wego-formations-replay",
+  "rounds": [
+    {
+      "final_state_digest": "fc71559bf87d9a2472b0e35a8743fb9967217dbe682819fae62a75fa645c63c5",
+      "leftover_event_digest": "2d81b44627c8e6328da23c33d91b11a28d98c5f9c9da8583a4b6e618a1230234",
+      "leftover_orders": [
+        {
+          "piece_id": 5,
+          "player": 1,
+          "target": [
+            10,
+            8
+          ]
+        },
+        {
+          "piece_id": 6,
+          "player": 1,
+          "target": [
+            10,
+            7
+          ]
+        },
+        {
+          "piece_id": 7,
+          "player": 1,
+          "target": [
+            10,
+            6
+          ]
+        }
+      ],
+      "leftover_rolls": [],
+      "main_event_digest": "88bb79a489387f33ad03357e316d2a2601593e2af019d09e0f2f46af54dbfb63",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              8
+            ],
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 4,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              7
+            ]
+          ],
+          "piece_id": 5,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "piece_id": 6,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              8,
+              5
+            ],
+            [
+              9,
+              5
+            ],
+            [
+              10,
+              5
+            ]
+          ],
+          "piece_id": 7,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              12,
+              5
+            ],
+            [
+              12,
+              6
+            ],
+            [
+              11,
+              6
+            ]
+          ],
+          "piece_id": 8,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              11
+            ],
+            [
+              10,
+              10
+            ],
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 0,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              8,
+              13
+            ],
+            [
+              8,
+              12
+            ],
+            [
+              8,
+              11
+            ]
+          ],
+          "piece_id": 1,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              12,
+              13
+            ],
+            [
+              12,
+              12
+            ]
+          ],
+          "piece_id": 2,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              12
+            ],
+            [
+              10,
+              11
+            ]
+          ],
+          "piece_id": 3,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [
+        2,
+        7
+      ],
+      "main_state_digest": "38301c180c22889745b289500585df442ef4905c3b77fbd1a7b6e13ee2e3ceb4",
+      "round": 1
+    },
+    {
+      "final_state_digest": "ac59d158e75eadc0725bc18d716e925fb317816bb13777223cf82d8fbc41f6e8",
+      "leftover_event_digest": "aa60f58ec0a48edb505775fb000cbb2d3d82fda7b5f593f82a4e28ddc16d6fad",
+      "leftover_orders": [
+        {
+          "piece_id": 6,
+          "player": 1,
+          "target": [
+            10,
+            9
+          ]
+        },
+        {
+          "piece_id": 7,
+          "player": 1,
+          "target": [
+            10,
+            7
+          ]
+        },
+        {
+          "piece_id": 8,
+          "player": 1,
+          "target": [
+            10,
+            8
+          ]
+        },
+        {
+          "piece_id": 0,
+          "player": 0,
+          "target": [
+            10,
+            9
+          ]
+        }
+      ],
+      "leftover_rolls": [
+        9,
+        3
+      ],
+      "main_event_digest": "c8b9aee2960d95adfeadc95f968aaf915c04dc4cb56dc7cc59905b1c9f042e1b",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              9
+            ]
+          ],
+          "piece_id": 5,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              8
+            ]
+          ],
+          "piece_id": 6,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              9,
+              6
+            ],
+            [
+              9,
+              7
+            ]
+          ],
+          "piece_id": 7,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              11,
+              7
+            ],
+            [
+              10,
+              7
+            ]
+          ],
+          "piece_id": 8,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              8,
+              10
+            ],
+            [
+              8,
+              9
+            ]
+          ],
+          "piece_id": 1,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              12,
+              11
+            ],
+            [
+              12,
+              10
+            ]
+          ],
+          "piece_id": 2,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 3,
+          "player": 0,
+          "ranged_target": [
+            10,
+            9
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [
+        5
+      ],
+      "main_state_digest": "93b313e76a5280cb84f6bc7c08e0c1f0d5921807bf34fbbd3d29eae4a136dbbe",
+      "round": 2
+    },
+    {
+      "final_state_digest": "9d755d3a33fcac6973afb3db4a1d051343a7e7451e58eeb280a9ab65bb0b5dec",
+      "leftover_event_digest": "c0a873413ead081858d0149f918c997e2362309292c33f2d9a834520a1423523",
+      "leftover_orders": [
+        {
+          "piece_id": 7,
+          "player": 1,
+          "target": [
+            9,
+            9
+          ]
+        },
+        {
+          "piece_id": 8,
+          "player": 1,
+          "target": [
+            10,
+            9
+          ]
+        }
+      ],
+      "leftover_rolls": [],
+      "main_event_digest": "1cde605dd2b7b73214d09f0c4a5d8e5c56016f824961fb2173597b6651063664",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 6,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              8,
+              7
+            ],
+            [
+              8,
+              8
+            ],
+            [
+              8,
+              9
+            ]
+          ],
+          "piece_id": 7,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              10,
+              8
+            ]
+          ],
+          "piece_id": 8,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 1,
+          "player": 0,
+          "ranged_target": [
+            10,
+            9
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [
+            [
+              12,
+              9
+            ]
+          ],
+          "piece_id": 2,
+          "player": 0,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 3,
+          "player": 0,
+          "ranged_target": [
+            10,
+            9
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [
+        4,
+        4,
+        1
+      ],
+      "main_state_digest": "ff8f1cd67a060cc868534f40f12b2e70b65983ceb6e053699502c49c3173d1d2",
+      "round": 3
+    },
+    {
+      "final_state_digest": "3d96f527942f82120fa2d7074c17ec4675f1e2ac005d25e1da65e49996ea40ef",
+      "leftover_event_digest": "554325aef0147601a0018d600cf492211c3488f5844363b766e5120ab29fdd8a",
+      "leftover_orders": [
+        {
+          "piece_id": 7,
+          "player": 1,
+          "target": [
+            10,
+            9
+          ]
+        }
+      ],
+      "leftover_rolls": [],
+      "main_event_digest": "aedb84605212ccd21bcf25b316821a77616bf1f49d94c663fb6f6322b77eaf93",
+      "main_orders": [
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 6,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 7,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 8,
+          "player": 1,
+          "ranged_target": [
+            -1,
+            -1
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 2,
+          "player": 0,
+          "ranged_target": [
+            10,
+            9
+          ],
+          "ranged_target_id": -1
+        },
+        {
+          "leftover": [
+            -1,
+            -1
+          ],
+          "path": [],
+          "piece_id": 3,
+          "player": 0,
+          "ranged_target": [
+            10,
+            9
+          ],
+          "ranged_target_id": -1
+        }
+      ],
+      "main_rolls": [
+        1,
+        7
+      ],
+      "main_state_digest": "a7e99232ac3771e531f04842936e56025cf121eecb475084b832a30972e54e43",
+      "round": 4
+    }
+  ],
+  "setup": {
+    "bridge_attacker": 0,
+    "bridge_defender": 1,
+    "bridge_strength_target": 20,
+    "bridge_turn_limit": 20,
+    "campaign_battle": {
+      "armies": {
+        "blue": [
+          {
+            "at": [
+              10,
+              12
+            ],
+            "name": "Errant",
+            "strength": 6,
+            "type": "LC"
+          },
+          {
+            "at": [
+              9,
+              13
+            ],
+            "name": "Quill",
+            "strength": 5,
+            "type": "LA"
+          },
+          {
+            "at": [
+              11,
+              13
+            ],
+            "name": "Vellum",
+            "strength": 6,
+            "type": "MA"
+          },
+          {
+            "at": [
+              10,
+              13
+            ],
+            "name": "Ledger",
+            "strength": 6,
+            "type": "MA"
+          }
+        ],
+        "red": [
+          {
+            "at": [
+              10,
+              7
+            ],
+            "name": "Distress",
+            "strength": 2,
+            "type": "LI"
+          },
+          {
+            "at": [
+              10,
+              6
+            ],
+            "name": "Cess",
+            "strength": 5,
+            "type": "LI"
+          },
+          {
+            "at": [
+              10,
+              4
+            ],
+            "name": "Writ",
+            "strength": 7,
+            "type": "MC"
+          },
+          {
+            "at": [
+              8,
+              4
+            ],
+            "name": "Chattel",
+            "strength": 6,
+            "type": "LC"
+          },
+          {
+            "at": [
+              12,
+              4
+            ],
+            "name": "Forfeit",
+            "strength": 6,
+            "type": "LI"
+          }
+        ]
+      },
+      "briefing": [
+        "The Weirgate broke Vare's host, and Halgate marched north to take back what the raid stole. Cassewick still flies Vare colours — a thin garrison on the burned granary, Distress among them, the raider that won the town.",
+        "You will reach it before they can reinforce it. But not by much: a relief column is already riding hard from the east, and whoever holds the yard when it is done keeps the town.",
+        "You sent the Charter Company, rebuilt around its bows. Take the yard fast, off the garrison, and hold it three rounds through whatever the relief throws at it.",
+        "This is your offensive. Slowness is the enemy now, not the friend it was on the causeway."
+      ],
+      "name": "Battle 6 — Cassewick Again",
+      "objective": {
+        "kind": "hold",
+        "rounds": 3,
+        "square": [
+          10,
+          9
+        ]
+      },
+      "private_battle_results": true,
+      "terrain": {
+        "water": [
+          [
+            9,
+            8
+          ],
+          [
+            11,
+            8
+          ],
+          [
+            9,
+            10
+          ],
+          [
+            11,
+            10
+          ]
+        ]
+      },
+      "turn_limit": 14
+    },
+    "cavalry_always_leftover": true,
+    "deployment": {
+
+    },
+    "meeting_hold_rounds": 3,
+    "meeting_turn_limit": 20,
+    "player_count": 2,
+    "private_battle_results": true,
+    "scenario": "campaign",
+    "seed": 0,
+    "skirmish_separation": 3,
+    "skirmish_turn_limit": 40,
+    "teams": [
+      [
+        1,
+        1
+      ],
+      [
+        0,
+        0
+      ]
+    ],
+    "vision_range": 4
+  },
+  "terminal": {
+    "end_reason": "held_objective",
+    "game_over": true,
+    "winner": 1,
+    "withdrawal_player": -1
+  },
+  "version": 3
+}

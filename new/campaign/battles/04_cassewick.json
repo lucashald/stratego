@@ -1,0 +1,38 @@
+{
+  "name": "Battle 4 — Cassewick",
+  "briefing": [
+    "Vare's vanguard crossed into Halgate's sphere ahead of the host and rode for Cassewick, the granary town on the road to the city.",
+    "The town is a cluster of stone warehouses around a central yard. Hold the yard and the stores are yours; lose it and Vare burns the winter.",
+    "You chose the Charter Company to match their speed. Get to the yard, take it, and hold it three rounds before the raiders can.",
+    "They started closer. You are not slower. Make that enough."
+  ],
+  "turn_limit": 16,
+  "private_battle_results": true,
+  "terrain": {
+    "water": [
+      [9, 8], [11, 8], [9, 10], [11, 10]
+    ]
+  },
+  "objective": {
+    "kind": "hold",
+    "square": [10, 9],
+    "rounds": 3
+  },
+  "armies": {
+    "blue": [
+      { "name": "Argent",  "type": "MC", "at": [10, 14], "strength": 7 },
+      { "name": "Errant",  "type": "LC", "at": [8, 14],  "strength": 6 },
+      { "name": "Ferrule", "type": "LI", "at": [12, 14], "strength": 6 },
+      { "name": "Ingot",   "type": "LI", "at": [9, 15],  "strength": 5 },
+      { "name": "Quill",   "type": "LA", "at": [11, 15], "strength": 5 },
+      { "name": "Vellum",  "type": "MA", "at": [10, 15], "strength": 6 }
+    ],
+    "red": [
+      { "name": "Escheat",  "type": "MC", "at": [10, 4], "strength": 7 },
+      { "name": "Warrant",  "type": "LC", "at": [8, 4],  "strength": 6 },
+      { "name": "Distress", "type": "LI", "at": [12, 4], "strength": 6 },
+      { "name": "Summons",  "type": "LI", "at": [9, 5],  "strength": 6 },
+      { "name": "Quarrel",  "type": "LA", "at": [11, 5], "strength": 5 }
+    ]
+  }
+}

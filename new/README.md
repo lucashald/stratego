@@ -19,17 +19,17 @@ During planning:
 5. The top-level **Cancel All Orders** button removes every Blue order; the same action remains available as **Clear Orders** in Settings. **Undo** or `Ctrl+Z` restores the previous complete order state, including movement, ranged, group, and cancel-all changes.
 6. Choose **End Planning** when planning is complete.
 
-Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
+Use the mouse wheel or the `+`/`-` controls to zoom the battlefield. Middle-drag pans the map, clicking or dragging on the minimap centres the main battlefield on that location, and **Fit** restores the default view. Zoom and pan remain available during battle resolution.
 
 The contextual movement-help panel can be dismissed with its **X** button. Dismissing it also hides the selected-formations inspector and Move Selection pad. Use **Help** beside the zoom controls to restore the contextual panels together.
 
-Resolution is presented event-by-event on the battlefield. In a human game, every combat, retreat, and bounce remains on screen until **Next** is clicked. **Order Leftover** on the final main-resolution event opens a dedicated **Leftover Movement** order phase after ranged attacks. Select one or more eligible formations, choose one direction, and then click **End Leftover**. Exhausted selections are skipped. The simultaneous leftover moves and any resulting battles then receive their own click-through review; **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card shows the revealed formations, rolls, final scores, damage, remaining Strength, and result. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, ranged attacks, and leftover movement.
+Resolution is presented event-by-event on the battlefield. In a human game, every combat, consequential retreat, and opposing-side tie remains on screen until **Next** is clicked; harmless friendly congestion is applied without adding a click-through card. **Order Leftover** on the final main-resolution event opens a dedicated **Leftover Movement** order phase after ranged attacks. Select one or more eligible formations, choose one direction, and then click **End Leftover**. Exhausted selections are skipped. The simultaneous leftover moves and any resulting battles then receive their own click-through review; **Next Round** after that review starts the next round. First, Previous, and Last allow review without dismissing the sequence. Four-bot spectator battles still advance automatically. The active-battle card shows the revealed formations, rolls, final scores, damage, remaining Strength, and result. The phase banner shows the current event number, and the bottom timeline tracks impulses, battles, retreats, ranged attacks, and leftover movement.
 
-The game rejects orders from one player that would make friendly formations occupy or swap through the same empty square on the same impulse. During reposition, one or more formations may instead move into a square held by a stationary friendly formation: an enemy arrival makes everyone there part of one multiway battle, while no enemy arrival produces a harmless friendly bounce. Multiple friendly attackers may also converge on a known enemy for a multiway battle. Hidden orders from a separately controlled ally can collide during resolution; those formations bounce without combat and are done for the round.
+The game rejects orders from one player that would make friendly formations occupy or swap through the same empty square on the same impulse. During reposition, one or more formations may instead move into a square held by a stationary friendly formation: an enemy arrival makes everyone there part of one multiway battle, while no enemy arrival produces harmless congestion. Multiple friendly attackers may also converge on a known enemy for a multiway battle. Hidden orders from a separately controlled ally can collide during resolution; those formations return to their previous squares without a round-status penalty.
 
 **Withdraw** is available during planning. It immediately concedes the scenario while preserving every surviving formation at its current Strength. It does not revive destroyed units. There is no automatic material-collapse rule yet.
 
-**Export Replay** is available between rounds and after battle. It writes a timestamped JSON file under the game's `user://replays/` folder and updates the **Replay Last** slot. The versioned file records scenario setup, seed, orders from both order phases, the exact dice stream, and verification digests. **Replay Last** rebuilds the match through the authoritative engine, rejects any divergence, and then lets you click through every recorded battle, retreat, and bounce before showing the reproduced final battlefield.
+**Export Replay** is available between rounds and after battle. It writes a timestamped JSON file to `C:\stratego\replays` and updates `replays/last_replay.json` for the **Replay Last** slot. The versioned file records scenario setup, seed, orders from both order phases, the exact dice stream, and verification digests. **Replay Last** rebuilds the match through the authoritative engine, rejects any divergence, and then lets you click through every consequential recorded result before showing the reproduced final battlefield.
 
 ## Round sequence
 
@@ -39,7 +39,7 @@ The game rejects orders from one player that would make friendly formations occu
 4. The game pauses for new orders, then eligible units may make a simultaneous leftover move of at most one square.
 5. Victory is checked at the end of the round.
 
-Winning the main melee stops the unit's remaining main path, but it may still shoot during the ranged phase or use its one-square leftover move if it has movement available. Losing or bouncing ends the unit's actions for the round. This permits at most one main-path melee and one intentional leftover melee.
+Winning the main melee stops the unit's remaining main path, but it may still shoot during the ranged phase or use its one-square leftover move if it has movement available. Losing, or tying for the highest score with an opposing side, ends the unit's actions for the round. Friendly congestion and returning as a friendly non-winner carry no separate status penalty. This permits at most one main-path melee and one intentional leftover melee.
 
 ## Combat
 
@@ -51,9 +51,9 @@ Every participant rolls a d10 capped by current Strength.
 - Each formation takes damage from the highest opposing battle score, reduced by Armor.
 - A unique highest scorer wins the square. Its Armor is doubled for that combat: Light 0, Medium 2, Heavy 4.
 - A natural 10 adds one damage after Armor and always chips.
-- A score tie is a bounce, not a defender win or a loss. Bounced formations return to their previous squares, receive no winner benefit, and are done for the round.
+- A highest-score tie across opposing sides is a bounce. Every surviving participant returns to its previous square and is done for the round.
 
-Multiway battles allow several attackers, including several formations from one side. Opposing losers retreat. Friendly non-winning attackers bounce. If same-side formations tie for the highest score while beating the enemy, the enemy retreats, the tied friendly leaders bounce, and the contested square is left empty. If opposing sides tie for the highest score, there is no unique winner and the tied leaders bounce.
+Multiway battles allow several attackers, including several formations from one side. Opposing losers retreat. Friendly non-winning attackers return without a status penalty. If same-side formations tie for the highest score while beating the enemy, their side still wins: the enemy retreats, the tied friendly leaders return, and the contested square is left empty. If opposing sides tie for the highest score, there is no winning side; every surviving participant returns and is done for the round.
 
 Retreat destinations are evaluated after every battle in the batch. Off-board, water, lake, or occupied retreat destinations destroy the loser. Enemy retreats entering the same previously empty square fight a retreat battle with no posture or role bonuses; the loser is destroyed and a tie destroys both, with no further retreat.
 

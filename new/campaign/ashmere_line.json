@@ -1,0 +1,37 @@
+{
+  "campaign": "The Ashmere Line",
+  "commander": "Blue",
+  "status": "FALLEN — the Ashmere Line was annihilated on the Fen Road, Battle 3. Blue has no formations left. The campaign continues, but not as Blue.",
+  "battle_number": 3,
+  "phase": "The Line is destroyed. Awaiting the commander's choice of which power takes up the war against Vare.",
+  "supply": 0,
+  "notes": "Strength values were current, not maximum. A formation that dies is struck from formations and moved to fallen. Every Ashmere formation is now fallen. This file is closed as a record of the Line that held the frontier and broke; a new faction gets its own roster when chosen.",
+  "post_mortem": {
+    "recruitment_economy": "The rebuild after a WON battle (Ashweir Bridge) allowed only a single Strength-4 Medium Cavalry. That was too stingy — a victory that leaves you unable to field a viable force is a punishment for winning, and it set up the Fen Road with two formations against four. Going forward: supply from a won battle must fund a real army, not a scavenged remnant. See design_log.md.",
+    "fen_road_scenario": "The Fen Road as built was not winnable — two formations, one of them slow, caught in the open by four fast pursuers with no standoff distance and no chokepoint to make them fight one at a time. It was a design failure, and per the commander it stands as a real defeat anyway. No do-over."
+  },
+  "rules": {
+    "permanent_death": "A destroyed formation is struck from formations and moved to fallen. It does not return. Absolute, and now proven all the way to the end of a roster.",
+    "veteran_reroll": "A formation that survived a battle in which it fought and mattered may earn Veteran status: one reroll per battle, GM-applied. Died unused with Stonewatch — she never got a fight on the Fen Road where refusing a die would have saved her.",
+    "recruitment_economy": "Supply between battles must scale to the outcome and the losses, so that a costly win still fields a viable force next time. The one-S4-unit rebuild was the counter-example that set this rule."
+  },
+  "formations": [],
+  "fallen": [
+    { "name": "Kestrel", "type": "LA", "battle": "Battle 1 — The Toll Road", "detail": "Lost a duel with Tally over the crossing." },
+    { "name": "Ferrant", "type": "MC", "battle": "Battle 1 — The Toll Road", "detail": "Fought four engagements in one battle and only broke on the fourth, caught between two enemies at once. Some of her riders got clear. They rode again as Ember, and died on the Fen Road — see below. The thread is closed now." },
+    { "name": "Ash", "type": "LC", "battle": "Battle 1 — The Toll Road", "detail": "Lost the three-way scrum for the crossing to Coin." },
+    { "name": "Harrow", "type": "MA", "battle": "Battle 2 — Ashweir Bridge", "detail": "The deadliest formation Ashmere fielded, across two battles. Killed nearly the whole Vare muster at the bridge with Wren, then was ridden down by Outrider. Ember killed Outrider on the Fen Road one battle later — Harrow's account, settled by Ferrant's riders." },
+    { "name": "Wren", "type": "LA", "battle": "Battle 2 — Ashweir Bridge", "detail": "The recruit taken over cavalry. Killed three Vare formations on the first day she ever fought, and justified the whole choice before Siegewright's return shot killed her." },
+    { "name": "Oakhand", "type": "HI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Won a straight fight against Gatewright at the Toll Road; traded itself square for square with Vare's Levy at the bridge, both banners down together." },
+    { "name": "Coldbrook", "type": "LI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Two battles without a wound at the Toll Road; cut down by Siegewright holding the bridge mouth at Ashweir." },
+    { "name": "Marrow", "type": "MI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Got clear of the Toll Road beside Ferrant; shot off the bank early at Ashweir before the lines closed." },
+    { "name": "Thistle", "type": "MI", "battle": "Battle 2 — Ashweir Bridge", "detail": "Killed the Toll-taker and beat Scrip back to back at the Toll Road; gone to one of Tithe's arrows at Ashweir before the melee began." },
+    { "name": "Stonewatch", "type": "HI", "battle": "Battle 3 — The Fen Road", "detail": "Held Ashweir Bridge alone, the sole survivor of a won battle, and earned Veteran status for it. Never got the fight on the Fen Road where the reroll could have mattered — caught in the open by fast cavalry with nowhere to make a wall of herself, worn down by Distraint's charges and destroyed with her in a bounce. Three battles: never engaged, then held a bridge alone, then died covering a retreat that had nowhere to retreat to. The last formation of the Ashmere Line." },
+    { "name": "Ember", "type": "MC", "battle": "Battle 3 — The Fen Road", "detail": "Ferrant's remounted riders, one battle old. Died killing Outrider — the man who killed Harrow at the bridge — taking him down with her in the same exchange. Reformed to close a thread, and closed it with their last act. The Ferrant line ends here, having twice been the last thing between an enemy and someone slower, and having twice paid for it." }
+  ],
+  "enemy_threads": [
+    { "name": "Bulwark", "type": "HI", "faction": "Vare", "detail": "A Vare Heavy that never struck a blow at Ashweir and carried word of two defeats home. Whatever Vare has become since the Line fell, Bulwark saw it start." },
+    { "name": "Warrant", "type": "LC", "faction": "Vare", "detail": "Survived the Fen Road. One of the two riders that ran the last of Ashmere into the ground." },
+    { "name": "Quarrel", "type": "LA", "faction": "Vare", "detail": "Survived the Fen Road. The bow Ashmere had no answer to, still on the field." }
+  ]
+}

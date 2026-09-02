@@ -38,7 +38,10 @@ static func load_file(path: String) -> Dictionary:
 ## campaign follow one formation across several battles.
 static func apply(game: StrategoGame, data: Dictionary) -> Dictionary:
 	game.setup_empty()
-	game.scenario = StrategoGame.SCENARIO_SKIRMISH
+	game.scenario = StrategoGame.SCENARIO_CAMPAIGN
+	# Kept verbatim so a replay reconstructs this exact battle - army, ground
+	# and objective - rather than a generic scenario standing in for it.
+	game.campaign_battle_data = data.duplicate(true)
 	game.configured_player_count = 2
 	game.private_battle_results = bool(data.get("private_battle_results", true))
 	game.player_teams[StrategoGame.BLUE] = StrategoGame.BLUE
@@ -125,3 +128,55 @@ static func _vector(value: Variant) -> Vector2i:
 	if value is Array and value.size() >= 2:
 		return Vector2i(int(value[0]), int(value[1]))
 	return Vector2i(-1, -1)
+
+
+## Everything a debrief needs, in one file, written the moment the battle ends.
+## Built from data the engine already computed - game.battle_history carries
+## every combat with a spelled-out outcome per participant - so this is
+## annotation, not reconstruction: piece ids become the names the scenario
+## gave them, and nothing here requires replaying the match to recover.
+static func build_battle_report(game: StrategoGame, piece_ids: Dictionary) -> Dictionary:
+	var name_by_id: Dictionary = {}
+	for formation_name in piece_ids:
+		name_by_id[int(piece_ids[formation_name])] = formation_name
+
+	var roster: Array = []
+	for id in name_by_id:
+		var piece: Dictionary = game.pieces[id]
+		roster.append({
+			"name": name_by_id[id], "side": "blue" if int(piece.player) == StrategoGame.BLUE else "red",
+			"type": String(piece.type), "alive": bool(piece.alive),
+			"strength": int(piece.strength), "max_strength": int(piece.max_strength),
+		})
+
+	var combat: Array = []
+	for event in game.battle_history:
+		var entry := {"action": String(event.get("action", "")), "result": String(event.get("result", ""))}
+		if event.has("participants"):
+			var outcomes: Dictionary = event.get("outcomes", {})
+			var participants: Array = []
+			for id in event.participants:
+				participants.append({
+					"name": name_by_id.get(int(id), "formation %d" % int(id)),
+					"outcome": String(outcomes.get(int(id), outcomes.get(str(int(id)), ""))),
+				})
+			entry["participants"] = participants
+			if int(event.get("winner_id", -1)) >= 0:
+				entry["winner"] = name_by_id.get(int(event.winner_id), "")
+		if event.has("shooter_id"):
+			entry["shooter"] = name_by_id.get(int(event.shooter_id), "")
+			entry["target"] = name_by_id.get(int(event.get("target_id", -1)), "")
+			entry["damage"] = int(event.get("defender_damage", 0))
+		if event.has("piece_id") and not event.has("shooter_id"):
+			entry["formation"] = name_by_id.get(int(event.piece_id), "")
+		combat.append(entry)
+
+	return {
+		"name": String(game.campaign_battle_data.get("name", "Battle")),
+		"outcome": {
+			"game_over": game.game_over, "winner": "draw" if game.winner == StrategoGame.DRAW else ("blue" if game.winner == StrategoGame.BLUE else "red"),
+			"reason": game.end_reason, "rounds": game.round_number,
+		},
+		"roster": roster,
+		"combat_log": combat,
+	}
