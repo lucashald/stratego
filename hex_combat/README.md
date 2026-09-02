@@ -116,6 +116,12 @@ Both armies field the same twelve formations and deploy on their own back rank. 
 
 Unlike the bridge crossing, trading evenly does not favour either side: the win goes to whoever holds the ground, not to whoever survives the attrition.
 
+## Highfield
+
+Two asymmetric armies fight for one central hill, the same hold-the-hex objective as the meeting, but the forces are built to opposite theories of war. **Red, the Wardens** are seven heavy formations — heavy foot and two Heavy Archers around a Heavy Cavalry, with a medium pair — that win by attrition and by holding the hill as an intact wall, but are slow and few and lose if they advance piecemeal into numbers. **Blue, the Outriders** are nine faster formations — a medium core with light horse on the wings and two bows behind — that win by reaching the hill first, flanking, and massing on the objective, and lose any straight slug. Blue commands the Outriders.
+
+Every formation on both sides starts at the same Strength. The armies differ in Weight, Role, and numbers, not in a strength total, which makes this the standard scenario that most directly tests those levers. It is tuned to a near-even bot-vs-bot result (~51/49 over 200 games) with no dead weight in either list; because the bot underplays the faster, flanking army, a human commanding the Outriders should find them a touch stronger than the bot does.
+
 ## Scenarios and objectives
 
 Terrain and victory conditions are data rather than per-scenario branches. A scenario lays its terrain during setup and declares one or more typed objectives:

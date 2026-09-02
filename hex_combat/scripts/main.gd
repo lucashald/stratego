@@ -1123,7 +1123,7 @@ func _build_settings_drawer() -> void:
 	game_buttons.add_theme_constant_override("h_separation", 6)
 	game_buttons.add_theme_constant_override("v_separation", 6)
 	box.add_child(game_buttons)
-	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["NEW CROSSROADS", Callable(self, "start_crossroads_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")], ["CAMPAIGN BATTLE", Callable(self, "start_campaign_battle")]]:
+	for definition in [["NEW BRIDGE", Callable(self, "start_bridge_game")], ["NEW MEETING", Callable(self, "start_meeting_game")], ["NEW HIGHFIELD", Callable(self, "start_highfield_game")], ["NEW 4-PLAYER", Callable(self, "start_four_player_game")], ["NEW CROSSROADS", Callable(self, "start_crossroads_game")], ["WATCH 4 BOTS", Callable(self, "start_spectator_game")], ["CAMPAIGN BATTLE", Callable(self, "start_campaign_battle")]]:
 		var button := _make_button(String(definition[0]), 145)
 		button.pressed.connect(definition[1])
 		game_buttons.add_child(button)
@@ -1319,6 +1319,22 @@ func start_meeting_game() -> void:
 	_clear_logs()
 	_log_line("Meeting engagement started. You command Blue.", true)
 	_log_line("Both armies are identical and deploy on their own back rank. Hold the centre hex alone at the end of %d rounds in a row to win; if neither side does by round 20 the battle is a draw." % StrategoGame.DEFAULT_HOLD_ROUNDS)
+	settings_drawer.visible = false
+	_update_interface()
+
+
+func start_highfield_game() -> void:
+	session_id += 1
+	resolution_mode = false
+	spectator_mode = false
+	replay_view_mode = false
+	selected_scenario = StrategoGame.SCENARIO_HIGHFIELD
+	game = StrategoGame.new()
+	game.setup_highfield(rng.randi(), StrategoGame.DEFAULT_HOLD_ROUNDS, 18, privacy_toggle.button_pressed)
+	_configure_board(false)
+	_clear_logs()
+	_log_line("Highfield started. You command Blue, the Outriders.", true)
+	_log_line("Two armies built to opposite theories of war fight for the central hill. Yours is faster and two bodies stronger; the Wardens are heavier and win any straight fight. Hold the hill alone at the end of %d rounds in a row to win; a draw if neither side does by round 18." % StrategoGame.DEFAULT_HOLD_ROUNDS)
 	settings_drawer.visible = false
 	_update_interface()
 

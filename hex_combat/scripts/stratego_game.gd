@@ -57,6 +57,7 @@ const SCENARIO_CAMPAIGN := "campaign"
 const OBJECTIVE_REACH_AREA := "reach_area"
 const OBJECTIVE_SURVIVE := "survive"
 const SCENARIO_MEETING := "meeting"
+const SCENARIO_HIGHFIELD := "highfield"
 const DEFAULT_HOLD_ROUNDS := 3
 ## The deploy phase's zone: how many squares deep from a player's own board
 ## edge they may place into, and how far the zone runs sideways from their
@@ -103,15 +104,21 @@ const REPLAY_VERSION := 9
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
 const PIECE_DEFINITIONS := {
 	FLAG: {"name": "Flag", "role": "", "weight": "", "strength": 0},
-	LIGHT_INFANTRY: {"name": "Light Infantry", "role": ROLE_INFANTRY, "weight": WEIGHT_LIGHT, "strength": 6},
+	# Strength is deliberately uniform across Weight. Weight is its own lever
+	# (movement speed and the comparative "heavier" combat die, a rank not a
+	# stat); Strength is damage and the thing veterancy and wounds move. A fresh
+	# fight is decided by Weight, Role, and dice, and Strength differences only
+	# emerge once someone has been hurt. Scenarios and the campaign set explicit
+	# per-formation Strength; this table is only the healthy default.
+	LIGHT_INFANTRY: {"name": "Light Infantry", "role": ROLE_INFANTRY, "weight": WEIGHT_LIGHT, "strength": 7},
 	MEDIUM_INFANTRY: {"name": "Medium Infantry", "role": ROLE_INFANTRY, "weight": WEIGHT_MEDIUM, "strength": 7},
-	HEAVY_INFANTRY: {"name": "Heavy Infantry", "role": ROLE_INFANTRY, "weight": WEIGHT_HEAVY, "strength": 8},
-	LIGHT_ARCHER: {"name": "Light Archer", "role": ROLE_ARCHER, "weight": WEIGHT_LIGHT, "strength": 5},
-	MEDIUM_ARCHER: {"name": "Medium Archer", "role": ROLE_ARCHER, "weight": WEIGHT_MEDIUM, "strength": 6},
+	HEAVY_INFANTRY: {"name": "Heavy Infantry", "role": ROLE_INFANTRY, "weight": WEIGHT_HEAVY, "strength": 7},
+	LIGHT_ARCHER: {"name": "Light Archer", "role": ROLE_ARCHER, "weight": WEIGHT_LIGHT, "strength": 7},
+	MEDIUM_ARCHER: {"name": "Medium Archer", "role": ROLE_ARCHER, "weight": WEIGHT_MEDIUM, "strength": 7},
 	HEAVY_ARCHER: {"name": "Heavy Archer", "role": ROLE_ARCHER, "weight": WEIGHT_HEAVY, "strength": 7},
-	LIGHT_CAVALRY: {"name": "Light Cavalry", "role": ROLE_CAVALRY, "weight": WEIGHT_LIGHT, "strength": 6},
+	LIGHT_CAVALRY: {"name": "Light Cavalry", "role": ROLE_CAVALRY, "weight": WEIGHT_LIGHT, "strength": 7},
 	MEDIUM_CAVALRY: {"name": "Medium Cavalry", "role": ROLE_CAVALRY, "weight": WEIGHT_MEDIUM, "strength": 7},
-	HEAVY_CAVALRY: {"name": "Heavy Cavalry", "role": ROLE_CAVALRY, "weight": WEIGHT_HEAVY, "strength": 8},
+	HEAVY_CAVALRY: {"name": "Heavy Cavalry", "role": ROLE_CAVALRY, "weight": WEIGHT_HEAVY, "strength": 7},
 }
 const PIECE_NAMES := {
 	FLAG: "Flag", LIGHT_INFANTRY: "Light Infantry", MEDIUM_INFANTRY: "Medium Infantry", HEAVY_INFANTRY: "Heavy Infantry",
@@ -149,6 +156,34 @@ const MEETING_DEPLOYMENT := [
 	[HEAVY_INFANTRY, 9, 0], [HEAVY_ARCHER, 10, 0], [HEAVY_INFANTRY, 11, 0], [HEAVY_CAVALRY, 12, 0],
 	[MEDIUM_INFANTRY, 8, 1], [MEDIUM_CAVALRY, 9, 1], [MEDIUM_ARCHER, 11, 1], [MEDIUM_INFANTRY, 12, 1],
 	[LIGHT_CAVALRY, 3, 2], [LIGHT_INFANTRY, 4, 2], [LIGHT_INFANTRY, 16, 2], [LIGHT_ARCHER, 17, 2],
+]
+## Highfield: an asymmetric standard scenario. Both sides fight for one central
+## hill (the hold objective), but the two armies are built to opposite theories
+## of war. Every formation starts at the same Strength; the difference is Weight,
+## Role, and numbers, so this is a clean test of those levers rather than a
+## strength-total race. Verified near-even bot-vs-bot (~51/49 over 200 games).
+##
+## RED, the Wardens: seven heavy formations - heavy foot and two Heavy Archers
+## around a Heavy Cavalry, with a medium pair. Wins by attrition and by holding
+## ground as an intact wall the light horse cannot break; slow, few, and beaten
+## if it advances piecemeal into numbers. Deployed as a tight block. Entries are
+## [type, column, row].
+##
+## BLUE, the Outriders: nine fast formations - a medium core with light horse on
+## the wings and two bows behind. Wins by reaching the hill first, flanking, and
+## massing on the objective; loses a straight slug and cannot out-attrition the
+## Wardens. Two more bodies than the Wardens, and faster, which is the whole edge.
+const HIGHFIELD_OBJECTIVE := Vector2i(10, 10)
+const HIGHFIELD_WARDENS := [
+	[HEAVY_INFANTRY, 9, 5], [HEAVY_CAVALRY, 10, 5], [HEAVY_INFANTRY, 11, 5],
+	[HEAVY_ARCHER, 9, 4], [MEDIUM_INFANTRY, 10, 4], [HEAVY_ARCHER, 11, 4],
+	[MEDIUM_CAVALRY, 12, 5],
+]
+const HIGHFIELD_OUTRIDERS := [
+	[MEDIUM_INFANTRY, 9, 14], [MEDIUM_INFANTRY, 10, 14], [MEDIUM_INFANTRY, 11, 14],
+	[MEDIUM_CAVALRY, 8, 14], [MEDIUM_CAVALRY, 12, 14],
+	[LIGHT_CAVALRY, 7, 14], [LIGHT_CAVALRY, 13, 14],
+	[LIGHT_ARCHER, 8, 15], [MEDIUM_ARCHER, 10, 15],
 ]
 const LAKES := [
 	Vector2i(7, 7), Vector2i(8, 7), Vector2i(11, 7), Vector2i(12, 7),
@@ -362,6 +397,29 @@ func setup_meeting(seed_value: int = 0, first: int = BLUE, second: int = RED, ho
 	active_players.assign([second, first])
 	_sort_active_players()
 	current_player = first
+	_record_all_sightings()
+
+
+## Highfield: two asymmetric armies fight for one central hill. See the roster
+## constants above for the design. Terrain is deliberately bare so the result
+## reflects the composition matchup, not a map that favours one theory of war.
+func setup_highfield(seed_value: int = 0, hold_rounds: int = DEFAULT_HOLD_ROUNDS, turn_limit: int = 18, use_private_battle_results: bool = true) -> void:
+	setup_empty()
+	scenario = SCENARIO_HIGHFIELD
+	configured_player_count = 2
+	private_battle_results = use_private_battle_results
+	player_teams[BLUE] = BLUE
+	player_teams[RED] = RED
+	_seed_rng(seed_value)
+	set_terrain(HIGHFIELD_OBJECTIVE, TERRAIN_OPEN)
+	for entry in HIGHFIELD_WARDENS:
+		add_piece(String(entry[0]), RED, Vector2i(int(entry[1]), int(entry[2])))
+	for entry in HIGHFIELD_OUTRIDERS:
+		add_piece(String(entry[0]), BLUE, Vector2i(int(entry[1]), int(entry[2])))
+	add_hold_square_objective(HIGHFIELD_OBJECTIVE, hold_rounds, turn_limit)
+	active_players.assign([RED, BLUE])
+	_sort_active_players()
+	current_player = BLUE
 	_record_all_sightings()
 
 

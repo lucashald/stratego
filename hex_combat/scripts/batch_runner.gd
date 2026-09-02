@@ -199,7 +199,8 @@ var _melee_shapes: Dictionary = {}
 
 func _play_one(seed_value: int, totals: Dictionary) -> String:
 	var game := StrategoGame.new()
-	if scenario == StrategoGame.SCENARIO_MEETING: game.setup_meeting(seed_value)
+	if scenario == StrategoGame.SCENARIO_HIGHFIELD: game.setup_highfield(seed_value)
+	elif scenario == StrategoGame.SCENARIO_MEETING: game.setup_meeting(seed_value)
 	elif scenario == "meeting_inverted": _setup_meeting_inverted(game)
 	elif scenario == "meeting_heavycav": _setup_meeting_heavy_cavalry(game)
 	elif scenario == StrategoGame.SCENARIO_SKIRMISH: game.setup_skirmish(seed_value, blue_roster, red_roster, separation)

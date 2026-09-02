@@ -49,6 +49,7 @@ func _run() -> void:
 	_test_bridge_end_of_round_victory()
 	_test_withdrawal_preserves_survivors_and_no_collapse()
 	_test_meeting_engagement_hold_objective()
+	_test_highfield_setup()
 	_test_deterministic_replay_export()
 	_test_in_progress_replay_export()
 	_test_deployment_zone_and_recommended_formation()
@@ -196,7 +197,7 @@ func _test_bridge_setup() -> void:
 	var game := StrategoGame.new()
 	game.setup_bridge(12345)
 	_expect(game.scenario == StrategoGame.SCENARIO_BRIDGE, "bridge setup selects the bridge scenario")
-	_expect(game.total_strength(game.bridge_attacker) == 82 and game.total_strength(game.bridge_defender) == 82, "bridge armies begin at equal 82 current Strength")
+	_expect(game.total_strength(game.bridge_attacker) == 84 and game.total_strength(game.bridge_defender) == 84, "bridge armies begin at equal 84 current Strength")
 	var attacker_legal := true
 	var defender_legal := true
 	for piece: Dictionary in game.pieces:
@@ -214,7 +215,7 @@ func _test_four_player_fog_framework() -> void:
 	game.setup_random(99, 4)
 	_expect(game.active_players == [StrategoGame.RED, StrategoGame.GREEN, StrategoGame.BLUE, StrategoGame.YELLOW], "four-player color order is preserved")
 	for player in game.active_players:
-		_expect(game.count_alive(player) == 13 and game.total_strength(player) == 80, "%s retains the prototype army under WEGO" % game.player_name(player))
+		_expect(game.count_alive(player) == 13 and game.total_strength(player) == 84, "%s retains the prototype army under WEGO" % game.player_name(player))
 	var red_piece := game.find_alive_piece(StrategoGame.RED, StrategoGame.LIGHT_INFANTRY)
 	_expect(not game.is_piece_visible_to(red_piece, StrategoGame.BLUE), "four-square fog still hides distant enemy formations")
 	_expect(game.private_battle_results, "private battle information remains enabled")
@@ -1286,6 +1287,29 @@ func _test_bridge_end_of_round_victory() -> void:
 
 ## Holding the centre must be consecutive: losing it for a single round sends
 ## the streak back to zero, and a contested objective at the limit is a draw.
+func _test_highfield_setup() -> void:
+	var game := StrategoGame.new()
+	game.setup_highfield(7)
+	_expect(game.scenario == StrategoGame.SCENARIO_HIGHFIELD, "highfield loads its own scenario")
+	_expect(game.objectives.size() == 1 and game.objectives[0].square == Vector2i(10, 10), "the highfield objective is the central hill")
+	var reds: Array = []
+	var blues: Array = []
+	var red_lights := 0
+	for piece: Dictionary in game.pieces:
+		if int(piece.player) == StrategoGame.RED:
+			reds.append(int(piece.position.y))
+			if String(piece.weight) == StrategoGame.WEIGHT_LIGHT: red_lights += 1
+		else:
+			blues.append(int(piece.position.y))
+	_expect(reds.size() == 7 and blues.size() == 9, "the Wardens field seven formations against nine Outriders")
+	_expect(red_lights == 0, "the Wardens carry no light formations - the heavy army")
+	reds.sort()
+	blues.sort()
+	_expect(reds.max() < 10 and blues.min() > 10, "the two armies deploy on opposite sides of the hill")
+	# Weight and Strength are decoupled: every fresh formation starts equal.
+	_expect(game.total_strength(StrategoGame.RED) == 49 and game.total_strength(StrategoGame.BLUE) == 63, "uniform Strength makes the asymmetry one of Weight and numbers, not a strength race")
+
+
 func _test_meeting_engagement_hold_objective() -> void:
 	var setup_game := StrategoGame.new()
 	setup_game.setup_meeting(7)
@@ -1489,7 +1513,7 @@ func _test_deployment_zone_and_recommended_formation() -> void:
 			if int(piece.player) == player:
 				_expect(piece.position in zone, "%s's recommended formation stays inside its own zone" % game.player_name(player))
 	_expect(not collision, "no two corners' deployment zones share a cell")
-	_expect(game.count_alive(StrategoGame.RED) == 13 and game.total_strength(StrategoGame.RED) == 80, "the recommended formation is the full roster, not a partial one")
+	_expect(game.count_alive(StrategoGame.RED) == 13 and game.total_strength(StrategoGame.RED) == 84, "the recommended formation is the full roster, not a partial one")
 
 
 func _test_deployment_fog_and_redeploy() -> void:
