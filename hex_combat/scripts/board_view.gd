@@ -287,13 +287,14 @@ func _draw() -> void:
 	_draw_battlefield(origin, cell, board_size)
 	_draw_coordinates(origin, cell, board_size)
 	_draw_order_ghosts(origin, cell)
+	# The dead go down first, so anything still standing draws over them.
+	_draw_the_fallen(origin, cell)
 	for piece: Dictionary in game.pieces:
 		if not piece.alive:
 			continue
 		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
 			continue
 		_draw_piece(piece, origin, cell)
-	_draw_the_fallen(origin, cell)
 	# Selection outlines and direction controls stay above formation banners.
 	_draw_selection(origin, cell)
 	_draw_vignette(origin, board_size)
@@ -671,11 +672,11 @@ func _draw_drag_selection() -> void:
 	draw_rect(rect, Color("#8dccff"), false, 2.0)
 
 
-func _draw_piece(piece: Dictionary, origin: Vector2, cell: float) -> void:
+func _draw_piece(piece: Dictionary, origin: Vector2, cell: float, nudge: Vector2 = Vector2.ZERO) -> void:
 	# Every other measurement in this function hangs off this one point, so the
 	# march offset is applied here and nowhere else: the art path, the
 	# procedural path and the order badge all inherit it for free.
-	var center := _cell_center(piece.position, origin, cell) + _march_offset(int(piece.id), cell)
+	var center := _cell_center(piece.position, origin, cell) + _march_offset(int(piece.id), cell) + nudge
 	var colors := _player_colors(int(piece.player))
 	var is_selected := int(piece.id) in selected_piece_ids
 	var can_see_identity := reveal_all or game.game_over or game.is_piece_revealed_to(piece, viewing_player)
@@ -1085,37 +1086,51 @@ static func _bounce_lunge(progress: float) -> float:
 
 
 ## A formation killed this round is off the board long before the round is
-## drawn, so a shot that killed its target had nothing left to land on: the
-## target vanished before the attack that removed it was ever shown. While the
-## shot is the event on screen, it is drawn back where it fell and struck
-## through, so the sequence reads attack first and death second.
+## drawn, so the fight that killed it was being presented over an empty square:
+## the loser vanished first and its own death played out afterwards against
+## nothing. While the fight is the event on screen, every formation it killed is
+## drawn back where it fell and struck through, so the sequence reads as the
+## fight happening and then the casualties, which is the order it happened in.
 ##
-## Ranged only, deliberately. A melee loser can die on the contested square the
-## winner now occupies, and stacking a corpse under the victor would read worse
-## than the card already reads.
+## A defender usually falls on the contested square the winner now stands on, so
+## a body whose square has been taken is nudged clear of it rather than skipped.
+## Skipping is what the ranged-only version did, and it would have hidden the
+## most common death in the game.
 func _draw_the_fallen(origin: Vector2, cell: float) -> void:
-	if combat_event.is_empty() or String(combat_event.get("action", "")) != "ranged":
+	if combat_event.is_empty():
 		return
-	var target_id := int(combat_event.get("target_id", StrategoGame.EMPTY))
-	if target_id < 0 or target_id >= game.pieces.size():
-		return
-	var piece: Dictionary = game.pieces[target_id]
-	if bool(piece.get("alive", false)):
-		return
-	var fell_at: Vector2i = piece.get("fell_at", Vector2i(-1, -1))
-	if fell_at.x < 0 or not game.is_inside(fell_at) or not game.piece_at(fell_at).is_empty():
-		return
-	if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
-		return
-	var standing := piece.duplicate()
-	standing.position = fell_at
-	standing.alive = true
-	_draw_piece(standing, origin, cell)
-	var centre := _cell_center(fell_at, origin, cell)
-	var reach := cell * 0.32
-	var struck := Color(0.86, 0.24, 0.2, 0.9)
-	draw_line(centre + Vector2(-reach, -reach), centre + Vector2(reach, reach), struck, maxf(2.0, cell * 0.07))
-	draw_line(centre + Vector2(-reach, reach), centre + Vector2(reach, -reach), struck, maxf(2.0, cell * 0.07))
+	for id_value in _combat_casualty_ids():
+		var casualty_id := int(id_value)
+		if casualty_id < 0 or casualty_id >= game.pieces.size():
+			continue
+		var piece: Dictionary = game.pieces[casualty_id]
+		if bool(piece.get("alive", false)):
+			continue
+		var fell_at: Vector2i = piece.get("fell_at", Vector2i(-1, -1))
+		if fell_at.x < 0 or not game.is_inside(fell_at):
+			continue
+		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
+			continue
+		var nudge := Vector2.ZERO
+		if not game.piece_at(fell_at).is_empty():
+			nudge = Vector2(cell * 0.3, cell * 0.3)
+		var standing := piece.duplicate()
+		standing.position = fell_at
+		standing.alive = true
+		_draw_piece(standing, origin, cell, nudge)
+		var centre := _cell_center(fell_at, origin, cell) + nudge
+		var reach := cell * 0.32
+		var struck := Color(0.86, 0.24, 0.2, 0.9)
+		draw_line(centre + Vector2(-reach, -reach), centre + Vector2(reach, reach), struck, maxf(2.0, cell * 0.07))
+		draw_line(centre + Vector2(-reach, reach), centre + Vector2(reach, -reach), struck, maxf(2.0, cell * 0.07))
+
+
+## Who the fight on screen killed. A shot names its target; a melee names every
+## formation that was in it, and the dead among them are the ones worth drawing.
+func _combat_casualty_ids() -> Array:
+	if String(combat_event.get("action", "")) == "ranged":
+		return [int(combat_event.get("target_id", StrategoGame.EMPTY))]
+	return combat_event.get("participants", [])
 
 
 func show_combat(event: Dictionary, committed: bool = true) -> void:

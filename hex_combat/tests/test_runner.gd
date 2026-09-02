@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_melee_casualty_is_still_there_while_the_fight_is_shown()
 	_test_a_formation_killed_by_a_shot_is_still_there_to_be_shot()
 	_test_a_bounce_lunges_from_where_it_actually_stood()
 	_test_the_battle_card_is_built_per_side()
@@ -745,6 +746,32 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_melee_casualty_is_still_there_while_the_fight_is_shown() -> void:
+	# Most deaths in the game are melee deaths, and they were the ones still
+	# vanishing: the loser left the board during resolution, so the fight that
+	# killed it was presented over an empty square.
+	var game := _test_game()
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
+	var doomed := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 1)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(2, 2)])
+	var events := _ready_and_resolve(game, [1, 1, 4, 1, 1])
+	var battle := _events_with_action(events, "melee")[0]
+	_expect(not game.pieces[doomed].alive, "the defender is destroyed by the margin")
+	_expect(game.pieces[doomed].fell_at == Vector2i(2, 2), "and where it fell is the contested hex")
+	# The overlap that made skipping the wrong answer: the winner takes the very
+	# square the loser died on, so a body whose square is occupied has to be
+	# nudged clear rather than dropped.
+	_expect(game.piece_at(Vector2i(2, 2)).get("id", -1) == attacker, "the winner now stands exactly where the loser fell")
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.show_combat(battle)
+	var casualties: Array = view._combat_casualty_ids()
+	_expect(doomed in casualties, "a melee names its dead so they can be drawn back in")
+	view.show_combat({"combat": true, "action": "ranged", "to": Vector2i(2, 2), "target_id": doomed})
+	_expect(view._combat_casualty_ids() == [doomed], "a shot names only its target")
+	view.free()
 
 
 func _test_a_formation_killed_by_a_shot_is_still_there_to_be_shot() -> void:
