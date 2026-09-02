@@ -949,7 +949,27 @@ func _declared_shot_type(piece: Dictionary, player: int, path: Array[Vector2i], 
 	return {"ok": true, "shot_type": SHOT_SHORT if declared_range == 1 else SHOT_LONG}
 
 
-func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1), ranged_target_id: int = -1, strict_friendly: bool = true) -> Dictionary:
+## Support is the same order as walking into an ally's hex, made deliberate.
+## The resolver has joined a friendly hex with a fight open on it ever since
+## melee started waiting for every impulse, so the move already meant this; what
+## was missing was a way to ask for it, because planning refuses a step into your
+## own line and cannot tell an intended reinforcement from a misclick.
+##
+## Nothing about resolution changes. If a fight is open on the hex when the
+## formation arrives it joins as support, and if the hex is quiet it bounces off
+## its ally exactly as it always did.
+func set_support_order(player: int, piece_id: int, target: Vector2i) -> Dictionary:
+	if piece_id < 0 or piece_id >= pieces.size(): return {"ok": false, "message": "Unknown formation."}
+	var piece: Dictionary = pieces[piece_id]
+	if not are_adjacent(piece.position, target):
+		return {"ok": false, "message": "Support is one adjacent hex."}
+	var occupant := piece_at(target)
+	if occupant.is_empty() or not are_allied_players(player, int(occupant.player)):
+		return {"ok": false, "message": "Support has to be aimed at a formation on your own side."}
+	return set_unit_order(player, piece_id, [target], Vector2i(-1, -1), Vector2i(-1, -1), -1, true, true)
+
+
+func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vector2i = Vector2i(-1, -1), leftover: Vector2i = Vector2i(-1, -1), ranged_target_id: int = -1, strict_friendly: bool = true, support: bool = false) -> Dictionary:
 	if phase != PHASE_PLANNING or game_over or player in ready_players:
 		return {"ok": false, "message": "Orders can only be changed during planning."}
 	if piece_id < 0 or piece_id >= pieces.size(): return {"ok": false, "message": "Unknown formation."}
@@ -975,7 +995,8 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 		"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
 		"shot_type": "", "leftover": Vector2i(-1, -1),
 	}
-	if not _same_player_order_is_clear(player, piece_id, candidate, strict_friendly):
+	var support_position := normalized_path[normalized_path.size() - 1] if support and not normalized_path.is_empty() else Vector2i(-1, -1)
+	if not _same_player_order_is_clear(player, piece_id, candidate, strict_friendly, support_position):
 		return {"ok": false, "message": "Friendly formations would collide on the same impulse."}
 	if player not in orders: orders[player] = {}
 	orders[player][piece_id] = candidate
@@ -1390,7 +1411,7 @@ func has_leftover_orders(player: int) -> bool:
 	return false
 
 
-func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary, strict_friendly: bool = true) -> bool:
+func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictionary, strict_friendly: bool = true, support_position: Vector2i = Vector2i(-1, -1)) -> bool:
 	var old_order: Dictionary = order_for_piece(piece_id)
 	if player not in orders: orders[player] = {}
 	orders[player][piece_id] = candidate
@@ -1423,13 +1444,16 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 				# Weight could gang up: a Light and a Heavy sent at one enemy
 				# were rejected outright.
 				#
-				# Staggered arrivals need no special handling here. If the
-				# first attacker wins and takes the square, the follow-up finds
-				# a friendly formation standing there and bounces, which the
-				# resolver already does. If it loses, the follow-up gets its
-				# own fight. An empty or allied destination is still a plain
-				# collision and still refused.
-				if defender.is_empty() or are_allied_players(player, int(defender.player)):
+				# Staggered arrivals need no special handling here, now that
+				# melee waits for every impulse: both attackers end up in the
+				# same fight whatever speeds they are.
+				#
+				# An ally standing there is support, but only when it was asked
+				# for. A friendly hex with a fight open on it is joined rather
+				# than bounced off, so this is a real order; walking into your
+				# own line by accident is still the mistake it always was, and
+				# bots still use that rejection to prune their own choices.
+				if defender.is_empty() or (are_allied_players(player, int(defender.player)) and position != support_position):
 					clear = false
 					break
 			occupied[position] = piece.id
@@ -1459,7 +1483,9 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 			if position.x < 0: position = projected_main_destination(int(piece.id))
 			if position in leftover_occupied:
 				var defender := piece_at(position)
-				if defender.is_empty() or are_allied_players(player, int(defender.player)):
+				# Same exception as above: an ally's hex is a legal place to end
+				# the round only when support was the point of the order.
+				if defender.is_empty() or (are_allied_players(player, int(defender.player)) and position != support_position):
 					clear = false
 					break
 			leftover_occupied[position] = piece.id

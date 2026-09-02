@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_reinforcing_a_defender_joins_its_fight()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
@@ -700,6 +701,30 @@ func _test_follower_advances_into_a_vacated_attack_square() -> void:
 	_ready_and_resolve(light_game)
 	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
 	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
+
+
+func _test_reinforcing_a_defender_joins_its_fight() -> void:
+	# Walking into a friendly hex that has a fight open on it is support, not
+	# congestion. The Light attacks on impulse 1 and the Medium relief only moves
+	# on impulse 2, so this needs the fight to still be open when it gets there.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(4, 5), 10)
+	var relief := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
+	_expect(not bool(game.set_unit_order(StrategoGame.BLUE, relief, [Vector2i(5, 5)]).get("ok", false)), "walking into your own line by accident is still refused")
+	_expect(bool(game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5)).get("ok", false)), "asking for support explicitly is allowed")
+	# Red rolls two: one formation, charging. Blue rolls four: two formations, the
+	# uniquely heaviest, and one braced Infantry. Only the holder is braced; the
+	# relief arrived after the enemy did, so it brings a die but no defence die.
+	var events := _ready_and_resolve(game, [3, 3, 1, 1, 1, 5])
+	var melees := _events_with_action(events, "melee")
+	_expect(melees.size() == 1 and relief in melees[0].participants, "a formation moving onto a defended hex joins the fight instead of bouncing")
+	_expect(_events_with_action(events, "bounce").is_empty(), "and it is not treated as friendly congestion on the way in")
+	_expect(int(melees[0].bonus_dice[holder]) == 2 and int(melees[0].scores[holder]) == 15, "the relief adds its die and its Weight to the side without adding a second defence die")
+	_expect(int(melees[0].damage[attacker]) == 2, "the attacker faces the pair rather than the formation it set out to fight")
+	_expect(game.pieces[holder].position == Vector2i(5, 5), "the formation that held the hex keeps it")
+	_expect(game.pieces[relief].position == Vector2i(6, 5), "and the relief that could not stack on it returns")
 
 
 func _test_bracing_is_earned_by_arriving_first() -> void:
