@@ -5,8 +5,9 @@
   "predecessor": "The Ashmere Line (Blue) — fallen, Battles 1–3. Record in ashmere_line.json and chronicle.md.",
   "premise": "Halgate is a rich walled trade-city south of the fallen Ashmere frontier. Where Blue was a single poor levy that put its whole existence on the field every battle, Halgate fields companies — it commits one to a fight and keeps the rest, and its coffers rebuild what a battle costs. A lost battle costs a company's blood, not the war.",
   "campaign_turn": 2,
-  "treasury_crowns": 15,
+  "treasury_crowns": 5,
   "income_per_turn": 8,
+  "deployed": "Gate Guard (+ hired Merlon, MA, topped off Bastion and Sterling) committed to Battle 5 — The Weirgate. Charter Company remnant (Errant 1, Quill 5, Vellum 6) held at the city, still to be rebuilt. Treasury 15 → 5 (Merlon 8, reinforcement 2).",
   "last_battle": "Battle 4 — Cassewick: LOST (Vare held the granary, round 4). The Charter Company won the fighting 4-kills-to-3 but never held the yard the three rounds that decide a hold objective. Vare took Cassewick and the winter stores. The Charter Company came home three of six; the faction is intact. Treasury 7 + 8 income = 15.",
   "economy": {
     "reinforce": "1 crown per Strength point restored, up to a formation's max.",
@@ -25,10 +26,11 @@
       "character": "Halgate's own professional core. Heavy, slow, well-drilled, with real bows behind it — the coffers buy good archers. The wall that does not break, and the answer of 'become the harder thing.' Weak to being outrun or outmanoeuvred.",
       "formations": [
         { "name": "Portcullis", "type": "HI", "strength": 8, "max_strength": 8, "battles": 0, "history": ["The Gate Guard's anchor. Never yet bloodied."] },
-        { "name": "Bastion",    "type": "HI", "strength": 7, "max_strength": 8, "battles": 0, "history": [] },
+        { "name": "Bastion",    "type": "HI", "strength": 8, "max_strength": 8, "battles": 0, "history": ["Topped off (7→8) for the Weirgate."] },
         { "name": "Halberd",    "type": "MI", "strength": 7, "max_strength": 7, "battles": 0, "history": [] },
         { "name": "Sable",      "type": "HA", "strength": 7, "max_strength": 7, "battles": 0, "history": ["Heavy archer. The kind of bow Ashmere could never afford."] },
-        { "name": "Sterling",   "type": "MA", "strength": 5, "max_strength": 6, "battles": 0, "history": [] }
+        { "name": "Sterling",   "type": "MA", "strength": 6, "max_strength": 6, "battles": 0, "history": ["Topped off (5→6) for the Weirgate."] },
+        { "name": "Merlon",     "type": "MA", "strength": 6, "max_strength": 6, "battles": 0, "hired": "Turn 2, 8 crowns, for the Weirgate", "history": ["Hired to put a third bow on the parapet for the causeway hold. A merlon is the stone you shelter behind to shoot from — named for the job."] }
       ]
     },
     "charter_company": {

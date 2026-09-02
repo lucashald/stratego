@@ -25,13 +25,21 @@ income banked (treasury 7 → 15); Distress added as an enemy thread. The factio
 absorbed the loss — the whole point of the company system, validated. Chronicle
 chapter VI written.
 
-**Turn 2 is live — `dispatch_02.md`, the Weirgate.** Vare's heavy main host (Bulwark
-HI, Sessions HI, Assize HA, Mandate + Sergeant MI, Amerce MC — ~44 Strength)
-marches on a fortified causeway; this is a **hold a fortified point** fight, the
-Gate Guard's battle. Commander chooses: send the fresh Gate Guard (right tool,
-commits the elite core) or rebuild and send the battered Charter Company;
-reinforce/hire from 15 crowns. **Battle not built yet** — depends on the choice,
-then gets built + verified bot-vs-bot before handover.
+**Turn 2 decided and built — Battle 5, The Weirgate, loaded and waiting to play.**
+Commander sent the **Gate Guard + hired Merlon (MA)**, topped off Bastion/Sterling;
+treasury 15 → 5; Charter remnant reserved. Files `battles/05_weirgate.{json,md}`,
+loaded to `current_battle.json`. A defensive causeway hold: `survive` (blue) to
+round 12, `also` `reach` (red) 19 Strength into the rear [8,14,3,4]. Millwater
+flanks (row 9), a 3-wide gate (cols 8-10) walled by 2 HI + MI with 3 bows behind.
+**Verified bot-vs-bot: Halgate 36 / Vare 24, every game decided by the objective**
+— a near-even hold leaning to the defender, tuned there via the breakthrough bar
+(tried 16→70% Vare and 20→95% Blue before landing 19). A human wall should hold it
+but can lose the gate by letting the line be pulled out of shape.
+
+Verification harness note: same throwaway-script method as Battle 4 (crib
+`batch_runner.gd:_play_one`, load via `CampaignScenario.apply`, tally
+`game.winner`). Run from **`C:\stratego\new`** (the project root — not `C:\stratego`):
+`Godot_..._console.exe --headless --path . --script res://scripts/<tmp>.gd`.
 
 Verification method (reusable): a throwaway `SceneTree` script loads the scenario
 via `CampaignScenario.apply`, runs `StrategoBotPolicy` both sides through the

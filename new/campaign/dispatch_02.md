@@ -63,3 +63,13 @@ at (Strength) + 2:
 
 Tell me the company and any reinforcing/hiring. Then I build the Weirgate battle to
 that force, **verify it plays fair bot-vs-bot**, and hand it over.
+
+## Decision made
+
+**Sent: the Gate Guard, plus hired Merlon (Medium Archer, 8 crowns), and topped
+off Bastion and Sterling (2 crowns).** Treasury 15 → 5. Charter remnant held at
+the city. Six formations with three bows on the wall. Built to this force in
+`battles/05_weirgate.{json,md}`, loaded to `current_battle.json`.
+
+Verified bot-vs-bot (60 games): Halgate 36, Vare 24 — a near-even hold that leans
+to the defender, every game decided by the objective. Ready to play.
