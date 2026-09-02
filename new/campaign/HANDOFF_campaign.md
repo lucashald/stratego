@@ -15,12 +15,23 @@ per battle, keeps the rest, and rebuilds from a treasury. Turn loop and rules ar
 in `system.md`; state (treasury, two companies, reserve, economy) in `roster.json`;
 Blue's closed record preserved in `ashmere_line.json`.
 
-**Turn 1 is live and waiting on the commander:** `dispatch_01.md` — Vare's fast
-vanguard (Warrant LC, Escheat MC, Distress + Summons LI, Quarrel LA) rides for the
-Cassewick granaries. Commander picks a company (Gate Guard = wall / Charter
-Company = speed), reinforces/hires from the 15-crown treasury, then the Cassewick
-battle gets built to that force and **verified winnable bot-vs-bot before
-handover**. Battle scenario not built yet — it depends on the deployment choice.
+**Turn 1 decided and built — Battle 4, Cassewick, loaded and waiting to play.**
+Commander sent the **Charter Company + hired Vellum (MA)**; treasury 15 → 7; Gate
+Guard reserved. Files `battles/04_cassewick.{json,md}`, loaded to
+`current_battle.json`. **Verified bot-vs-bot (60 games): Halgate 47 / Vare 13, the
+granary deciding 15** — winnable and a real contest, per the Fen Road rule. A race
+to hold the town yard (`hold` [10,9], 3 rounds, 16-round limit); Vare's fast
+vanguard starts a step closer, Blue's two bows are the edge. Caveat recorded in
+the intent doc: the bot can't defend a position, so the objective bites harder for
+a commanded Red than the bot shows — this favours Halgate more than the raw split.
+
+Verification method (reusable): a throwaway `SceneTree` script loads the scenario
+via `CampaignScenario.apply`, runs `StrategoBotPolicy` both sides through the
+`plan_round`/`resolve_main_and_ranged`/`plan_leftover`/`resolve_leftover_phase`
+loop (cribbed from `batch_runner.gd:_play_one`), and tallies `game.winner`. Run
+with `Godot_..._console.exe --headless --path . --script res://scripts/<tmp>.gd`.
+Objective JSON kinds are `eliminate` / `hold` / `reach` / `survive` (note: `hold`,
+not `hold_square`).
 
 ## The premise
 

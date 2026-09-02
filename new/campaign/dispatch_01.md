@@ -55,3 +55,12 @@ Treasury 15 crowns. Reinforce chosen formations toward full at 1 crown/point, an
 
 Tell me the company, and any reinforcing/hiring. Then I build the Cassewick battle
 to that force, **verify it plays fair bot-vs-bot**, and hand it over.
+
+## Decision made
+
+**Sent: the Charter Company, plus hired Vellum (Medium Archer, 8 crowns).**
+Treasury 15 → 7. Gate Guard held at the city. The battle is built to this force
+in `battles/04_cassewick.{json,md}` and loaded to `current_battle.json`.
+
+Verified bot-vs-bot (60 games): Halgate 47, Vare 13, the granary deciding 15 of
+them. Winnable and a real contest. Ready to play.

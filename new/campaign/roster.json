@@ -5,8 +5,9 @@
   "predecessor": "The Ashmere Line (Blue) — fallen, Battles 1–3. Record in ashmere_line.json and chronicle.md.",
   "premise": "Halgate is a rich walled trade-city south of the fallen Ashmere frontier. Where Blue was a single poor levy that put its whole existence on the field every battle, Halgate fields companies — it commits one to a fight and keeps the rest, and its coffers rebuild what a battle costs. A lost battle costs a company's blood, not the war.",
   "campaign_turn": 1,
-  "treasury_crowns": 15,
+  "treasury_crowns": 7,
   "income_per_turn": 8,
+  "deployed": "Charter Company (+ hired Vellum) committed to Battle 4 — Cassewick. Gate Guard held in reserve at the city. Treasury 15 → 7 (hired Vellum, MA, for 8).",
   "economy": {
     "reinforce": "1 crown per Strength point restored, up to a formation's max.",
     "recruit": "A new formation costs (its Strength) + 2 crowns to hire.",
@@ -38,7 +39,8 @@
         { "name": "Errant",  "type": "LC", "strength": 6, "max_strength": 6, "battles": 0, "history": [] },
         { "name": "Ferrule", "type": "LI", "strength": 6, "max_strength": 6, "battles": 0, "history": [] },
         { "name": "Ingot",   "type": "LI", "strength": 5, "max_strength": 6, "battles": 0, "history": [] },
-        { "name": "Quill",   "type": "LA", "strength": 5, "max_strength": 5, "battles": 0, "history": [] }
+        { "name": "Quill",   "type": "LA", "strength": 5, "max_strength": 5, "battles": 0, "history": [] },
+        { "name": "Vellum",  "type": "MA", "strength": 6, "max_strength": 6, "battles": 0, "hired": "Turn 1, 8 crowns, for Cassewick", "history": ["Hired out of the treasury for the Cassewick raid — the second bow the Charter Company needed and Ashmere never had. Paper and quill: folded in beside Quill."] }
       ]
     }
   },
