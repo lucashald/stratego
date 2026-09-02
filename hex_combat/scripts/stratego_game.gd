@@ -1882,7 +1882,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 			elif _team_for_piece(id) == winning_team:
 				outcomes[id] = "returned"
 				_mark_returned(id)
-				_place_bouncer(id, _participant_for(id, participants).from)
+				_place_bouncer(id, _participant_for(id, participants).from, contested)
 			else:
 				outcomes[id] = STATUS_LOST
 				_mark_lost(id)
@@ -1900,7 +1900,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 			elif _team_for_piece(id) == winning_team:
 				outcomes[id] = "returned"
 				_mark_returned(id)
-				_place_bouncer(id, _participant_for(id, participants).from)
+				_place_bouncer(id, _participant_for(id, participants).from, contested)
 			else:
 				outcomes[id] = STATUS_LOST
 				_mark_lost(id)
@@ -1914,7 +1914,7 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 			else:
 				outcomes[id] = STATUS_BOUNCED
 				_mark_bounced(id, true)
-				_place_bouncer(id, _participant_for(id, participants).from)
+				_place_bouncer(id, _participant_for(id, participants).from, contested)
 	var event := {
 		"ok": true, "action": "crossing_battle" if crossing else "melee", "batch": batch_name, "combat": true,
 		"ranged": false, "crossing": crossing, "to": contested, "participants": participant_ids.duplicate(),
@@ -2226,10 +2226,33 @@ func _mark_lost(piece_id: int) -> void:
 	pieces[piece_id].participated_in_combat = true
 
 
-func _place_bouncer(piece_id: int, origin: Vector2i) -> void:
+func _place_bouncer(piece_id: int, origin: Vector2i, contested: Vector2i = Vector2i(-1, -1)) -> void:
 	if not pieces[piece_id].alive: return
-	if piece_at(origin).is_empty(): _place_piece(piece_id, origin, origin)
-	elif int(piece_at(origin).id) != piece_id: _remove_piece(piece_id)
+	if piece_at(origin).is_empty():
+		_place_piece(piece_id, origin, origin)
+		return
+	if int(piece_at(origin).id) == piece_id: return
+	# The square this formation stepped out of was filled while its fight was
+	# still open, normally by the ally that advanced into the gap behind it.
+	# Falling back a hex beats deleting a formation that never lost anything,
+	# which is what a returning bouncer used to do to itself.
+	var shunt := _adjacent_free_hex(origin, contested)
+	if is_inside(shunt): _place_piece(piece_id, shunt, origin)
+	else: _remove_piece(piece_id)
+
+
+## A free hex beside `origin`, tried in order of how directly it leads away from
+## `contested`. More forgiving than a retreat's three options, because a bouncer
+## did not lose its fight and should not die for standing in traffic.
+func _adjacent_free_hex(origin: Vector2i, contested: Vector2i) -> Vector2i:
+	var away := HexGrid.direction_between(contested, origin) if is_inside(contested) else 0
+	if away < 0: away = 0
+	for offset: int in [0, 1, -1, 2, -2, 3]:
+		var direction := (away + offset + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT
+		var candidate := HexGrid.neighbor(origin, direction)
+		if not is_inside(candidate) or is_blocked_terrain(candidate): continue
+		if piece_at(candidate).is_empty(): return candidate
+	return Vector2i(-1, -1)
 
 
 func _clear_piece_square(piece_id: int) -> void:

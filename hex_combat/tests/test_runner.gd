@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
 	_test_tie_is_a_bounce()
 	_test_defender_wins_ties_toggle()
@@ -703,6 +704,21 @@ func _test_follower_advances_into_a_vacated_attack_square() -> void:
 	_ready_and_resolve(light_game)
 	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
 	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
+
+
+func _test_bounced_attacker_survives_a_filled_origin() -> void:
+	# The follower fills the square the attacker stepped out of, and then the
+	# attack ties, so the attacker is sent back to a hex it no longer owns.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.BLUE, Vector2i(1, 2), 10)
+	var attacker_id := game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(2, 2), 10)
+	var follower_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(3, 2), 10)
+	game.set_unit_order(StrategoGame.RED, attacker_id, [Vector2i(1, 2)])
+	game.set_unit_order(StrategoGame.RED, follower_id, [Vector2i(2, 2)])
+	_ready_and_resolve(game, [2, 2])
+	_expect(game.pieces[follower_id].position == Vector2i(2, 2), "the follower holds the square it advanced into")
+	_expect(game.pieces[attacker_id].alive, "a tied attacker is not destroyed by its own follower taking its square")
+	_expect(game.pieces[attacker_id].position == Vector2i(3, 1), "it falls back to the neighbour most directly away from the contested square")
 
 
 func _test_crossing_battle_both_attack() -> void:

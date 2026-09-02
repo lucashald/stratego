@@ -121,7 +121,12 @@ The higher score wins the hex for its side. Equal scores are a bounce, and every
 surviving participant returns to its previous hex and is done for the round.
 
 Each survivor on the winning side then takes the hex it was ordered into, if that
-hex is still free when it is placed, and otherwise returns where it started.
+hex is still free when it is placed, and otherwise returns where it started. If
+the square it started from has been filled too, normally by the ally that
+advanced into the gap behind it, it falls back to whichever neighbouring hex
+leads most directly away from the contested one. All six are tried before a
+formation that never lost its fight is destroyed for standing in traffic, which
+is more forgiving than the three options a retreat gets.
 Claims are settled in arrival order, so a defender that held its ground keeps it
 and its own reinforcements cannot shove it off. In an ordinary fight every
 attacker was ordered into the same hex, so one takes it and the rest come home.
