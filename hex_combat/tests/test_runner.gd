@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_fight_holds_until_it_is_committed()
 	_test_a_bounce_reads_as_being_stopped()
 	_test_support_is_offered_on_a_friendly_formation()
 	_test_context_menu_actually_issues_support_and_join_volley()
@@ -740,6 +741,38 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_fight_holds_until_it_is_committed() -> void:
+	# The round is already resolved by the time any of it is drawn, so
+	# committing reveals a result rather than producing one. What the board must
+	# not do is give the result away before the player asks for it.
+	var game := _test_game()
+	var attacker := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
+	var defender := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 6)
+	var ally := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(3, 2), 8)
+	game.set_player_team(StrategoGame.BLUE, 7)
+	game.set_player_team(StrategoGame.GREEN, 7)
+	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(2, 2)])
+	game.set_unit_order(StrategoGame.GREEN, ally, [Vector2i(2, 2)])
+	var events := _ready_and_resolve(game)
+	var battle := _events_with_action(events, "melee")[0]
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.show_combat(battle, false)
+	_expect(not view.combat_committed, "a fight shown for the player to look at is not committed yet")
+	view.commit_combat()
+	_expect(view.combat_committed, "and committing it is what starts the reveal")
+	# One pool per side, not one per formation: Blue and Green share a side and
+	# share the roll, so drawing both would draw the same dice twice.
+	var pools: Array = view._combat_side_pools()
+	_expect(pools.size() == 2, "the board draws one pool per side rather than one per participant")
+	var owners: Array[int] = []
+	for pair in pools: owners.append(game._team_for_piece(int(pair[0])))
+	_expect(owners[0] != owners[1], "and the two pools belong to opposing sides")
+	_expect(view.combat_reveal_duration_msec() > view.COMBAT_DAMAGE_DELAY_MSEC, "the reveal lasts long enough for the dice to land before the damage does")
+	_expect(int(battle.participants.size()) == 3 and defender in battle.participants, "the fight under test really is a multiway one")
+	view.free()
 
 
 func _test_a_bounce_reads_as_being_stopped() -> void:

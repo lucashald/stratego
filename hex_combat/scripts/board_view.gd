@@ -35,6 +35,16 @@ var combat_event: Dictionary = {}
 var combat_started_msec := 0
 var combat_duration_msec := 1600
 var combat_hold := false
+## A fight holds until the player commits it, and shows nothing of its dice
+## before then: the square is simply contested and waiting. The faces are already
+## decided by the time anything is drawn, because replay verification depends on
+## the exact stream, so committing reveals a result rather than producing one.
+var combat_committed := true
+var combat_commit_msec := 0
+## Per die, then the pause before damage lands. Staggering the landings is what
+## makes a pool read as several dice instead of one number arriving at once.
+const COMBAT_DIE_LAND_MSEC := 130.0
+const COMBAT_DAMAGE_DELAY_MSEC := 260.0
 
 ## Movement animation. A round resolves all at once, so by the time anything is
 ## drawn every formation already stands on its final square. Rather than track a
@@ -1073,12 +1083,50 @@ static func _bounce_lunge(progress: float) -> float:
 	return 1.0 - give * give
 
 
-func show_combat(event: Dictionary) -> void:
+func show_combat(event: Dictionary, committed: bool = true) -> void:
 	if not bool(event.get("combat", false)):
 		return
 	combat_event = event.duplicate(true)
 	combat_started_msec = Time.get_ticks_msec()
+	combat_committed = committed
+	combat_commit_msec = combat_started_msec
 	queue_redraw()
+
+
+func commit_combat() -> void:
+	if combat_event.is_empty(): return
+	combat_committed = true
+	combat_commit_msec = Time.get_ticks_msec()
+	queue_redraw()
+
+
+## How long the current fight takes to finish showing itself, so the caller can
+## wait exactly that long rather than guessing at a constant.
+func combat_reveal_duration_msec() -> float:
+	var longest := 0
+	for pair in _combat_side_pools():
+		longest = maxi(longest, int((pair[1] as Array).size()))
+	return longest * COMBAT_DIE_LAND_MSEC + COMBAT_DAMAGE_DELAY_MSEC
+
+
+## Up to two sides of the fight as [piece_id, dice]. Every formation on a side
+## shares one pool now, so this takes the first formation of each side rather
+## than drawing the same dice once per participant.
+func _combat_side_pools() -> Array:
+	var pools: Array = []
+	var seen_teams: Array[int] = []
+	var dice_pools: Dictionary = combat_event.get("dice_pools", {})
+	for id_value in combat_event.get("participants", []):
+		var piece_id := int(id_value)
+		if piece_id < 0 or piece_id >= game.pieces.size(): continue
+		var team := game._team_for_piece(piece_id)
+		if team in seen_teams: continue
+		var dice: Array = dice_pools.get(piece_id, dice_pools.get(str(piece_id), []))
+		if dice.is_empty(): continue
+		seen_teams.append(team)
+		pools.append([piece_id, dice])
+		if pools.size() == 2: break
+	return pools
 
 
 func _draw_combat_overlay(origin: Vector2, cell: float) -> void:
@@ -1096,6 +1144,37 @@ func _draw_combat_overlay(origin: Vector2, cell: float) -> void:
 	var blade := cell * 0.27
 	draw_line(center + Vector2(-blade, blade), center + Vector2(blade, -blade), Color(1.0, 0.9, 0.72, fade), maxf(2.0, cell * 0.07))
 	draw_line(center + Vector2(-blade, -blade), center + Vector2(blade, blade), Color(1.0, 0.9, 0.72, fade), maxf(2.0, cell * 0.07))
+	# Nothing of the outcome shows until the fight is committed. Before that the
+	# square reads as contested and waiting, which is exactly what it is.
+	if not combat_committed:
+		return
+	var since_commit := float(Time.get_ticks_msec() - combat_commit_msec)
+	var pools := _combat_side_pools()
+	for index in pools.size():
+		var pool_id := int(pools[index][0])
+		var dice: Array = pools[index][1]
+		var pool_side := -1.0 if index == 0 else 1.0
+		var pool_colors := _player_colors(int(game.pieces[pool_id].player))
+		var die_size := cell * 0.3
+		var row := center + Vector2(pool_side * cell * 0.95 - die_size * 0.5, -die_size * 0.5)
+		for die_index in dice.size():
+			# Dice land one after another, so a big pool reads as a pool.
+			var landed := since_commit - die_index * COMBAT_DIE_LAND_MSEC
+			if landed < 0.0: continue
+			var drop := clampf(landed / COMBAT_DIE_LAND_MSEC, 0.0, 1.0)
+			var eased := 1.0 - pow(1.0 - drop, 3.0)
+			var stack := (float(die_index) - (dice.size() - 1) * 0.5) * die_size * 1.18
+			var face_rect := Rect2(row + Vector2(0.0, stack - (1.0 - eased) * cell * 0.35), Vector2(die_size, die_size))
+			var alpha := fade * eased
+			draw_rect(face_rect, Color(0.05, 0.08, 0.11, 0.92 * alpha), true)
+			draw_rect(face_rect, Color(pool_colors.edge, alpha), false, maxf(1.0, cell * 0.02))
+			_draw_centered_text(ThemeDB.fallback_font, str(int(dice[die_index])), face_rect, maxi(10, int(die_size * 0.62)), Color(1.0, 0.94, 0.82, alpha))
+	# Damage waits for the whole pool, so the number reads as the consequence of
+	# the dice rather than as something that arrived alongside them.
+	var longest := 0
+	for pair in pools: longest = maxi(longest, int((pair[1] as Array).size()))
+	if since_commit < longest * COMBAT_DIE_LAND_MSEC + COMBAT_DAMAGE_DELAY_MSEC:
+		return
 	var participant_ids: Array = combat_event.get("participants", [])
 	var damage: Dictionary = combat_event.get("damage", {})
 	for index in mini(2, participant_ids.size()):
