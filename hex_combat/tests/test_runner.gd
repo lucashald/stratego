@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_a_dodged_attack_still_takes_the_ground()
 	_test_every_way_of_issuing_an_order_queues_it()
 	_test_who_holds_the_ground_a_side_just_took()
 	_test_the_order_you_issued_first_takes_the_square()
@@ -750,6 +751,40 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_a_dodged_attack_still_takes_the_ground() -> void:
+	# Two Cavalry sent at one enemy hex. If the defender holds, they fight it
+	# together. If it repositions away in the same wave, they arrive at ground it
+	# has just given up, and used to bounce off each other and leave the square
+	# empty: an attack that was merely dodged cost both of them their action and
+	# gained nothing. That configuration is unreachable through orders, so it
+	# only appeared once two of your own could be sent at one enemy hex.
+	var stands := _test_game()
+	var holder := stands.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 6)
+	var first := stands.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(4, 5), 9)
+	var second := stands.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(6, 5), 9)
+	_open_reposition(stands)
+	stands.set_leftover_order(StrategoGame.BLUE, first, Vector2i(5, 5))
+	stands.set_leftover_order(StrategoGame.BLUE, second, Vector2i(5, 5))
+	var stood := _ready_and_resolve_reposition(stands)
+	var melees := _events_with_action(stood, "melee")
+	_expect(melees.size() == 1 and int(melees[0].participants.size()) == 3, "a defender that holds its ground faces both Cavalry at once")
+	_expect(not stands.pieces[holder].alive or stands.pieces[holder].position != Vector2i(5, 5), "and loses the square it was holding")
+
+	var dodges := _test_game()
+	var runner := dodges.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(5, 5), 6)
+	var chaser := dodges.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(4, 5), 9)
+	var follower := dodges.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.BLUE, Vector2i(6, 5), 9)
+	_open_reposition(dodges)
+	dodges.set_leftover_order(StrategoGame.BLUE, chaser, Vector2i(5, 5))
+	dodges.set_leftover_order(StrategoGame.BLUE, follower, Vector2i(5, 5))
+	dodges.set_leftover_order(StrategoGame.RED, runner, Vector2i(5, 4))
+	_ready_and_resolve_reposition(dodges)
+	_expect(dodges.pieces[runner].position == Vector2i(5, 4), "a defender may still slip the attack")
+	_expect(not dodges.piece_at(Vector2i(5, 5)).is_empty(), "but the ground it gave up does not simply sit empty")
+	_expect(dodges.pieces[chaser].position == Vector2i(5, 5), "the first claimant walks into it")
+	_expect(dodges.pieces[follower].position == Vector2i(6, 5), "and only the one that could not stack on it bounces")
 
 
 func _test_every_way_of_issuing_an_order_queues_it() -> void:

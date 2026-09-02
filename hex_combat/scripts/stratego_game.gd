@@ -1821,7 +1821,16 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String, d
 		if teams.size() == 1:
 			var collision_ids: Array[int] = []
 			for participant: Dictionary in participants: collision_ids.append(int(participant.piece_id))
-			allied_collisions.append({"ids": collision_ids, "position": destination, "crossing": false, "stationary_id": int(occupant.id) if not occupant.is_empty() and not occupant_leaves else EMPTY})
+			# `vacating` separates two things that look identical from here. Allies
+			# converging on ground that was already open is plain congestion.
+			# Allies converging on ground whose holder is giving it up in this
+			# same wave were pursuing something, and one of them should get to
+			# take what was abandoned.
+			allied_collisions.append({
+				"ids": collision_ids, "position": destination, "crossing": false,
+				"vacating": occupant_leaves, "arrivals": arrivals.duplicate(true),
+				"stationary_id": int(occupant.id) if not occupant.is_empty() and not occupant_leaves else EMPTY,
+			})
 		else:
 			battles.append({"participants": participants, "position": destination, "crossing": false})
 		for participant: Dictionary in participants: handled[int(participant.piece_id)] = true
@@ -1851,16 +1860,40 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String, d
 		var stationary := int(collision.get("stationary_id", EMPTY))
 		var collision_ids: Array[int] = []
 		for id_value in collision.ids:
+			collision_ids.append(int(id_value))
+		# Several formations sent at one enemy hex whose defender slips away in
+		# the same wave used to bounce off each other and leave the square empty,
+		# so an attack that was merely dodged cost every one of them its action
+		# and gained nothing at all. The first claimant takes the abandoned
+		# ground instead, settled the same way a won square is, and the rest
+		# bounce exactly as they always did.
+		var claimant := EMPTY
+		if bool(collision.get("vacating", false)) and stationary == EMPTY and is_inside(collision.position) and piece_at(collision.position).is_empty():
+			for candidate_id in _placement_order(collision_ids, collision.get("arrivals", [])):
+				if pieces[candidate_id].alive:
+					claimant = candidate_id
+					break
+		var bounced_ids: Array[int] = []
+		for id_value in collision_ids:
 			var id := int(id_value)
-			collision_ids.append(id)
+			if id == claimant:
+				continue
+			bounced_ids.append(id)
 			if id == stationary:
 				continue
 			_mark_returned(id, stationary != EMPTY)
+		if claimant != EMPTY:
+			var claim_from: Vector2i = pieces[claimant].position
+			_clear_piece_square(claimant)
+			_place_piece(claimant, collision.position, claim_from)
+			pieces[claimant].steps_taken = int(pieces[claimant].steps_taken) + 1
+			events.append(_movement_event(claimant, claim_from, collision.position, batch_name))
 		# The stationary formation is named in the event because it was part of the
 		# congestion, but it never tried to move and must not be animated as if it
 		# had: it would lunge out of wherever it ends the round and back into the
 		# square it never left.
-		events.append(_bounce_event(collision_ids, collision.position, batch_name, "allied_collision", stationary))
+		if not bounced_ids.is_empty():
+			events.append(_bounce_event(bounced_ids, collision.position, batch_name, "allied_collision", stationary))
 	var retreat_intents: Array[Dictionary] = []
 	for battle: Dictionary in battles:
 		if defer:
