@@ -25,6 +25,7 @@ func _run() -> void:
 	_test_impulse_movement()
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
+	_test_follower_advances_into_a_vacated_attack_square()
 	_test_crossing_battle_both_attack()
 	_test_tie_is_a_bounce()
 	_test_defender_wins_ties_toggle()
@@ -667,6 +668,41 @@ func _test_allied_collision_bounces_without_combat() -> void:
 	stationary_game.set_unit_order(StrategoGame.RED, moving_id, [Vector2i(2, 1)])
 	_ready_and_resolve(stationary_game)
 	_expect(stationary_game.pieces[moving_id].round_status == StrategoGame.STATUS_READY and stationary_game.pieces[stationary_id].round_status == StrategoGame.STATUS_READY, "neither the mover nor stationary ally receives a round-status penalty")
+
+
+func _test_follower_advances_into_a_vacated_attack_square() -> void:
+	# A formation committing to a fight has left the square behind it, so the
+	# ally queued there advances into it on the same impulse instead of bouncing.
+	# The attacker is added first on purpose: the squares used to be classified
+	# in piece id order against a set that the classification itself was filling
+	# in, so an attacker one hex ahead read as stationary to its own follower.
+	# Heavies make the cost unmissable. They move only on impulse 3, so a
+	# spurious bounce there is not something they can retry, and the advance is
+	# lost for the round rather than merely delayed.
+	var game := _test_game()
+	var enemy_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(1, 2), 1)
+	var attacker_id := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.RED, Vector2i(2, 2), 10)
+	var follower_id := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.RED, Vector2i(3, 2), 10)
+	_expect(attacker_id < follower_id, "the follower is created second, which is the order that reproduced the bug")
+	game.set_unit_order(StrategoGame.RED, attacker_id, [Vector2i(1, 2)])
+	game.set_unit_order(StrategoGame.RED, follower_id, [Vector2i(2, 2)])
+	var events := _ready_and_resolve(game)
+	_expect(_events_with_action(events, "bounce").is_empty(), "following an ally into its fight is not friendly congestion")
+	_expect(game.pieces[attacker_id].position == Vector2i(1, 2), "the attacker takes the square it won")
+	_expect(game.pieces[follower_id].position == Vector2i(2, 2), "the follower advances into the square the attacker vacated")
+	_expect(not game.pieces[enemy_id].alive, "the overmatched defender is destroyed")
+	# The same line one weight class faster: the follower used to get there
+	# anyway by bouncing on impulse 1 and retrying on 2, so the tell is the
+	# wasted step rather than the lost square.
+	var light_game := _test_game()
+	light_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(1, 2), 1)
+	var light_attacker := light_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(2, 2), 10)
+	var light_follower := light_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(3, 2), 10)
+	light_game.set_unit_order(StrategoGame.RED, light_attacker, [Vector2i(1, 2)])
+	light_game.set_unit_order(StrategoGame.RED, light_follower, [Vector2i(2, 2)])
+	_ready_and_resolve(light_game)
+	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
+	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
 
 
 func _test_crossing_battle_both_attack() -> void:

@@ -1676,12 +1676,21 @@ func _resolve_movement_batch(proposals: Array[Dictionary], batch_name: String) -
 		if proposal.to not in destination_groups: destination_groups[proposal.to] = []
 		destination_groups[proposal.to].append(proposal)
 	var ordinary_moves: Array[Dictionary] = []
+	# Frozen before the loop below, which adds every battle participant to
+	# `handled` as it classifies each square. Testing the live `handled` made
+	# "did this square's occupant leave?" depend on the order destinations
+	# happened to be visited, which follows piece id: a formation committing to
+	# a fight one hex ahead read as stationary to whoever was behind it, and the
+	# follower bounced off a square that was already being vacated. Only the
+	# swap participants matched here are genuinely still contesting their own
+	# origin, so they are the only ones a follower must wait behind.
+	var swapping := handled.duplicate()
 	for destination in destination_groups:
 		var arrivals: Array = destination_groups[destination]
 		var participants: Array[Dictionary] = []
 		for arrival: Dictionary in arrivals: participants.append(arrival.duplicate(true))
 		var occupant := piece_at(destination)
-		var occupant_leaves := not occupant.is_empty() and int(occupant.id) in proposal_by_id and int(occupant.id) not in handled
+		var occupant_leaves := not occupant.is_empty() and int(occupant.id) in proposal_by_id and int(occupant.id) not in swapping
 		if not occupant.is_empty() and not occupant_leaves:
 			participants.append({"piece_id": int(occupant.id), "from": destination, "to": destination, "is_attacker": false, "impulse": arrivals[0].impulse})
 		if participants.size() == 1:
