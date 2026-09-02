@@ -1,0 +1,4 @@
+# Godot sources are stored with LF in the repository and checked out with the
+# platform's own endings. Stated here so it does not depend on each machine
+# happening to have core.autocrlf set the same way.
+* text=auto
