@@ -27,6 +27,7 @@ func _run() -> void:
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
 	_test_support_is_offered_on_a_friendly_formation()
+	_test_context_menu_actually_issues_support_and_join_volley()
 	_test_reinforcing_a_defender_joins_its_fight()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
@@ -704,6 +705,40 @@ func _test_follower_advances_into_a_vacated_attack_square() -> void:
 	_ready_and_resolve(light_game)
 	_expect(light_game.pieces[light_follower].position == Vector2i(2, 2), "a faster follower reaches the same square")
 	_expect(int(light_game.pieces[light_follower].movement_used) == 1, "and pays one step for it rather than two")
+
+
+func _test_context_menu_actually_issues_support_and_join_volley() -> void:
+	# The queries behind these two entries were covered, but nothing checked that
+	# the menu was wired to them, so both sat unreachable behind a working
+	# engine. These drive the handler the popup calls.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var helper := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.viewing_player = StrategoGame.BLUE
+	view.selected_piece_ids.assign([helper])
+	view._context_menu_cell = Vector2i(5, 5)
+	view._context_menu_piece = holder
+	view._on_context_menu_pressed(view.CONTEXT_SUPPORT)
+	_expect(game.order_for_piece(helper).get("path", []) == [Vector2i(5, 5)], "picking Support issues the order onto the ally's hex")
+	view.free()
+
+	var volley_game := _test_game()
+	var lead := volley_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 1), 8)
+	var joining := volley_game.add_piece(StrategoGame.LIGHT_ARCHER, StrategoGame.RED, Vector2i(1, 2), 5)
+	volley_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 1), 6)
+	_open_reposition(volley_game)
+	volley_game.set_suppress_order(StrategoGame.RED, lead, Vector2i(2, 1))
+	var volley_view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	volley_view.set_game(volley_game)
+	volley_view.viewing_player = StrategoGame.RED
+	volley_view.selected_piece_ids.assign([joining])
+	volley_view._context_menu_cell = Vector2i(2, 1)
+	volley_view._on_context_menu_pressed(volley_view.CONTEXT_JOIN_VOLLEY)
+	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
+	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
+	volley_view.free()
 
 
 func _test_support_is_offered_on_a_friendly_formation() -> void:

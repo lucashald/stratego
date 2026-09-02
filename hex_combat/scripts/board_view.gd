@@ -1287,6 +1287,11 @@ func _open_context_menu(screen_position: Vector2) -> void:
 		# whatever else is currently selected.
 		if int(occupant.player) == viewing_player and interaction_enabled and _piece_has_a_pending_order(int(occupant.id)):
 			_context_menu.add_item("Cancel Order", CONTEXT_CANCEL)
+		# Walking into an ally is the same order, but it does not read as one.
+		# Naming it is the point: reinforcing a formation that is about to be
+		# attacked should look like a decision, not a pathing accident.
+		if not support_candidates_for(cell).is_empty():
+			_context_menu.add_item("Support", CONTEXT_SUPPORT)
 	var archer_id := _selected_archer_id()
 	if archer_id != StrategoGame.EMPTY:
 		var enemy_here := visible_occupant and not game.are_allied_players(viewing_player, int(occupant.player))
@@ -1296,6 +1301,10 @@ func _open_context_menu(screen_position: Vector2) -> void:
 			# "Volley" for suppressing fire: it reads as an action rather than as
 			# a description of the targeting mode.
 			_context_menu.add_item("Volley", CONTEXT_SUPPRESS)
+			# Offered only once an ally has actually declared a Volley here, so
+			# the third choice appears exactly when there is something to join.
+			if game.volley_leader_at(viewing_player, cell, archer_id) != StrategoGame.EMPTY:
+				_context_menu.add_item("Join Volley", CONTEXT_JOIN_VOLLEY)
 	if _context_menu.item_count == 0: return
 	_context_menu.position = Vector2i(get_screen_position() + screen_position)
 	_context_menu.reset_size()
@@ -1355,12 +1364,29 @@ func _on_context_menu_pressed(id: int) -> void:
 			_emit_selected_description()
 			queue_redraw()
 		return
+	if id == CONTEXT_SUPPORT:
+		var candidates := support_candidates_for(_context_menu_cell)
+		if candidates.is_empty(): return
+		var before_support := _current_order_snapshot()
+		var ordered := 0
+		var refusal := "Invalid order."
+		for candidate_id in candidates:
+			var support_result := game.set_support_order(viewing_player, candidate_id, _context_menu_cell)
+			if bool(support_result.get("ok", false)): ordered += 1
+			else: refusal = String(support_result.get("message", refusal))
+		if ordered > 0 and before_support != _current_order_snapshot(): _record_order_undo(before_support)
+		order_changed.emit("Moving up in support." if ordered > 0 else refusal)
+		_emit_selected_description()
+		queue_redraw()
+		return
 	var archer_id := _selected_archer_id()
 	if archer_id == StrategoGame.EMPTY: return
 	var before := _current_order_snapshot()
 	var result: Dictionary
 	if id == CONTEXT_SHOOT:
 		result = game.set_ranged_order(viewing_player, archer_id, _context_menu_cell, _context_menu_piece)
+	elif id == CONTEXT_JOIN_VOLLEY:
+		result = game.set_volley_support_order(viewing_player, archer_id, _context_menu_cell)
 	else:
 		result = game.set_suppress_order(viewing_player, archer_id, _context_menu_cell)
 	if bool(result.get("ok", false)) and before != _current_order_snapshot():
