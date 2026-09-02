@@ -1796,6 +1796,60 @@ func _is_defending(piece_id: int, participants: Array) -> bool:
 	return true
 
 
+## A side's pool: one die per formation it brought, plus the comparative dice.
+## Numbers are paid out here and nowhere else, which is the whole reason Strength
+## scores off the leading formation alone. Stacking both would let a gang open a
+## margin wide enough to delete a healthy formation on contact.
+func _side_dice_count(team: int, teams: Array[int], members: Dictionary, participants: Array) -> int:
+	var own: Array = members[team]
+	var count := own.size()
+	var best_opposing_strength := -1
+	var best_opposing_weight := -1
+	for other in teams:
+		if other == team: continue
+		best_opposing_strength = maxi(best_opposing_strength, _side_strength(members[other]))
+		best_opposing_weight = maxi(best_opposing_weight, _side_weight(members[other]))
+	if best_opposing_strength >= 0 and _side_strength(own) > best_opposing_strength: count += 1
+	# Uniquely heaviest, so a Heavy earns nothing against another Heavy however
+	# many Mediums are standing behind either of them.
+	if best_opposing_weight >= 0 and _side_weight(own) > best_opposing_weight: count += 1
+	for id_value in own:
+		var id := int(id_value)
+		var role := String(pieces[id].role)
+		var defending := _is_defending(id, participants)
+		if (role == ROLE_CAVALRY and not defending) or (role == ROLE_INFANTRY and defending): count += 1
+	return count
+
+
+func _side_strength(ids: Array) -> int:
+	var best := -1
+	for id_value in ids: best = maxi(best, int(pieces[int(id_value)].strength))
+	return best
+
+
+func _side_weight(ids: Array) -> int:
+	var best := -1
+	for id_value in ids: best = maxi(best, _weight_rank(pieces[int(id_value)]))
+	return best
+
+
+## Who gets first refusal on the ground a winning side just took. Arrival leads,
+## so a formation that held the hex keeps it and its own reinforcements cannot
+## shove it off. Then current Strength, so among formations that landed together
+## the one leading the push takes the ground. Then id, purely so the outcome
+## never depends on the order participants happen to be listed in.
+func _placement_order(ids: Array, participants: Array) -> Array[int]:
+	var ordered: Array[int] = []
+	for id_value in ids: ordered.append(int(id_value))
+	ordered.sort_custom(func(first: int, second: int) -> bool:
+		var arrival_first := int(_participant_for(first, participants).get("arrival", 0))
+		var arrival_second := int(_participant_for(second, participants).get("arrival", 0))
+		if arrival_first != arrival_second: return arrival_first < arrival_second
+		if int(pieces[first].strength) != int(pieces[second].strength): return int(pieces[first].strength) > int(pieces[second].strength)
+		return first < second)
+	return ordered
+
+
 func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, batch_name: String) -> Dictionary:
 	var scores: Dictionary = {}
 	var raw_rolls: Dictionary = {}
@@ -1807,81 +1861,83 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		var id := int(participant.piece_id)
 		if id in participant_ids or not pieces[id].alive: continue
 		participant_ids.append(id)
-	# Nobody rolls until the whole square is known, because the size of every
-	# pool depends on who else turned up to the fight.
+	# Nobody rolls until the whole square is known, because a side's pool depends
+	# on everyone who turned up to the fight, on both sides of it.
+	var teams: Array[int] = []
+	var members: Dictionary = {}
 	for id in participant_ids:
-		var comparators := _opposing_comparators(id, participant_ids)
-		var defending := _is_defending(id, participants)
-		var piece_role := String(pieces[id].role)
-		var role_die: bool = (piece_role == ROLE_CAVALRY and not defending) or (piece_role == ROLE_INFANTRY and defending)
-		var count := _combat_dice_count(pieces[id], comparators[0], comparators[1], role_die)
+		var team := _team_for_piece(id)
+		if team not in members:
+			members[team] = ([] as Array[int])
+			teams.append(team)
+		members[team].append(id)
+	var team_scores: Dictionary = {}
+	var team_sixes: Dictionary = {}
+	for team in teams:
+		var side: Array = members[team]
+		var count := _side_dice_count(team, teams, members, participants)
 		var pool := _roll_dice_pool(count)
-		scores[id] = int(pool.high) + int(pieces[id].strength)
-		raw_rolls[id] = int(pool.high)
-		sixes[id] = int(pool.sixes)
-		# Recorded rather than left to be inferred: a display cannot reconstruct
-		# a pool from its kept die alone, and the count is the whole story of
-		# why one side was favoured.
-		dice_pools[id] = pool.dice
-		bonus_dice[id] = count - COMBAT_BASE_DICE
-		pieces[id].participated_in_combat = true
-		pieces[id].melee_count = int(pieces[id].melee_count) + 1
+		team_scores[team] = int(pool.high) + _side_strength(side)
+		team_sixes[team] = int(pool.sixes)
+		# Stored against every formation on the side rather than against the side
+		# itself, so a battle card can read one participant's row without knowing
+		# how the sides were grouped. They all share the numbers because there was
+		# genuinely one roll.
+		for id_value in side:
+			var id := int(id_value)
+			scores[id] = int(team_scores[team])
+			raw_rolls[id] = int(pool.high)
+			sixes[id] = int(pool.sixes)
+			dice_pools[id] = pool.dice
+			bonus_dice[id] = count - side.size()
+			pieces[id].participated_in_combat = true
+			pieces[id].melee_count = int(pieces[id].melee_count) + 1
 	var highest := -1
-	for score in scores.values(): highest = maxi(highest, int(score))
-	var top_ids: Array[int] = []
-	var top_teams: Dictionary = {}
-	for id in participant_ids:
-		if int(scores[id]) == highest:
-			top_ids.append(id)
-			top_teams[_team_for_piece(id)] = true
-	var unique_winner_id := top_ids[0] if top_ids.size() == 1 else EMPTY
-	if unique_winner_id == EMPTY and defender_wins_ties and top_ids.size() > 1:
-		# Resolves only the specific case this rule is about: an attacker's
-		# roll exactly matching the defender's. A tie among several attackers,
-		# or among several defenders in a multi-way fight, is still genuinely
-		# ambiguous and still bounces - this never invents a winner where the
-		# tie itself does not point to one.
-		var defenders_among_top: Array[int] = []
-		for id in top_ids:
-			if _is_defending(id, participants):
-				defenders_among_top.append(id)
-		if defenders_among_top.size() == 1:
-			unique_winner_id = defenders_among_top[0]
-	if unique_winner_id == EMPTY and defender_resists_charge_ties and top_ids.size() > 1:
-		# Narrower cousin of the block above: only resolves the tie when the
-		# defender is unique among the top scorers AND the attacker(s) tied
-		# with them are all Cavalry - the "braced against the charge" case
-		# where both sides' role bonuses cancel and a tie is otherwise a pure
-		# coin flip. Leaves every other tie (including Infantry-vs-Infantry)
-		# exactly as ambiguous as it already was.
-		var defenders_among_top2: Array[int] = []
-		var all_attackers_are_cavalry := true
-		for id in top_ids:
-			if not _is_defending(id, participants):
-				if pieces[id].role != ROLE_CAVALRY: all_attackers_are_cavalry = false
-			else:
-				defenders_among_top2.append(id)
-		if defenders_among_top2.size() == 1 and all_attackers_are_cavalry:
-			unique_winner_id = defenders_among_top2[0]
+	for team in teams: highest = maxi(highest, int(team_scores[team]))
+	var top_teams: Array[int] = []
+	for team in teams:
+		if int(team_scores[team]) == highest: top_teams.append(team)
+	var winning_team := int(top_teams[0]) if top_teams.size() == 1 else -1
+	if winning_team < 0 and top_teams.size() > 1 and (defender_wins_ties or defender_resists_charge_ties):
+		# Both toggles answer the same question, an even score between a side that
+		# was set and a side that came at it, and neither invents a winner when
+		# more than one tied side was braced. The charge variant is the narrower
+		# one: it only breaks the tie when everything that came at the braced side
+		# was Cavalry, the case where both role dice cancel and the tie is a pure
+		# coin flip.
+		var braced_teams: Array[int] = []
+		for team in top_teams:
+			for id_value in members[team]:
+				if _is_defending(int(id_value), participants):
+					braced_teams.append(team)
+					break
+		if braced_teams.size() == 1:
+			var charge_only := true
+			for team in top_teams:
+				if team == braced_teams[0]: continue
+				for id_value in members[team]:
+					if pieces[int(id_value)].role != ROLE_CAVALRY: charge_only = false
+			if defender_wins_ties or charge_only:
+				winning_team = braced_teams[0]
 	var damage_by_id: Dictionary = {}
-	for target_id in participant_ids:
-		var opposing_score := -1
+	for id in participant_ids:
+		var team := _team_for_piece(id)
+		var best_opposing := -1
 		var opposing_sixes := 0
-		for source_id in participant_ids:
-			if are_allied_players(int(pieces[target_id].player), int(pieces[source_id].player)): continue
-			opposing_score = maxi(opposing_score, int(scores[source_id]))
-			# The margin comes from whoever beat you hardest, but a 6 is a
-			# lucky blow rather than a won contest, so it counts from anyone
-			# still swinging. That is what lets a formation that lost the
-			# square still put one through the winner on its way down.
-			opposing_sixes = maxi(opposing_sixes, int(sixes[source_id]))
-		# Two independent sources: the score margin, which only a loser pays,
-		# and surviving 6s, which land whatever the scores did. A draw is still
-		# free of margin damage, but no longer free of crits.
+		for other in teams:
+			if other == team: continue
+			best_opposing = maxi(best_opposing, int(team_scores[other]))
+			# The margin is the contest, but a 6 is a lucky blow rather than a won
+			# one, which is what lets a side being overrun put one through the
+			# winner on its way down.
+			opposing_sixes = maxi(opposing_sixes, int(team_sixes[other]))
+		# Two independent sources: the margin, which only a losing side pays and
+		# which every formation on it pays alike, and surviving 6s, which land
+		# whatever the scores did. A draw is free of margin damage, not of crits.
 		var damage := 0
-		if opposing_score >= 0:
-			damage = maxi(0, opposing_score - int(scores[target_id])) + maxi(0, opposing_sixes - int(sixes[target_id]))
-		damage_by_id[target_id] = damage
+		if best_opposing >= 0:
+			damage = maxi(0, best_opposing - int(team_scores[team])) + maxi(0, opposing_sixes - int(team_sixes[team]))
+		damage_by_id[id] = damage
 	for id in participant_ids:
 		pieces[id].strength = maxi(0, int(pieces[id].strength) - int(damage_by_id[id]))
 		if int(pieces[id].strength) <= 0: _remove_piece(id)
@@ -1890,44 +1946,39 @@ func _resolve_battle(participants: Array, contested: Vector2i, crossing: bool, b
 		if not occupant.is_empty() and int(occupant.id) in participant_ids: board[contested.y][contested.x] = EMPTY
 	var retreats: Array[Dictionary] = []
 	var outcomes: Dictionary = {}
-	var winning_team := _team_for_piece(unique_winner_id) if unique_winner_id != EMPTY else (int(top_teams.keys()[0]) if top_teams.size() == 1 else -1)
-	if unique_winner_id != EMPTY:
-		for id in participant_ids:
+	var unique_winner_id := EMPTY
+	if winning_team >= 0:
+		# The winning side claims the ground it was ordered onto, earliest arrival
+		# first. In an ordinary fight every attacker wanted the same hex, so one
+		# claim lands and the rest come home, exactly as before. In a crossing
+		# fight the destinations differ and an advancing line keeps its shape.
+		for id in _placement_order(members[winning_team], participants):
 			if not pieces[id].alive:
 				outcomes[id] = "destroyed"
-			elif id == unique_winner_id:
+				continue
+			var participant := _participant_for(id, participants)
+			var wanted: Vector2i = participant.to
+			if is_inside(wanted) and not is_blocked_terrain(wanted) and piece_at(wanted).is_empty():
+				_place_piece(id, wanted, participant.from)
 				outcomes[id] = STATUS_WON
 				pieces[id].round_status = STATUS_WON
 				pieces[id].main_done = true
-			elif _team_for_piece(id) == winning_team:
+				if unique_winner_id == EMPTY: unique_winner_id = id
+			else:
 				outcomes[id] = "returned"
 				_mark_returned(id)
-				_place_bouncer(id, _participant_for(id, participants).from, contested)
-			else:
-				outcomes[id] = STATUS_LOST
-				_mark_lost(id)
-				retreats.append(_retreat_intent(id, _participant_for(id, participants), participants, scores, crossing))
-		if pieces[unique_winner_id].alive:
-			var winner_participant := _participant_for(unique_winner_id, participants)
-			_place_piece(unique_winner_id, winner_participant.to if crossing else contested, winner_participant.from)
-	elif winning_team >= 0:
-		# Several allied formations may tie for their side's best score. Their
-		# side still won the battle, so enemies lose and retreat; the tied allies
-		# simply cannot stack on the square and return without a status penalty.
+				_place_bouncer(id, participant.from, contested)
 		for id in participant_ids:
+			if _team_for_piece(id) == winning_team: continue
 			if not pieces[id].alive:
 				outcomes[id] = "destroyed"
-			elif _team_for_piece(id) == winning_team:
-				outcomes[id] = "returned"
-				_mark_returned(id)
-				_place_bouncer(id, _participant_for(id, participants).from, contested)
 			else:
 				outcomes[id] = STATUS_LOST
 				_mark_lost(id)
-				retreats.append(_retreat_intent(id, _participant_for(id, participants), participants, scores, crossing))
+				retreats.append(_retreat_intent(id, _participant_for(id, participants), participants, crossing))
 	else:
-		# Only a highest-score tie spanning opposing teams has a bounce penalty.
-		# Nobody won, so every surviving participant returns and is done.
+		# Level scores across opposing sides. Nobody took the hex, so every
+		# survivor returns and is done for the round.
 		for id in participant_ids:
 			if not pieces[id].alive:
 				outcomes[id] = "destroyed"
@@ -1956,7 +2007,7 @@ func _participant_for(piece_id: int, participants: Array) -> Dictionary:
 	return {}
 
 
-func _retreat_intent(piece_id: int, participant: Dictionary, participants: Array, scores: Dictionary, crossing: bool) -> Dictionary:
+func _retreat_intent(piece_id: int, participant: Dictionary, participants: Array, crossing: bool) -> Dictionary:
 	var target: Vector2i
 	var anchor: Vector2i
 	var direction := -1
@@ -1965,7 +2016,7 @@ func _retreat_intent(piece_id: int, participant: Dictionary, participants: Array
 		target = participant.from
 		direction = HexGrid.direction_between(anchor, target)
 	else:
-		var source := _highest_opposing_participant(piece_id, participants, scores)
+		var source := _strongest_opposing_participant(piece_id, participants)
 		anchor = participant.from
 		target = participant.from
 		var away := (HexGrid.cell_center(participant.from, Vector2.ZERO, 1.0) - HexGrid.cell_center(source.from, Vector2.ZERO, 1.0)).normalized()
@@ -1979,16 +2030,29 @@ func _retreat_intent(piece_id: int, participant: Dictionary, participants: Array
 	return {"piece_id": piece_id, "from": participant.from, "to": target, "anchor": anchor, "direction": direction}
 
 
-func _highest_opposing_participant(piece_id: int, participants: Array, scores: Dictionary) -> Dictionary:
+## Which enemy a loser backs away from. Score belongs to the side now, so it
+## cannot pick one formation out of a line, and the direction comes from the
+## strongest opposing formation instead, with the earlier arrival breaking a tie:
+## the one that has held the ground longest is the one you are giving it up to.
+## Formations destroyed in the same clash are only considered if nothing on that
+## side is left standing to back away from.
+func _strongest_opposing_participant(piece_id: int, participants: Array) -> Dictionary:
 	var selected: Dictionary = {}
-	var selected_score := -1
+	var fallback: Dictionary = {}
+	var best_strength := -1
+	var best_arrival := 0
 	for participant: Dictionary in participants:
 		var other_id := int(participant.piece_id)
 		if are_allied_players(int(pieces[piece_id].player), int(pieces[other_id].player)): continue
-		if int(scores[other_id]) > selected_score:
+		if fallback.is_empty(): fallback = participant
+		if not pieces[other_id].alive: continue
+		var strength := int(pieces[other_id].strength)
+		var arrival := int(participant.get("arrival", 0))
+		if strength > best_strength or (strength == best_strength and arrival < best_arrival):
 			selected = participant
-			selected_score = int(scores[other_id])
-	return selected
+			best_strength = strength
+			best_arrival = arrival
+	return selected if not selected.is_empty() else fallback
 
 
 func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array[Dictionary]:

@@ -34,7 +34,8 @@ func _run() -> void:
 	_test_comparative_bonus_dice()
 	_test_crit_sixes_cancel_across_sides()
 	_test_multiway_unique_winner()
-	_test_multiway_friendly_leader_tie()
+	_test_side_numbers_pay_in_dice_not_strength()
+	_test_losing_side_shares_one_margin()
 	_test_multiway_damage_uses_highest_opponent()
 	_test_ranged_focus_fire_is_simultaneous()
 	_test_archer_loss_blocks_shot_and_win_allows_it()
@@ -882,9 +883,11 @@ func _test_multiway_unique_winner() -> void:
 	var events := _ready_and_resolve(game, [6, 1, 3, 1, 2, 1, 1])
 	var battle := _events_with_action(events, "melee")[0]
 	_expect(int(battle.winner_id) == first_id, "a unique highest scorer wins a multiway contested square")
-	# The lone Heavy is heavier than both Lights facing it, so it earns the
-	# weight die against the pair; neither Light earns one against it.
-	_expect(int(battle.bonus_dice[defender_id]) == 2 and int(battle.bonus_dice[first_id]) == 1, "comparative dice in a multiway fight are judged against the whole opposing side")
+	# Blue's lone Heavy is uniquely heaviest and braced, so a weight die and a
+	# defence die on top of its one formation die. Red brings two formations and
+	# two charging Cavalry, and earns nothing comparative against equal Strength
+	# or a heavier enemy, so both sides sit two dice above their base.
+	_expect(int(battle.bonus_dice[defender_id]) == 2 and int(battle.bonus_dice[first_id]) == 2, "each side earns its comparative dice against the whole of the other")
 	_expect(game.pieces[first_id].position == Vector2i(2, 2), "unique friendly leader occupies the contested square")
 	_expect(game.pieces[second_id].position == Vector2i(2, 3) and game.pieces[second_id].round_status == StrategoGame.STATUS_READY, "friendly non-winning attacker returns without a bounce-status penalty")
 	_expect(StrategoGame.are_adjacent(Vector2i(2, 2), game.pieces[defender_id].position) and game.pieces[defender_id].position != Vector2i(2, 2) and game.pieces[defender_id].round_status == StrategoGame.STATUS_LOST, "opposing multiway loser retreats")
@@ -900,18 +903,50 @@ func _test_multiway_unique_winner() -> void:
 	_expect(support_game.pieces[support].round_status == StrategoGame.STATUS_READY and support_game.can_receive_leftover_order(StrategoGame.RED, support), "a friendly combat return remains eligible for its post-clash action")
 
 
-func _test_multiway_friendly_leader_tie() -> void:
+func _test_side_numbers_pay_in_dice_not_strength() -> void:
+	# Two formations roll two dice and keep the better of them, but the side still
+	# scores off its leader's Strength alone. Stacking Strength as well would make
+	# the margin the difference in total health, swamp the dice, and let any local
+	# advantage delete a healthy formation on contact.
 	var game := _test_game()
 	var first_id := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
 	var second_id := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(2, 3), 10)
-	var defender_id := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 10)
+	var defender_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 2), 10)
 	game.set_unit_order(StrategoGame.RED, first_id, [Vector2i(2, 2)])
 	game.set_unit_order(StrategoGame.RED, second_id, [Vector2i(2, 2)])
-	var events := _ready_and_resolve(game, [5, 1, 5, 1, 2, 1, 1])
-	_expect(game.pieces[first_id].position == Vector2i(1, 2) and game.pieces[second_id].position == Vector2i(2, 3), "same-side tied leaders bounce after beating the enemy")
-	_expect(game.piece_at(Vector2i(2, 2)).is_empty(), "same-side tied leaders leave the contested square empty")
-	_expect(StrategoGame.are_adjacent(Vector2i(2, 2), game.pieces[defender_id].position) and game.pieces[defender_id].position != Vector2i(2, 2), "enemy still retreats when tied friendly leaders beat it")
-	_expect(_events_with_action(events, "melee")[0].result == "team_win" and game.pieces[first_id].round_status == StrategoGame.STATUS_READY and game.pieces[second_id].round_status == StrategoGame.STATUS_READY, "an allied top-score tie is a team win with no bounce-status penalty")
+	# Red rolls four: two formations and two attacking Cavalry, with no
+	# comparative die against an equal. Blue rolls two: one formation, braced.
+	var events := _ready_and_resolve(game, [3, 5, 4, 1, 4, 4])
+	var battle := _events_with_action(events, "melee")[0]
+	_expect(int(battle.scores[first_id]) == 15 and int(battle.scores[second_id]) == 15, "both formations on a side share the side's single score")
+	_expect(int(battle.scores[defender_id]) == 14, "and a side of one scores exactly what a lone formation always did")
+	_expect(int(battle.damage[defender_id]) == 1, "the loser pays the margin between two sides, not the sum of what faced it")
+	_expect(game.pieces[first_id].position == Vector2i(2, 2), "the leading claimant takes the contested hex")
+	_expect(game.pieces[second_id].position == Vector2i(2, 3) and game.pieces[second_id].round_status == StrategoGame.STATUS_READY, "the formation that could not stack on it comes home without a penalty")
+
+
+func _test_losing_side_shares_one_margin() -> void:
+	# Three formations converging on one empty hex, two of them allied. Every
+	# formation on the losing side pays the same margin, so there is nothing to
+	# track about which of them rolled what.
+	var game := _test_game()
+	var attacker_id := game.add_piece(StrategoGame.LIGHT_CAVALRY, StrategoGame.RED, Vector2i(1, 2), 10)
+	var weak_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(2, 3), 4)
+	var strong_id := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.GREEN, Vector2i(3, 2), 8)
+	game.set_player_team(StrategoGame.BLUE, 7)
+	game.set_player_team(StrategoGame.GREEN, 7)
+	game.set_unit_order(StrategoGame.RED, attacker_id, [Vector2i(2, 2)])
+	game.set_unit_order(StrategoGame.BLUE, weak_id, [Vector2i(2, 2)])
+	game.set_unit_order(StrategoGame.GREEN, strong_id, [Vector2i(2, 2)])
+	# All three are Light so they land on the same impulse and share one fight.
+	# Red rolls three: one formation, stronger, and charging. The allies roll two,
+	# one per formation, braced by nobody because nothing got there first.
+	var events := _ready_and_resolve(game, [1, 1, 2, 3, 3])
+	var battle := _events_with_action(events, "melee")[0]
+	_expect(int(battle.scores[weak_id]) == 11 and int(battle.scores[strong_id]) == 11, "the side scores off its strongest formation, whichever one rolled")
+	_expect(int(battle.damage[weak_id]) == 1 and int(battle.damage[strong_id]) == 1, "every formation on the losing side pays the same margin")
+	_expect(int(game.pieces[weak_id].strength) == 3 and int(game.pieces[strong_id].strength) == 7, "and pays it out of its own Strength")
+	_expect(game.pieces[attacker_id].position == Vector2i(2, 2), "the winning side takes the hex it was ordered onto")
 
 
 func _test_multiway_damage_uses_highest_opponent() -> void:

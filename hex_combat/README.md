@@ -198,7 +198,7 @@ Run this folder's **Test Stratego.bat**, or:
 godot --headless --path . --script res://tests/test_runner.gd
 ```
 
-The deterministic suite covers flat-top odd-column neighbours, hex radius counts, coordinate and pixel round trips, fog, delayed Weight-based impulse timing, movement and collisions, comparative bonus dice, cross-side crit cancelling, multiway battles, margin-only damage, aimed and suppressing Archer fire, directional retreats, objectives, replay round trips and tamper rejection, and four-bot round resolution.
+The deterministic suite covers flat-top odd-column neighbours, hex radius counts, coordinate and pixel round trips, fog, delayed Weight-based impulse timing, movement and collisions, comparative bonus dice, cross-side crit cancelling, side scoring off the strongest formation, bracing earned by arrival, one shared margin across a losing side, a follower advancing into a vacated square, aimed and suppressing Archer fire, directional retreats, objectives, replay round trips and tamper rejection, and four-bot round resolution.
 
 ## Formation banners
 
