@@ -26,6 +26,7 @@ func _run() -> void:
 	_test_weighted_impulse_timing_and_actual_spend()
 	_test_allied_collision_bounces_without_combat()
 	_test_follower_advances_into_a_vacated_attack_square()
+	_test_direction_arrows_are_controls_you_can_aim_at()
 	_test_an_attack_lands_when_the_defender_fails_to_slip_away()
 	_test_a_dodged_attack_still_takes_the_ground()
 	_test_every_way_of_issuing_an_order_queues_it()
@@ -752,6 +753,41 @@ func _test_context_menu_actually_issues_support_and_join_volley() -> void:
 	_expect(bool(volley_game.order_for_piece(joining).get("volley_support", false)), "picking Join Volley throws the second Archer in with the first")
 	_expect(volley_game.order_for_piece(joining).get("ranged_target", Vector2i(-1, -1)) == Vector2i(2, 1), "and aims it at the hex being volleyed")
 	volley_view.free()
+
+
+func _test_direction_arrows_are_controls_you_can_aim_at() -> void:
+	# The markers used to be drawn art with no hit testing: the click resolved to
+	# whichever hex the pixel was in, and they sit on the boundary between two
+	# hexes, so half of every arrow ordered the formation and half deselected it.
+	var game := _test_game()
+	var mover := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 8)
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.viewing_player = StrategoGame.BLUE
+	view.size = Vector2(900, 700)
+	view.selected_piece_ids.assign([mover])
+	view.selected_piece_id = mover
+	var geometry := view._board_geometry()
+	view._sync_direction_arrows(geometry.origin, float(geometry.cell))
+	_expect(view._direction_arrows.size() == HexGrid.DIRECTION_COUNT, "there is one control per direction")
+	var shown: Array = []
+	for arrow in view._direction_arrows:
+		if arrow.visible: shown.append(arrow)
+	_expect(shown.size() == HexGrid.DIRECTION_COUNT, "all six are offered from open ground")
+	var aimed = shown[0]
+	_expect(aimed._has_point(aimed.size * 0.5), "the middle of an arrow belongs to the arrow")
+	_expect(not aimed._has_point(Vector2.ZERO), "but the corner of its box does not, so it cannot take a click meant for the board")
+	var before: int = int(game.order_for_piece(mover).get("path", []).size())
+	view._on_direction_arrow_chosen(int(aimed.direction))
+	_expect(int(game.order_for_piece(mover).get("path", []).size()) > before, "pressing one issues the order it points at")
+	_expect(mover in view.selected_piece_ids, "and the formation it belongs to stays selected, which is the whole complaint")
+	view.clear_selection()
+	view._sync_direction_arrows(geometry.origin, float(geometry.cell))
+	var still_shown := 0
+	for arrow in view._direction_arrows:
+		if arrow.visible: still_shown += 1
+	_expect(still_shown == 0, "and they are gone once nothing is selected")
+	view.free()
 
 
 func _test_an_attack_lands_when_the_defender_fails_to_slip_away() -> void:

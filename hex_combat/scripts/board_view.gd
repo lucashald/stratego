@@ -67,6 +67,9 @@ const BOUNCE_PUSH := 0.22
 const BOUNCE_HOLD := 0.42
 
 # piece_id -> Array of {beat:int, from:Vector2i, to:Vector2i, bounce:bool}
+## The six direction controls, created on first use so a view that is never
+## drawn never builds them.
+var _direction_arrows: Array[DirectionArrow] = []
 var _march_steps: Dictionary = {}
 # The impulse numbers that actually carried movement, in order. An impulse with
 # nothing in it is skipped rather than played as an empty beat.
@@ -604,7 +607,68 @@ func _draw_order_ghosts(origin: Vector2, cell: float) -> void:
 				_draw_hex(_cell_center(leftover, origin, cell), cell * 0.34, Color(LEFTOVER_COLOR, 0.22), LEFTOVER_COLOR, maxf(2.0, cell * 0.05))
 
 
+## One of the six direction controls around the command anchor.
+##
+## These were drawn art with no hit testing of their own: the click resolved to
+## whichever hex the pixel sat in, and the markers are deliberately drawn on the
+## boundary between two hexes so banners stay readable. That put half of every
+## arrow over the destination, where clicking issued the order, and half over the
+## formation itself, where clicking deselected it. One icon, two opposite
+## outcomes, divided by an invisible line through its middle.
+##
+## As real controls they can stay on the boundary, because the click now belongs
+## to the arrow rather than to whatever is underneath it.
+class DirectionArrow extends Control:
+	signal chosen(direction: int)
+	signal alternate(direction: int, at: Vector2)
+
+	var direction := 0
+	var facing := Vector2.RIGHT
+	var tint := Color.WHITE
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	## Round, not the square of its bounding box, so the corners between two
+	## arrows go on belonging to the board rather than to whichever arrow's
+	## rectangle happens to reach furthest.
+	func _has_point(point: Vector2) -> bool:
+		var radius := size.x * 0.5
+		return point.distance_to(Vector2(radius, radius)) <= radius
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is not InputEventMouseButton: return
+		var button := event as InputEventMouseButton
+		if not button.pressed: return
+		if button.button_index == MOUSE_BUTTON_LEFT:
+			chosen.emit(direction)
+			accept_event()
+		elif button.button_index == MOUSE_BUTTON_RIGHT:
+			# Stopping mouse events means the board never sees a right-click on
+			# an arrow, so Inspect and the Archer actions would silently stop
+			# working wherever an arrow happened to lie. Hand it back instead.
+			alternate.emit(direction, position + button.position)
+			accept_event()
+
+	func _draw() -> void:
+		var radius := size.x * 0.5
+		var centre := Vector2(radius, radius)
+		draw_circle(centre, radius, Color(0.025, 0.16, 0.28, 0.9))
+		draw_arc(centre, radius, 0.0, TAU, 24, tint, maxf(1.6, radius * 0.21))
+		var vector := facing.normalized()
+		var perpendicular := Vector2(-vector.y, vector.x)
+		var tip := centre + vector * radius * 0.58
+		var back := centre - vector * radius * 0.42
+		draw_colored_polygon(PackedVector2Array([
+			tip,
+			back + perpendicular * radius * 0.47,
+			back - perpendicular * radius * 0.47,
+		]), tint)
+
+
 func _draw_selection(origin: Vector2, cell: float) -> void:
+	_sync_direction_arrows(origin, cell)
 	if selected_piece_ids.is_empty():
 		return
 	for piece_id in selected_piece_ids:
@@ -613,23 +677,65 @@ func _draw_selection(origin: Vector2, cell: float) -> void:
 		var center := _cell_center(game.pieces[piece_id].position, origin, cell)
 		var primary := piece_id == selected_piece_id
 		_draw_hex(center, cell * (0.53 if primary else 0.48), Color(0.45, 0.75, 1.0, 0.15), Color("#d5efff") if primary else Color("#75bfff"), maxf(2.0, cell * (0.075 if primary else 0.045)))
-	# No order to project a destination from before the game has even started.
-	if game.phase == StrategoGame.PHASE_DEPLOYMENT: return
-	var anchor_id := _command_anchor_id()
+
+
+
+## Positions the six controls, or hides them. Called from the draw pass because
+## everything that can move them (selection, orders, zoom, pan, phase) already
+## queues a redraw, so there is one place that keeps them in step with the board
+## rather than several that have to remember to.
+func _sync_direction_arrows(origin: Vector2, cell: float) -> void:
+	if overview_mode: return
+	if _direction_arrows.is_empty():
+		for direction in HexGrid.DIRECTION_COUNT:
+			var arrow := DirectionArrow.new()
+			arrow.direction = direction
+			arrow.visible = false
+			arrow.chosen.connect(_on_direction_arrow_chosen)
+			arrow.alternate.connect(_on_direction_arrow_alternate)
+			add_child(arrow)
+			_direction_arrows.append(arrow)
+	var anchor_id := StrategoGame.EMPTY
+	if game != null and not selected_piece_ids.is_empty() and game.phase != StrategoGame.PHASE_DEPLOYMENT:
+		anchor_id = _command_anchor_id()
 	if anchor_id == StrategoGame.EMPTY:
+		for arrow: DirectionArrow in _direction_arrows: arrow.visible = false
 		return
 	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
 	var projected_center := _cell_center(projected, origin, cell)
+	var tint := LEFTOVER_COLOR if leftover_mode else Color("#d8edff")
 	for direction in HexGrid.DIRECTION_COUNT:
+		var arrow: DirectionArrow = _direction_arrows[direction]
 		var destination := HexGrid.neighbor(projected, direction)
-		if game.is_inside(destination) and not game.is_blocked_terrain(destination):
-			var marker_color := LEFTOVER_COLOR if leftover_mode else Color("#d8edff")
-			var destination_center := _cell_center(destination, origin, cell)
-			# On the boundary between the two cells, not the destination cell's
-			# centre: whatever stands on the destination square stays readable.
-			# The whole square is still the click target either way (hit-testing
-			# is per-cell, not per-marker), so this is purely a visual move.
-			_draw_direction_marker(projected_center.lerp(destination_center, 0.5), (destination_center - projected_center).normalized(), cell, marker_color)
+		if not game.is_inside(destination) or game.is_blocked_terrain(destination):
+			arrow.visible = false
+			continue
+		var destination_center := _cell_center(destination, origin, cell)
+		# Still on the boundary, for the reason it was put there: whatever stands
+		# on the destination square stays readable.
+		var extent := cell * 0.19
+		arrow.facing = (destination_center - projected_center).normalized()
+		arrow.tint = tint
+		arrow.size = Vector2(extent * 2.0, extent * 2.0)
+		arrow.position = projected_center.lerp(destination_center, 0.5) - arrow.size * 0.5
+		arrow.visible = true
+		arrow.queue_redraw()
+
+
+## An arrow is the same order as clicking the square it points at, so it goes
+## through the same path rather than a parallel one that could drift from it.
+func _on_direction_arrow_chosen(direction: int) -> void:
+	var anchor_id := _command_anchor_id()
+	if anchor_id == StrategoGame.EMPTY: return
+	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
+	var destination := HexGrid.neighbor(projected, direction)
+	if not game.is_inside(destination): return
+	_issue_order_to_square(destination, game.piece_at(destination))
+	queue_redraw()
+
+
+func _on_direction_arrow_alternate(_direction: int, at: Vector2) -> void:
+	_handle_right_click(at)
 
 
 func _command_anchor_id() -> int:
@@ -647,20 +753,6 @@ func _piece_has_unused_movement(piece_id: int) -> bool:
 	if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING:
 		return game.can_receive_leftover_order(viewing_player, piece_id)
 	return game.planned_movement_reserved(piece_id) < game.movement_limit_for(game.pieces[piece_id])
-
-
-func _draw_direction_marker(center: Vector2, direction: Vector2, cell: float, color: Color) -> void:
-	draw_circle(center, cell * 0.19, Color(0.025, 0.16, 0.28, 0.9))
-	draw_arc(center, cell * 0.19, 0.0, TAU, 24, color, maxf(1.6, cell * 0.04))
-	var vector := direction.normalized()
-	var perpendicular := Vector2(-vector.y, vector.x)
-	var tip := center + vector * cell * 0.11
-	var back := center - vector * cell * 0.08
-	draw_colored_polygon(PackedVector2Array([
-		tip,
-		back + perpendicular * cell * 0.09,
-		back - perpendicular * cell * 0.09,
-	]), color)
 
 
 func _draw_drag_selection() -> void:
