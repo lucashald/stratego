@@ -1312,6 +1312,12 @@ func _test_friendly_blocked_retreat_shunts() -> void:
 		boxed_game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, HexGrid.neighbor(anchor, step), 5)
 	var boxed_events := boxed_game._resolve_retreats([{"piece_id": boxed, "from": anchor, "to": direct, "anchor": anchor, "direction": direction}], "test")
 	_expect(not boxed_game.pieces[boxed].alive and boxed_events[0].reason == "friendly_congestion", "only a formation with no free neighbour at all is still lost to congestion")
+	# Retreats reach the history, so a replay can answer what happened to a
+	# formation that vanished. Reading the code was the only way before.
+	var recorded := boxed_game.battle_history
+	_expect(recorded.size() == 1 and String(recorded[0].get("action", "")) == "retreat", "a retreat is recorded in the battle history")
+	_expect(String(recorded[0].get("reason", "")) == "friendly_congestion" and int(recorded[0].get("piece_id", -1)) == boxed, "with the formation it destroyed and why")
+	_expect(not recorded[0].get("known_to", []).is_empty(), "and who was in a position to see it")
 
 
 func _test_enemy_retreat_collision_battle() -> void:

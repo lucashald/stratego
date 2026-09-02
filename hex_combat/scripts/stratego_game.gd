@@ -2159,8 +2159,12 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 					if shunt_side.is_empty():
 						destroy_reason = "friendly_congestion"
 		if not destroy_reason.is_empty():
+			# Viewers resolved before the removal, which blanks the position.
+			var lost_viewers := _move_viewers(int(pieces[id].player), retreat.from, direct_target)
 			_remove_piece(id)
-			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id, "from": retreat.from, "to": direct_target, "result": "retreat_destroyed", "reason": destroy_reason, "combat": false})
+			var lost_event := {"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id, "from": retreat.from, "to": direct_target, "result": "retreat_destroyed", "reason": destroy_reason, "combat": false, "known_to": lost_viewers}
+			events.append(lost_event)
+			battle_history.append(lost_event.duplicate(true))
 		else:
 			if target not in valid_by_target: valid_by_target[target] = []
 			var resolved_retreat := retreat.duplicate(true)
@@ -2174,7 +2178,9 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 			var retreat: Dictionary = group[0]
 			_place_piece(int(retreat.piece_id), target, retreat.from)
 			var shunt_side := String(retreat.get("shunt_side", ""))
-			events.append({"ok": true, "action": "retreat", "batch": batch_name, "piece_id": int(retreat.piece_id), "from": retreat.from, "to": target, "direct_to": retreat.get("direct_to", target), "shunt_side": shunt_side, "result": "retreat_shunted" if not shunt_side.is_empty() else "retreated", "combat": false})
+			var moved_event := {"ok": true, "action": "retreat", "batch": batch_name, "piece_id": int(retreat.piece_id), "from": retreat.from, "to": target, "direct_to": retreat.get("direct_to", target), "shunt_side": shunt_side, "result": "retreat_shunted" if not shunt_side.is_empty() else "retreated", "combat": false, "known_to": _move_viewers(int(pieces[int(retreat.piece_id)].player), retreat.from, target)}
+			events.append(moved_event)
+			battle_history.append(moved_event.duplicate(true))
 			continue
 		var teams: Dictionary = {}
 		for retreat: Dictionary in group: teams[_team_for_piece(int(retreat.piece_id))] = true
@@ -2183,7 +2189,9 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 			for retreat: Dictionary in group:
 				ids.append(int(retreat.piece_id))
 				_remove_piece(int(retreat.piece_id))
-			events.append({"ok": true, "action": "retreat_collision", "batch": batch_name, "to": target, "participants": ids, "result": "congestion_destroyed", "combat": false})
+			var collision_event := {"ok": true, "action": "retreat_collision", "batch": batch_name, "to": target, "participants": ids, "result": "congestion_destroyed", "combat": false, "known_to": _battle_viewers_for_ids(ids)}
+			events.append(collision_event)
+			battle_history.append(collision_event.duplicate(true))
 		else:
 			events.append(_resolve_retreat_battle(group, target, batch_name))
 	return events
