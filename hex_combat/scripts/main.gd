@@ -417,14 +417,14 @@ func _build_view_controls() -> void:
 	action_row.add_child(settings_button)
 
 
-## The round as six named steps. MARCH and MELEE each carry three dots because
-## there really are three of each and they alternate: the engine resolves moves,
-## then battles, then retreats within *each* impulse. The bar is therefore a
-## legend showing where the current event belongs, not a progress meter, and it
-## is allowed to jump backwards.
+## The round as six named steps. The bar is a legend showing where the current
+## event belongs, not a progress meter, and it is allowed to jump backwards.
+##
+## MARCH carries one dot per movement impulse, the last of which only a road
+## formation ever reaches, so on a map with no roads it simply never lights.
 const PHASE_STEPS := [
 	{"name": "ORDERS", "dots": 1},
-	{"name": "MARCH", "dots": 3},
+	{"name": "MARCH", "dots": StrategoGame.MOVEMENT_IMPULSES},
 	{"name": "MELEE", "dots": 3},
 	{"name": "REPOSITION", "dots": 1},
 	{"name": "MISSILES", "dots": 1},
@@ -2078,7 +2078,7 @@ func _phase_step_for_event(event: Dictionary) -> Dictionary:
 	var batch := String(event.get("batch", ""))
 	var impulse := 0
 	if batch.begins_with("impulse_"):
-		impulse = clampi(int(batch.trim_prefix("impulse_")) - 1, 0, 2)
+		impulse = clampi(int(batch.trim_prefix("impulse_")) - 1, 0, StrategoGame.MOVEMENT_IMPULSES - 1)
 	if batch == "leftover":
 		return {"step": STEP_REPOSITION, "dot": 0}
 	if action in ["ranged", "ranged_fizzle"]:
@@ -2460,10 +2460,15 @@ func _formation_detail(piece: Dictionary) -> String:
 "
 	text += "[color=#9fc8e8]%s[/color] · %s
 " % [String(piece.role).capitalize(), role_note]
+	# Weight's own movement, not the total. A road's point is that it is not
+	# Weight, and crediting the extra step to "Heavy" would say the opposite.
 	text += "[color=#c8a15c]%s[/color] · one bonus die against anything lighter, moves %d
 " % [
-		String(piece.weight).capitalize(), game.movement_limit_for(piece),
+		String(piece.weight).capitalize(), game.base_movement_for(piece),
 	]
+	if int(piece.get("road_bonus", 0)) > 0:
+		text += "[color=#c9bd8a]Road[/color] · began the round on a road, +%d movement spent after the others move
+" % int(piece.road_bonus)
 	if int(piece.strength) < int(piece.max_strength):
 		# Strength is added to the die rather than capping it now, so damage
 		# costs a formation score directly - and can cost it the comparative

@@ -58,6 +58,12 @@ static func apply(game: StrategoGame, data: Dictionary) -> Dictionary:
 		game.set_terrain(_vector(cell), StrategoGame.TERRAIN_WATER)
 	for cell in terrain.get("bridge", []):
 		game.set_terrain(_vector(cell), StrategoGame.TERRAIN_BRIDGE)
+	# Laid after the impassable ground, so a road written across a lake or a
+	# river is refused rather than quietly opening a way through it.
+	var roads: Array = []
+	for cell in terrain.get("road", []):
+		roads.append(_vector(cell))
+	game.apply_road_terrain(roads)
 
 	var piece_ids: Dictionary = {}
 	for side in SIDES:

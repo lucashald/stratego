@@ -16,6 +16,7 @@ side keeps its single highest die.
 - [Running it](#running-it)
 - [The board](#the-board)
 - [Formations](#formations)
+- [Roads](#roads)
 - [A round, end to end](#a-round-end-to-end)
 - [Planning and orders](#planning-and-orders)
 - [Movement resolution](#movement-resolution)
@@ -125,6 +126,7 @@ string.
 | `lake` | no | the four-lake map |
 | `water` | no | the bridge river |
 | `bridge` | yes | the four crossing hexes |
+| `road` | yes | any scenario that lays one; see [Roads](#roads) |
 
 `is_blocked_terrain` is true for lake and water. The lake map places four 2x2
 blocks at columns 7-8 and 11-12, rows 7-8 and 11-12. The bridge map floods row
@@ -152,7 +154,8 @@ the combat score.
 | heavy | 1 | 3 |
 
 The first impulse is `4 - movement`, so everything finishes moving on impulse 3
-regardless of speed.
+regardless of speed. A road adds a step on top of this without touching the
+schedule; see [Roads](#roads).
 
 Strength is 7 for every type in `PIECE_DEFINITIONS`. That uniformity is
 deliberate. Weight, Role and dice decide a fresh fight; Strength differences only
@@ -162,13 +165,70 @@ explicit per-formation values. `add_piece` takes a `strength_override` for that.
 A Flag has no role, no weight, strength 0, and never moves. It only exists in the
 two four-corner scenarios. Archers cannot target it.
 
+## Roads
+
+A formation that **begins its round standing on a road** gets one extra movement
+point. Roads are otherwise open ground: passable to everyone, no effect on
+combat, vision or retreats.
+
+The bonus is spent as a **fourth impulse**, after the shared three. Every Weight
+keeps the first impulse its Weight alone gives it, so a road buys distance rather
+than an earlier start.
+
+| | Movement | Impulses it moves on |
+| --- | --- | --- |
+| Light | 3, or 4 from a road | 1, 2, 3, and 4 from a road |
+| Medium | 2, or 3 from a road | 2, 3, and 4 from a road |
+| Heavy | 1, or 2 from a road | 3, and 4 from a road |
+
+Two things follow from that, both deliberate.
+
+A road formation **arrives last and is therefore braced against nobody**. It
+spent the round marching rather than forming up, and anything that reached the
+contested hex on impulses 1 to 3 is braced against it. Reaching a fight by road
+is a real trade, not free tempo.
+
+The bonus could not have been folded into the existing schedule instead. The
+first impulse is `4 - movement`; feed a boosted total into that and a road Heavy
+starts on impulse 2, which is a different feature entirely, changing who is
+braced against whom across the whole board. For a Light it does not even work:
+`4 - 4` is impulse 0, one before the loop begins, so the fourth step the order
+validator had already accepted would silently never be taken.
+
+**"Begins its round" is a snapshot, not a live reading.** `road_bonus` is stored
+on the formation and recomputed only where a formation can come to rest on new
+ground: after setup, after a deployment change, at the start of resolution, and
+at the end of a round. Reading the terrain under the formation as it moved would
+withdraw the bonus the moment it stepped off the road, partway through a path
+accepted at the longer length, and the last step would vanish with no event to
+explain it. So a formation that starts on a road and immediately leaves keeps the
+step, and one that ends its round arriving on a road is paid from the next round.
+
+Roads are laid with `apply_road_terrain(cells)`, which takes **open ground only**.
+Water and lake are refused for the obvious reason. A bridge is refused too, and
+that one matters more: a bridge is passable, so nothing about movement would have
+stopped it, but writing a road there would replace the terrain rather than
+decorate it, and the hex would stop answering to `is_bridge` while still being,
+to look at and to cross, a bridge.
+
+No shipped scenario lays a road. The feature reaches the game through campaign
+battles, which take a `terrain.road` list; see [Campaign battles](#campaign-battles).
+
+On the board a road is dun ground carrying a rut drawn from the hex's middle out
+to each neighbouring road hex, so a line of them joins into one track without any
+hex needing to know the road's shape. An isolated road hex gets a patch instead,
+because a spur to nowhere reads as a rendering fault. The inspector names the
+road on any formation currently drawing the bonus, and credits the extra step to
+the road rather than to the formation's Weight.
+
 ## A round, end to end
 
 1. **Planning.** Every player writes orders for every formation at once. A path
    may be up to the formation's movement allowance.
-2. **Main movement**, three impulses. Light moves on 1, 2 and 3; Medium on 2 and
-   3; Heavy only on 3. Contact with an enemy opens a fight but rolls nothing:
-   the formations involved stop moving and the fight is held open.
+2. **Main movement**, three impulses, plus a fourth only a road formation
+   reaches. Light moves on 1, 2 and 3; Medium on 2 and 3; Heavy only on 3.
+   Contact with an enemy opens a fight but rolls nothing: the formations
+   involved stop moving and the fight is held open.
 3. **Melee.** Once all three impulses are done, every fight opened during them is
    rolled in one pass, then all retreats from that pass resolve together.
 4. **Post-clash planning.** The engine pauses. Every surviving formation that did
@@ -711,7 +771,7 @@ A battle file looks like this:
   "briefing": ["..."],
   "turn_limit": 22,
   "private_battle_results": true,
-  "terrain": { "lakes": true, "open": [[10, 10]] },
+  "terrain": { "lakes": true, "open": [[10, 10]], "road": [[10, 11], [10, 12]] },
   "objective": { "kind": "hold", "square": [10, 10], "rounds": 3 },
   "armies": {
     "blue": [{ "name": "Oakhand", "type": "HI", "at": [9, 17], "strength": 8 }],
@@ -724,6 +784,11 @@ The `grid` field must equal `hex_odd_q_flat` or the load is refused. Objective
 kinds are `eliminate`, `hold`, `reach` and `survive`, and an `also` key layers a
 second objective, which is how one side racing for an edge and the other trying
 to stop them becomes a single battle.
+
+`terrain` takes `lakes` (a boolean for the four-pond map) and lists of cells
+under `open`, `water`, `bridge` and `road`. They are applied in that order, so a
+`road` written across water, a lake or a bridge is refused rather than paving
+over it. This is currently the only route roads have into a playable battle.
 
 `apply` returns a map from the scenario's own formation names to engine piece ids,
 which is what lets a campaign follow one formation across several battles.
@@ -951,9 +1016,9 @@ without leaking Role or Strength. `UnitIconCatalog` is the single place a
 
 Everything below was measured at commit `a8986c8`.
 
-**The suite passes.** 625 checks, 0 failures, verified over twelve consecutive
-runs because two assertions in it used to depend on open dice and failed roughly
-one run in a hundred each. Both are now pinned with forced rolls. Coverage includes hex topology,
+**The suite passes.** 654 checks, 0 failures. Two assertions in it used to depend
+on open dice and failed roughly one run in a hundred each; both are now pinned
+with forced rolls, and the suite was run twelve consecutive times to confirm it. Coverage includes hex topology,
 fog, impulse timing, movement and collisions, the side-based pool, bracing,
 placement order, crit cancelling, retreat widening, support, massed volleys,
 reposition, objectives, deployment, replay round trips and tamper rejection,
@@ -967,6 +1032,12 @@ charge, 400 seeded trials each way: the hex was held 240 times unsupported and
 273 times supported. The holder survived all 400 either way, because one melee
 cannot destroy a healthy formation, so what support buys is winning the ground
 rather than surviving the fight.
+
+**Roads are inert on a map without them.** Highfield over the same 120 games from
+seed 1 returns exactly what it did before roads existed, down to the outcome
+split: Blue 86, Red 34, 5.5 rounds, 103 held-objective and 17 army-destroyed. The
+fourth impulse is reachable only by a formation a road paid for, so on a roadless
+map every formation has spent its allowance by the third and proposes nothing.
 
 **Bot-vs-bot balance, 120 games per scenario from seed 1.** Note these are the
 bot's results, and the bot underplays fast flanking armies.

@@ -87,6 +87,7 @@ const TERRAIN_OPEN := ""
 const TERRAIN_LAKE := "lake"
 const TERRAIN_WATER := "water"
 const TERRAIN_BRIDGE := "bridge"
+const TERRAIN_ROAD := "road"
 const SHOT_SHORT := "short"
 const SHOT_LONG := "long"
 const STATUS_READY := "ready"
@@ -102,6 +103,25 @@ const REPLAY_FORMAT := "wego-formations-replay"
 const REPLAY_VERSION := 9
 
 const MOVEMENT_BY_WEIGHT := {WEIGHT_LIGHT: 3, WEIGHT_MEDIUM: 2, WEIGHT_HEAVY: 1}
+## Impulses every formation shares, regardless of Weight. A formation's first
+## impulse is BASE_MOVEMENT_IMPULSES + 1 - its Weight movement, so all three
+## weights finish moving together on the last of these.
+const BASE_MOVEMENT_IMPULSES := 3
+## What a formation gains for beginning its round standing on a road.
+##
+## Spent as one extra impulse after the shared three rather than as an earlier
+## start. Deriving the first impulse from the boosted total instead would have
+## moved a road formation up the order, which is a different feature: a Heavy
+## would contest hexes on impulse 2 and change who is braced against whom all
+## over the board. It also does not survive its own arithmetic, because a Light
+## would start at impulse 4 - 4 = 0, and the loop begins at 1, so the fourth step
+## the order validator had already accepted would silently never happen.
+##
+## The trade this does impose is real and intended: a road formation arrives last
+## and is therefore braced against nobody, having spent the round marching rather
+## than forming up.
+const ROAD_MOVEMENT_BONUS := 1
+const MOVEMENT_IMPULSES := BASE_MOVEMENT_IMPULSES + ROAD_MOVEMENT_BONUS
 const PIECE_DEFINITIONS := {
 	FLAG: {"name": "Flag", "role": "", "weight": "", "strength": 0},
 	# Strength is deliberately uniform across Weight. Weight is its own lever
@@ -683,6 +703,7 @@ func add_piece(type: String, player: int, position: Vector2i, strength_override:
 		"position": position, "previous_position": position, "alive": true, "revealed_to": [], "seen_by": [],
 		"round_status": STATUS_READY, "movement_used": 0, "steps_taken": 0, "melee_count": 0, "participated_in_combat": false,
 		"main_done": false, "move_count": 0, "recent_positions": [position],
+		"road_bonus": ROAD_MOVEMENT_BONUS if is_road(position) else 0,
 	})
 	board[position.y][position.x] = id
 	if player not in active_players:
@@ -879,6 +900,24 @@ func is_bridge(position: Vector2i) -> bool:
 	return terrain_at(position) == TERRAIN_BRIDGE
 
 
+func is_road(position: Vector2i) -> bool:
+	return terrain_at(position) == TERRAIN_ROAD
+
+
+## Roads are open ground that pays a formation for starting its round on them.
+## Laid as a list because a road is a line rather than a region, and a scenario
+## that wants a network simply lays several.
+##
+## Only open ground takes one. Refusing water and lake is the obvious part;
+## refusing a bridge matters just as much, because writing a road over one would
+## replace the terrain rather than decorate it, and every is_bridge check on the
+## board would quietly stop being true of a hex that is still a bridge.
+func apply_road_terrain(cells: Array) -> void:
+	for cell in cells:
+		var position: Vector2i = cell
+		if is_inside(position) and terrain_at(position) == TERRAIN_OPEN: set_terrain(position, TERRAIN_ROAD)
+
+
 func is_blocked_terrain(position: Vector2i) -> bool:
 	return is_lake(position) or is_water(position)
 
@@ -887,12 +926,34 @@ func is_movable(piece: Dictionary) -> bool:
 	return not piece.is_empty() and bool(piece.get("alive", false)) and piece.type != FLAG and int(piece.strength) > 0
 
 
-func movement_limit_for(piece: Dictionary) -> int:
+## Movement from Weight alone, before any road pays out. This is what sets the
+## impulse schedule, which is why it has to stay separate from the total below.
+func base_movement_for(piece: Dictionary) -> int:
 	return int(MOVEMENT_BY_WEIGHT.get(piece.get("weight", ""), 0))
 
 
+## Everything a formation may spend this round, roads included.
+##
+## road_bonus is a stored snapshot rather than a live look at the terrain under
+## the formation, because the rule is that it began the round on a road. Reading
+## the current hex would take the bonus away again the moment it stepped off,
+## partway through a path the order validator had already accepted at the longer
+## length, and the last step would vanish with no event to explain it.
+func movement_limit_for(piece: Dictionary) -> int:
+	return base_movement_for(piece) + int(piece.get("road_bonus", 0))
+
+
 func first_movement_impulse_for(piece: Dictionary) -> int:
-	return 4 - movement_limit_for(piece)
+	return BASE_MOVEMENT_IMPULSES + 1 - base_movement_for(piece)
+
+
+## Recomputed wherever a formation can come to rest on new ground: after setup,
+## after a deployment change, and at both ends of a round. Between any two of
+## those the formations do not move, so the snapshot and the board always agree
+## while orders are being written and judged.
+func _refresh_road_bonuses() -> void:
+	for piece: Dictionary in pieces:
+		pieces[piece.id].road_bonus = ROAD_MOVEMENT_BONUS if piece.alive and is_road(piece.position) else 0
 
 
 func movement_step_index_for_impulse(piece: Dictionary, impulse: int) -> int:
@@ -1497,7 +1558,7 @@ func _same_player_order_is_clear(player: int, piece_id: int, candidate: Dictiona
 	for piece: Dictionary in pieces:
 		if piece.alive and int(piece.player) == player: own_pieces.append(piece)
 	var clear := true
-	for impulse in range(1, 4):
+	for impulse in range(1, MOVEMENT_IMPULSES + 1):
 		var occupied: Dictionary = {}
 		for piece: Dictionary in own_pieces:
 			var position := projected_order_position(int(piece.id), impulse)
@@ -1605,6 +1666,7 @@ func redeploy_piece(player: int, piece_id: int, target: Vector2i) -> Dictionary:
 	pieces[piece_id].position = target
 	pieces[piece_id].previous_position = target
 	pieces[piece_id].recent_positions = [target]
+	pieces[piece_id].road_bonus = ROAD_MOVEMENT_BONUS if is_road(target) else 0
 	_visibility_dirty = true
 	return {"ok": true, "action": "redeploy", "piece_id": piece_id, "position": target}
 
@@ -1637,6 +1699,7 @@ func reset_deployment(player: int) -> Dictionary:
 			pieces[id].previous_position = target
 			pieces[id].recent_positions = [target]
 			break
+	_refresh_road_bonuses()
 	_visibility_dirty = true
 	return {"ok": true}
 
@@ -1650,6 +1713,7 @@ func resolve_deployment() -> bool:
 		deployment_placements[piece.id] = _encode_position(piece.position)
 	phase = PHASE_PLANNING
 	ready_players.clear()
+	_refresh_road_bonuses()
 	_record_all_sightings()
 	return true
 
@@ -1674,7 +1738,11 @@ func resolve_main_and_ranged() -> Array[Dictionary]:
 	last_round_events.clear()
 	_begin_round_state()
 	_record_all_sightings()
-	for impulse in range(1, 4):
+	# The last impulse is reachable only by a formation a road paid for. Everyone
+	# else has spent its allowance by the third and proposes nothing, so a battle
+	# with no roads on the map produces no events there and resolves exactly as
+	# it did before roads existed.
+	for impulse in range(1, MOVEMENT_IMPULSES + 1):
 		var proposals: Array[Dictionary] = []
 		for piece: Dictionary in pieces:
 			if not is_movable(piece) or bool(piece.main_done): continue
@@ -1745,6 +1813,10 @@ func resolve_leftover_phase() -> Array[Dictionary]:
 func _begin_round_state() -> void:
 	_pending_battles.clear()
 	_contested_hexes.clear()
+	# Fixed for the round here, before anything moves. From this point the
+	# formations leave the ground the bonus was earned on and the snapshot is the
+	# only remaining record of who was standing where when the round opened.
+	_refresh_road_bonuses()
 	for piece: Dictionary in pieces:
 		if piece.alive:
 			pieces[piece.id].round_status = STATUS_READY
@@ -3114,6 +3186,10 @@ func observed_state(player: int) -> Dictionary:
 			"movement": movement_limit_for(piece),
 			"movement_used": int(piece.movement_used),
 			"movement_available": _movement_available_for(piece),
+			# Broken out so a controller can see why this formation's allowance
+			# is not simply its Weight's, rather than having to cross-reference
+			# the terrain list against its hex.
+			"road_bonus": int(piece.get("road_bonus", 0)),
 			"position": _encode_position(piece.position),
 			"status": String(piece.round_status), "main_done": bool(piece.main_done),
 			"planned_path": path,
@@ -3122,13 +3198,14 @@ func observed_state(player: int) -> Dictionary:
 			"shot_type": String(order.get("shot_type", "")),
 			"planned_leftover": _encode_position(order.get("leftover", Vector2i(-1, -1))),
 		})
-	var terrain := {"lakes": [], "water": [], "bridge": []}
+	var terrain := {"lakes": [], "water": [], "bridge": [], "road": []}
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
 			var cell := Vector2i(x, y)
 			if is_bridge(cell): terrain.bridge.append(_encode_position(cell))
 			elif is_lake(cell): terrain.lakes.append(_encode_position(cell))
 			elif is_water(cell): terrain.water.append(_encode_position(cell))
+			elif is_road(cell): terrain.road.append(_encode_position(cell))
 	var state := {
 		"fog": false, "viewer": player, "grid": GRID_TYPE,
 		"board_size": BOARD_SIZE, "board_width": BOARD_SIZE, "board_height": BOARD_SIZE,
@@ -3556,6 +3633,10 @@ func _finish_round() -> void:
 	turn_number = round_number
 	orders.clear()
 	ready_players.clear()
+	# Again now that reposition has left every formation on its final hex, so the
+	# allowance the next planning phase offers and validates against is the one
+	# that round will actually resolve with.
+	_refresh_road_bonuses()
 	phase = PHASE_PLANNING
 
 

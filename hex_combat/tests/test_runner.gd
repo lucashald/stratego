@@ -51,6 +51,10 @@ func _run() -> void:
 	_test_right_click_on_an_ally_opens_the_menu_first_time()
 	_test_a_direction_arrow_onto_an_ally_offers_support()
 	_test_a_supporting_bounce_is_not_animated_as_a_refusal()
+	_test_a_road_pays_the_formation_that_starts_on_it()
+	_test_a_road_keeps_its_schedule_and_spends_last()
+	_test_the_road_bonus_is_fixed_when_the_round_opens()
+	_test_roads_are_open_ground_and_never_overwrite_water()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
@@ -1414,6 +1418,121 @@ func _test_a_supporting_bounce_is_not_animated_as_a_refusal() -> void:
 	_expect(StrategoBoardView._support_lean(0.5) > StrategoBoardView._support_lean(0.05), "a lean is still rising at its midpoint")
 	_expect(is_equal_approx(StrategoBoardView._support_lean(0.0), 0.0) and StrategoBoardView._support_lean(1.0) < 0.001, "and begins and ends at rest")
 	_expect(is_equal_approx(StrategoBoardView._bounce_lunge(0.3), 1.0), "where a lunge is already held hard against what stopped it")
+
+
+## A road running down one column. North and south are straight lines on this
+## grid, so every step along it is a plain SOUTH move whatever the column parity.
+func _road_game(column: int = 5) -> StrategoGame:
+	var game := _test_game()
+	for row in range(2, 16): game.set_terrain(Vector2i(column, row), StrategoGame.TERRAIN_ROAD)
+	return game
+
+
+func _test_a_road_pays_the_formation_that_starts_on_it() -> void:
+	var game := _road_game()
+	var marching := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 3), 8)
+	var afield := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(9, 3), 8)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	_expect(game.movement_limit_for(game.pieces[marching]) == 2, "a Heavy that begins on a road may spend two")
+	_expect(game.movement_limit_for(game.pieces[afield]) == 1, "one that begins beside it still spends one")
+	_expect(game.base_movement_for(game.pieces[marching]) == 1, "the extra step belongs to the road, not to the Weight")
+
+	# Every Weight is paid the same single step, so a road is not quietly worth
+	# more to whoever was already fastest.
+	for entry in [[StrategoGame.LIGHT_INFANTRY, 3], [StrategoGame.MEDIUM_INFANTRY, 2], [StrategoGame.HEAVY_INFANTRY, 1]]:
+		var each := _road_game()
+		var on_road := each.add_piece(String(entry[0]), StrategoGame.BLUE, Vector2i(5, 3), 8)
+		_expect(each.movement_limit_for(each.pieces[on_road]) == int(entry[1]) + 1, "a road adds exactly one step to a %s" % String(entry[0]))
+
+	# The longer path is orderable and actually walked.
+	_expect(bool(game.set_unit_order(StrategoGame.BLUE, marching, [Vector2i(5, 4), Vector2i(5, 5)]).get("ok", false)), "the longer path is accepted")
+	_expect(not bool(game.set_unit_order(StrategoGame.BLUE, marching, [Vector2i(5, 4), Vector2i(5, 5), Vector2i(5, 6)]).get("ok", false)), "but only by one step, not without limit")
+	_ready_and_resolve(game)
+	_expect(game.pieces[marching].position == Vector2i(5, 5), "and the Heavy walks both steps of it")
+
+
+func _test_a_road_keeps_its_schedule_and_spends_last() -> void:
+	# The bonus deliberately does not feed the first-impulse arithmetic. Doing so
+	# would move a road formation up the order and change who is braced against
+	# whom all over the board, and for a Light it does not even work: its first
+	# impulse would come out at zero, one before the loop starts, so the fourth
+	# step the validator had just accepted would never be taken.
+	var game := _road_game()
+	var light := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 2), 8)
+	var heavy := game.add_piece(StrategoGame.HEAVY_INFANTRY, StrategoGame.BLUE, Vector2i(5, 10), 8)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	_expect(game.first_movement_impulse_for(game.pieces[light]) == 1, "a Light on a road still opens on impulse one")
+	_expect(game.first_movement_impulse_for(game.pieces[heavy]) == 3, "and a Heavy on one still waits until the third")
+	game.set_unit_order(StrategoGame.BLUE, light, [Vector2i(5, 3), Vector2i(5, 4), Vector2i(5, 5), Vector2i(5, 6)])
+	game.set_unit_order(StrategoGame.BLUE, heavy, [Vector2i(5, 11), Vector2i(5, 12)])
+	var events := _ready_and_resolve(game)
+	_expect(game.pieces[light].position == Vector2i(5, 6), "the Light spends all four steps")
+	_expect(game.pieces[heavy].position == Vector2i(5, 12), "and the Heavy both of its own")
+	var batches: Array[String] = []
+	for event: Dictionary in _events_with_action(events, "move"): batches.append(String(event.get("batch", "")))
+	_expect("impulse_4" in batches, "the extra step lands on a fourth impulse of its own")
+	var fourth := 0
+	for batch in batches:
+		if batch == "impulse_4": fourth += 1
+	_expect(fourth == 2, "which is where both road formations spend their last step, after everyone else has moved")
+
+	# A board with no roads on it never reaches that impulse, so nothing about an
+	# ordinary battle changed.
+	var plain := _test_game()
+	var walker := plain.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 2), 8)
+	plain.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	plain.set_unit_order(StrategoGame.BLUE, walker, [Vector2i(5, 3), Vector2i(5, 4), Vector2i(5, 5)])
+	for event: Dictionary in _ready_and_resolve(plain):
+		_expect(String(event.get("batch", "")) != "impulse_4", "a roadless battle produces no fourth-impulse events at all")
+
+
+func _test_the_road_bonus_is_fixed_when_the_round_opens() -> void:
+	# "Starts on a road" has to mean the hex it stood on when orders were
+	# written. Reading the live hex instead would take the bonus back the moment
+	# the formation stepped off, halfway through a path already accepted at the
+	# longer length, and the last step would disappear with no event to show for
+	# it. Here the road is one hex and the very first step leaves it.
+	var leaving := _test_game()
+	leaving.set_terrain(Vector2i(5, 3), StrategoGame.TERRAIN_ROAD)
+	var runner := leaving.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(5, 3), 8)
+	leaving.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	_expect(leaving.movement_limit_for(leaving.pieces[runner]) == 3, "standing on a single road hex is still standing on a road")
+	leaving.set_unit_order(StrategoGame.BLUE, runner, [Vector2i(5, 4), Vector2i(5, 5), Vector2i(5, 6)])
+	_ready_and_resolve(leaving)
+	_expect(leaving.pieces[runner].position == Vector2i(5, 6), "and the whole path is walked even though the road was left on the first step")
+
+	# The other direction: arriving on a road pays nothing this round, because
+	# the formation did not start there. It pays from the next round.
+	var arriving := _test_game()
+	arriving.set_terrain(Vector2i(5, 4), StrategoGame.TERRAIN_ROAD)
+	var joiner := arriving.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(5, 3), 8)
+	arriving.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(18, 18), 8)
+	_expect(arriving.movement_limit_for(arriving.pieces[joiner]) == 2, "a formation next to a road has no bonus yet")
+	arriving.set_unit_order(StrategoGame.BLUE, joiner, [Vector2i(5, 4)])
+	_ready_and_resolve(arriving)
+	_expect(arriving.pieces[joiner].position == Vector2i(5, 4), "it steps onto the road")
+	_expect(arriving.movement_limit_for(arriving.pieces[joiner]) == 3, "and is paid for it from the round that follows")
+
+
+func _test_roads_are_open_ground_and_never_overwrite_water() -> void:
+	var game := _test_game()
+	game.apply_lake_terrain()
+	game.apply_river_terrain(9, [10])
+	var before_lake := game.terrain_at(StrategoGame.LAKES[0])
+	# Deliberately writes a road straight across a lake, a river and the bridge.
+	game.apply_road_terrain([StrategoGame.LAKES[0], Vector2i(3, 9), Vector2i(10, 9), Vector2i(4, 4)])
+	_expect(game.terrain_at(StrategoGame.LAKES[0]) == before_lake, "a road written over a lake is refused rather than opening a way through it")
+	_expect(game.is_water(Vector2i(3, 9)), "the same for a river hex")
+	_expect(game.is_road(Vector2i(4, 4)), "while open ground takes the road")
+	_expect(not game.is_blocked_terrain(Vector2i(4, 4)), "and a road is passable, being open ground that pays")
+	# A bridge is passable, so nothing about movement would have stopped a road
+	# being written over one. It is refused because it would replace the terrain
+	# rather than decorate it, and the hex would stop answering to is_bridge
+	# while still being, to look at and to cross, a bridge.
+	_expect(game.is_bridge(Vector2i(10, 9)) and not game.is_road(Vector2i(10, 9)), "a bridge keeps its own terrain rather than being paved over")
+
+	var reported: Dictionary = game.observed_state(StrategoGame.BLUE).terrain
+	_expect(StrategoGame._encode_position(Vector2i(4, 4)) in reported.road, "roads are reported to an external controller like any other terrain")
 
 
 func _test_bracing_is_earned_by_arriving_first() -> void:

@@ -334,6 +334,7 @@ func _draw_overview() -> void:
 			var ground := Color("#4a5b38")
 			if game.is_lake(position) or game.is_water(position): ground = Color("#2b5560")
 			elif game.is_bridge(position): ground = Color("#7d5f38")
+			elif game.is_road(position): ground = Color("#7f7550")
 			elif _is_objective_square(position): ground = Color("#8a7130")
 			var points := HexGrid.polygon(position, origin, cell, 0.15)
 			draw_colored_polygon(points, ground)
@@ -472,12 +473,16 @@ func _draw_battlefield(origin: Vector2, cell: float, board_size: Vector2) -> voi
 				ground = Color("#795c37").lerp(Color("#9a7748"), variation * 0.25)
 			elif _is_objective_square(position):
 				ground = Color("#6d5a2a").lerp(Color("#a08a3c"), variation * 0.3)
+			elif game.is_road(position):
+				# Dust rather than the bridge's red-brown timber, so the two
+				# earth-coloured terrains do not read as the same thing.
+				ground = Color("#6f6647").lerp(Color("#968c64"), variation * 0.3)
 			draw_colored_polygon(points, ground)
 			if _is_objective_square(position):
 				var objective_points := HexGrid.polygon(position, origin, cell, cell * 0.10)
 				objective_points.append(objective_points[0])
 				draw_polyline(objective_points, GOLD, maxf(1.5, cell * 0.06), true)
-			_draw_cell_texture(position, rect, cell)
+			_draw_cell_texture(position, rect, origin, cell)
 			if deploying:
 				# The zone doubles as this player's fog: outside it is dimmed by
 				# the ordinary fog pass below, so only the zone itself needs a
@@ -494,7 +499,31 @@ func _draw_battlefield(origin: Vector2, cell: float, board_size: Vector2) -> voi
 	_draw_river_overlay(origin, cell, board_size)
 
 
-func _draw_cell_texture(position: Vector2i, rect: Rect2, cell: float) -> void:
+## A road drawn as spurs from the hex's middle out to each neighbouring road
+## hex, so a line of them joins into one track without any hex needing to know
+## what shape the road is. An isolated road hex gets a patch instead, because a
+## spur to nowhere would read as a rendering fault rather than as a waypoint.
+func _draw_road_links(position: Vector2i, origin: Vector2, cell: float) -> void:
+	var centre := HexGrid.cell_center(position, origin, cell)
+	var rut := Color(0.34, 0.29, 0.18, 0.5)
+	var width := maxf(1.5, cell * 0.13)
+	var linked := 0
+	for direction in HexGrid.DIRECTION_COUNT:
+		var neighbour := HexGrid.neighbor(position, direction)
+		if not game.is_inside(neighbour) or not game.is_road(neighbour): continue
+		linked += 1
+		draw_line(centre, HexGrid.cell_center(neighbour, origin, cell).lerp(centre, 0.5), rut, width, true)
+	if linked == 0:
+		draw_circle(centre, cell * 0.22, rut)
+	else:
+		# Fills the seam the spurs leave where they meet.
+		draw_circle(centre, width * 0.5, rut)
+
+
+func _draw_cell_texture(position: Vector2i, rect: Rect2, origin: Vector2, cell: float) -> void:
+	if game.is_road(position):
+		_draw_road_links(position, origin, cell)
+		return
 	if game.is_water(position) or game.is_lake(position):
 		var wave_y := rect.position.y + cell * (0.35 + _noise_value(position.x, position.y + 80) * 0.35)
 		draw_line(Vector2(rect.position.x + cell * 0.12, wave_y), Vector2(rect.end.x - cell * 0.12, wave_y), Color(0.55, 0.8, 0.82, 0.18), maxf(1.0, cell * 0.025))
