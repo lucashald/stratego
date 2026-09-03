@@ -1536,6 +1536,7 @@ func _march_steps_from(events: Array[Dictionary]) -> Array:
 			# have been ignored. The lunge is what says "this was tried".
 			var origins: Dictionary = event.get("origins", {})
 			var stationary := int(event.get("stationary_id", StrategoGame.EMPTY))
+			var supporting: Array = event.get("supporting", [])
 			for id_value in event.get("participants", []):
 				var bounced_id := int(id_value)
 				# The formation already standing there is named in the event
@@ -1548,6 +1549,9 @@ func _march_steps_from(events: Array[Dictionary]) -> Array:
 					"from": origins.get(bounced_id, origins.get(str(bounced_id), Vector2i(-1, -1))),
 					"to": event.get("to", Vector2i(-1, -1)),
 					"bounce": true,
+					# A relief that found the hex quiet was not refused, so it
+					# should not be animated as if it had run into something.
+					"support": bounced_id in supporting or str(bounced_id) in supporting,
 				})
 	return steps
 
@@ -2595,6 +2599,17 @@ func _update_inspector() -> void:
 		inspector_order.text = "No order issued"
 		return
 	var path: Array = order.get("path", [])
+	# Support is the one order whose value is invisible on the board: it looks
+	# like a one-hex step and its whole point is the dice it adds to a fight that
+	# may not have started yet. Spell that out where the order is described.
+	if bool(order.get("support", false)) and not path.is_empty():
+		var ally := game.piece_at(path.back())
+		var support_message := "Supporting %s at %s" % [game.piece_display_code(ally) if not ally.is_empty() else "the line", str(path.back())]
+		for line in game.support_contribution(id, path.back()):
+			support_message += "\n· %s" % line
+		support_message += "\nBounces harmlessly if no fight opens there."
+		inspector_order.text = support_message
+		return
 	var message := "Order issued · %d impulse%s" % [path.size(), "" if path.size() == 1 else "s"]
 	if game.scenario == StrategoGame.SCENARIO_BRIDGE:
 		for index in path.size():

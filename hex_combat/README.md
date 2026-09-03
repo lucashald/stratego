@@ -209,10 +209,21 @@ not beat is a real decision. Because melee now waits for every impulse, both
 attackers end up in the same fight whatever their speeds.
 
 Walking into your own line is refused by default, because it is usually a
-misclick. **Support** is the way to ask for it deliberately: right-click a
-formation on your own side and the adjacent selected formations are ordered onto
-its hex. The context menu is the only route to it; the direction arrows and a
-plain click still refuse the step.
+misclick. **Support** is the way to ask for it deliberately, and it is a real
+order: `support` is stored on the order, not consumed by the validation that
+lets it through, so the board and the resolver can both tell it from a march.
+
+Two routes to it. A direction arrow pointing at a hex the selection could
+reinforce is drawn as a gold shield rather than a chevron, and pressing it
+issues the reinforcement. Right-clicking that hex opens the context menu, which
+offers **Support** alongside Inspect and Cancel Order. A plain left-click still
+refuses the step.
+
+A standing reinforcement is drawn as a gold dashed ring on the ally's hex with a
+bracket and shield running back to the relief. Deliberately unlike the march
+ghost, which is a dashed blue run with an arrowhead and a numbered impulse
+circle: the impulse number would be a lie here, because a relief that arrives
+before the enemy bounces and retries rather than landing on the impulse shown.
 
 Resolution is unchanged by the naming. If a fight is open on that hex when the
 relief arrives it joins, and if the hex is quiet it bounces off its own line
@@ -842,6 +853,12 @@ arrow rather than to whichever hex the pixel falls in; right-clicking one still
 reaches the board underneath. The inspector has a six-direction Move Selection
 pad that does the same thing.
 
+An arrow pointing at a hex the selection could reinforce inverts: a filled gold
+disc carrying a dark shield, rather than a dark disc carrying a pale chevron.
+Inverted rather than merely reshaped, because at the size these sit on the board
+a shield outline and a chevron are the same smudge, and what has to read at a
+glance is that this one does something else.
+
 Keyboard directions:
 
 | Key | Direction |
@@ -934,7 +951,9 @@ without leaking Role or Strength. `UnitIconCatalog` is the single place a
 
 Everything below was measured at commit `a8986c8`.
 
-**The suite passes.** 605 checks, 0 failures. Coverage includes hex topology,
+**The suite passes.** 625 checks, 0 failures, verified over twelve consecutive
+runs because two assertions in it used to depend on open dice and failed roughly
+one run in a hundred each. Both are now pinned with forced rolls. Coverage includes hex topology,
 fog, impulse timing, movement and collisions, the side-based pool, bracing,
 placement order, crit cancelling, retreat widening, support, massed volleys,
 reposition, objectives, deployment, replay round trips and tamper rejection,

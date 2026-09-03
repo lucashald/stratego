@@ -47,6 +47,10 @@ func _run() -> void:
 	_test_support_arriving_with_the_attack_joins_it()
 	_test_a_heavier_relief_buys_its_side_the_weight_die()
 	_test_support_shares_the_defeat_it_walks_into()
+	_test_support_survives_as_an_order_rather_than_a_validation_quirk()
+	_test_right_click_on_an_ally_opens_the_menu_first_time()
+	_test_a_direction_arrow_onto_an_ally_offers_support()
+	_test_a_supporting_bounce_is_not_animated_as_a_refusal()
 	_test_bracing_is_earned_by_arriving_first()
 	_test_bounced_attacker_survives_a_filled_origin()
 	_test_crossing_battle_both_attack()
@@ -832,7 +836,14 @@ func _test_a_dodged_attack_still_takes_the_ground() -> void:
 	_open_reposition(stands)
 	stands.set_leftover_order(StrategoGame.BLUE, first, Vector2i(5, 5))
 	stands.set_leftover_order(StrategoGame.BLUE, second, Vector2i(5, 5))
-	var stood := _ready_and_resolve_reposition(stands)
+	# Pinned rather than left to the open RNG. Blue rolls five (two bodies, the
+	# Strength die, two charges) against Red's two, but the kept die caps at 6
+	# either way, so Red taking the hex on a high roll against five low ones was
+	# a real outcome at roughly one run in a hundred - which is exactly often
+	# enough to fail a suite occasionally and look like whatever was committed
+	# that day. Every die a 3 leaves Blue ahead 12 to 9 whichever side is rolled
+	# first, so the assertion tests the rule rather than the dice.
+	var stood := _ready_and_resolve_reposition(stands, [3, 3, 3, 3, 3, 3, 3] as Array[int])
 	var melees := _events_with_action(stood, "melee")
 	_expect(melees.size() == 1 and int(melees[0].participants.size()) == 3, "a defender that holds its ground faces both Cavalry at once")
 	_expect(not stands.pieces[holder].alive or stands.pieces[holder].position != Vector2i(5, 5), "and loses the square it was holding")
@@ -1193,7 +1204,13 @@ func _test_support_ordered_before_the_attack_still_joins_it() -> void:
 	game.set_unit_order(StrategoGame.RED, attacker, [Vector2i(5, 5)])
 	_expect(bool(game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5)).get("ok", false)), "support can be ordered before there is any fight to join")
 	# The Medium reaches the hex on impulse 2; the Heavy only attacks on impulse 3.
-	var events := _ready_and_resolve(game)
+	#
+	# Pinned, because the matchup is otherwise a coin flip and one of the
+	# assertions below is about who ends up holding the hex. Blue rolls three
+	# (two bodies and the braced holder) and so does Red (one body, the weight
+	# die, the charge), at equal Strength. The bounce rolls nothing, so these six
+	# are the melee: Blue keeps a 4 for 14, Red a 2 for 12.
+	var events := _ready_and_resolve(game, [4, 4, 4, 2, 2, 2] as Array[int])
 	var melees := _events_with_action(events, "melee")
 	_expect(melees.size() == 1 and relief in melees[0].participants, "a relief that arrived early is still in the fight when it finally opens")
 	_expect(_events_with_action(events, "bounce").size() == 1, "it bounced off its own line once on the way, before the attack arrived")
@@ -1267,6 +1284,136 @@ func _test_support_shares_the_defeat_it_walks_into() -> void:
 	_expect(melees.size() == 1 and relief in melees[0].participants, "the relief joined the fight it could not win")
 	_expect(int(melees[0].damage[holder]) > 0, "the losing side pays a margin")
 	_expect(int(melees[0].damage[holder]) == int(melees[0].damage[relief]), "and every formation on it pays the same one, relief included")
+
+
+func _test_support_survives_as_an_order_rather_than_a_validation_quirk() -> void:
+	# Support used to exist only for as long as the order was being validated:
+	# the flag relaxed the friendly-collision check and was then dropped, leaving
+	# an order byte-identical to a permissive walk into your own line. Nothing
+	# downstream could tell the two apart, which is what made the ghost draw a
+	# march and the bounce animate a refusal.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var marcher := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(8, 8), 10)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(15, 15), 10)
+	game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5))
+	game.append_order_step(StrategoGame.BLUE, marcher, Vector2i(8, 7), false)
+	_expect(game.is_support_order(relief), "a reinforcement is recorded as one")
+	_expect(not game.is_support_order(marcher), "an ordinary march is not")
+	# Appending a step turns a reinforcement back into a march, because it is no
+	# longer an order to stand on one ally's hex.
+	game.append_order_step(StrategoGame.BLUE, relief, Vector2i(5, 4), false)
+	_expect(not game.is_support_order(relief), "extending the path past the ally makes it a march again")
+
+	var described := game.support_contribution(relief, Vector2i(5, 5))
+	_expect(not described.is_empty() and String(described[0]).contains("+1 die"), "and the order can say what it adds to the side")
+
+	# The bounce event has to name it, because that is what the board reads.
+	var quiet := _test_game()
+	quiet.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var quiet_relief := quiet.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	quiet.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(15, 15), 10)
+	quiet.set_support_order(StrategoGame.BLUE, quiet_relief, Vector2i(5, 5))
+	# A Light keeps its retry and tries again on every impulse, so a hex that
+	# stays quiet all round produces one bounce per impulse, each of them the
+	# same reinforcement standing ready rather than a fresh mistake.
+	var bounces := _events_with_action(_ready_and_resolve(quiet), "bounce")
+	_expect(bounces.size() == 3, "a Light relief keeps offering itself on every impulse it can")
+	var all_named := true
+	for bounce: Dictionary in bounces:
+		if quiet_relief not in bounce.get("supporting", []): all_named = false
+	_expect(all_named, "and every one is reported as supporting, not merely bounced")
+
+
+func _test_right_click_on_an_ally_opens_the_menu_first_time() -> void:
+	# The right-click shortcut issues orders permissively, and permissive
+	# validation accepts walking into your own line. So the first right-click on
+	# an ally quietly succeeded as a march and never reached the menu; the second
+	# appended the same hex to the same path, failed adjacency against itself,
+	# and only then fell through. Support appeared to need two clicks, and the
+	# order the menu then issued was the one the player already had.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(15, 15), 10)
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.viewing_player = StrategoGame.BLUE
+	view.size = Vector2(900, 700)
+	view.selected_piece_ids.assign([relief])
+	view.selected_piece_id = relief
+	var geometry := view._board_geometry()
+	var ally_point: Vector2 = view._cell_center(Vector2i(5, 5), geometry.origin, float(geometry.cell))
+	view._handle_right_click(ally_point)
+	_expect(game.order_for_piece(relief).get("path", []).is_empty(), "one right-click on an ally issues no silent march")
+	_expect(view._context_menu != null and view._context_menu.item_count > 0, "it assembles the menu on the first click instead")
+	var offered: Array[String] = []
+	for entry in view.context_actions_for(Vector2i(5, 5)): offered.append(String(entry[1]))
+	_expect("Support" in offered, "and Support is one of the things it offers")
+	# The shortcut still owns open ground, which is the behaviour it was for.
+	view._handle_right_click(view._cell_center(Vector2i(7, 5), geometry.origin, float(geometry.cell)))
+	_expect(game.order_for_piece(relief).get("path", []) == [Vector2i(7, 5)], "right-clicking open ground still issues the move directly")
+	view.free()
+
+
+func _test_a_direction_arrow_onto_an_ally_offers_support() -> void:
+	# The arrows are the control a player already uses to move, so the order
+	# should be reachable from them rather than only from a menu that has to be
+	# discovered. An arrow pointing at an ally reads as a shield and issues the
+	# reinforcement rather than the identical permissive step.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(15, 15), 10)
+	var view: StrategoBoardView = load("res://scripts/board_view.gd").new()
+	view.set_game(game)
+	view.viewing_player = StrategoGame.BLUE
+	view.size = Vector2(900, 700)
+	view.selected_piece_ids.assign([relief])
+	view.selected_piece_id = relief
+	var geometry := view._board_geometry()
+	view._sync_direction_arrows(geometry.origin, float(geometry.cell))
+	var toward_ally := HexGrid.direction_between(Vector2i(6, 5), Vector2i(5, 5))
+	var shield: StrategoBoardView.DirectionArrow = view._direction_arrows[toward_ally]
+	_expect(shield.visible and shield.supports, "the arrow pointing at the ally is drawn as a shield")
+	var elsewhere := HexGrid.direction_between(Vector2i(6, 5), Vector2i(7, 5))
+	_expect(not view._direction_arrows[elsewhere].supports, "an arrow onto open ground is still an arrow")
+	view._on_direction_arrow_chosen(toward_ally)
+	_expect(game.is_support_order(relief), "pressing the shield issues a reinforcement, not a permissive march")
+	_expect(game.order_for_piece(relief).get("path", []) == [Vector2i(5, 5)], "aimed at the ally's hex")
+	_expect(holder >= 0, "the ally being reinforced is on the board")
+	view.free()
+
+
+func _test_a_supporting_bounce_is_not_animated_as_a_refusal() -> void:
+	# A relief that finds its ally's hex quiet has not been stopped by anything,
+	# so it must not animate on the lunge curve, which exists to say "committed,
+	# hit something, gave the ground back". The distinction has to survive into
+	# the march step or the board cannot act on it.
+	var game := _test_game()
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(5, 5), 10)
+	var relief := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(6, 5), 10)
+	var blocked := game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(9, 9), 10)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.BLUE, Vector2i(9, 8), 10)
+	game.add_piece(StrategoGame.LIGHT_INFANTRY, StrategoGame.RED, Vector2i(15, 15), 10)
+	game.set_support_order(StrategoGame.BLUE, relief, Vector2i(5, 5))
+	# An ordinary refused step into a friendly hex, for contrast.
+	game.append_order_step(StrategoGame.BLUE, blocked, Vector2i(9, 8), false)
+	var events := _ready_and_resolve(game)
+	var supporting_marked := false
+	var plain_marked := false
+	for event: Dictionary in _events_with_action(events, "bounce"):
+		var supporting: Array = event.get("supporting", [])
+		if relief in supporting: supporting_marked = true
+		if blocked in supporting: plain_marked = true
+	_expect(supporting_marked, "the reinforcement's bounce is flagged as support")
+	_expect(not plain_marked, "a formation that simply walked into its own line is not")
+	# The curve itself: a lean rises and falls smoothly, where a lunge drives in,
+	# stops dead, and holds against the refusal.
+	_expect(StrategoBoardView._support_lean(0.5) > StrategoBoardView._support_lean(0.05), "a lean is still rising at its midpoint")
+	_expect(is_equal_approx(StrategoBoardView._support_lean(0.0), 0.0) and StrategoBoardView._support_lean(1.0) < 0.001, "and begins and ends at rest")
+	_expect(is_equal_approx(StrategoBoardView._bounce_lunge(0.3), 1.0), "where a lunge is already held hard against what stopped it")
 
 
 func _test_bracing_is_earned_by_arriving_first() -> void:

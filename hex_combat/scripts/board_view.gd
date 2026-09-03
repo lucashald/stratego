@@ -21,6 +21,13 @@ const ORDER_BLUE := Color("#5ca9ff")
 const ORDER_DARK := Color("#153b6b")
 const LEFTOVER_COLOR := Color("#f2b15b")
 const RANGED_COLOR := Color("#78e2f5")
+## Support reads as its own order, so it gets its own colour, and the choice is
+## forced: everything else that rings a hex is cool. The selection outline is a
+## near-white blue and the march ghost's destination is order blue, so a steel
+## support ring was indistinguishable from "this one is selected" at a glance.
+## Warm gold is the one hue on the board that cannot be mistaken for either, and
+## it holds up on green ground and on a blue banner alike.
+const SUPPORT_COLOR := Color("#e8c778")
 const FOG_COLOR := Color(0.018, 0.035, 0.045, 0.68)
 
 var game: StrategoGame
@@ -65,6 +72,10 @@ const BOUNCE_LUNGE := 0.42
 ## fractions of the beat. Between them it is held against whatever stopped it.
 const BOUNCE_PUSH := 0.22
 const BOUNCE_HOLD := 0.42
+## How far a reinforcement leans toward the ally it moved up to stand with.
+## Shorter than a bounce's lunge, because it is a step taken and given back
+## rather than a charge that hit something.
+const SUPPORT_LEAN := 0.18
 
 # piece_id -> Array of {beat:int, from:Vector2i, to:Vector2i, bounce:bool}
 ## The six direction controls, created on first use so a view that is never
@@ -297,6 +308,8 @@ func _draw() -> void:
 		if not reveal_all and not game.game_over and not game.is_piece_visible_to(piece, viewing_player):
 			continue
 		_draw_piece(piece, origin, cell)
+	# Above the banners, because the hex a reinforcement marks always has one.
+	_draw_support_orders(origin, cell)
 	# Selection outlines and direction controls stay above formation banners.
 	_draw_selection(origin, cell)
 	_draw_vignette(origin, board_size)
@@ -584,6 +597,14 @@ func _draw_order_ghosts(origin: Vector2, cell: float) -> void:
 				continue
 			var previous: Vector2i = game.pieces[piece_id].position
 			var path: Array = [] if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else order.get("path", [])
+			# A reinforcement is not a march and should not be drawn as one. The
+			# impulse number is the misleading part: a relief that arrives before
+			# the enemy bounces and retries, so the number on the ally's hex was
+			# never the impulse it would actually arrive on. Drawn in its own
+			# pass above the banners instead, because the hex it has to mark is
+			# by definition one with a formation standing on it.
+			if bool(order.get("support", false)) and not path.is_empty():
+				continue
 			for index in path.size():
 				var position: Vector2i = path[index]
 				var previous_center := _cell_center(previous, origin, cell)
@@ -607,6 +628,64 @@ func _draw_order_ghosts(origin: Vector2, cell: float) -> void:
 				_draw_hex(_cell_center(leftover, origin, cell), cell * 0.34, Color(LEFTOVER_COLOR, 0.22), LEFTOVER_COLOR, maxf(2.0, cell * 0.05))
 
 
+## Every reinforcement on the board, drawn after the banners.
+##
+## The ghost layer sits under the formations, which is fine for a march into
+## open ground and useless here: the hex a reinforcement marks always has a
+## formation standing on it, so a shield drawn down there is behind the very
+## banner it is about.
+func _draw_support_orders(origin: Vector2, cell: float) -> void:
+	var players: Array = game.active_players if reveal_all else [viewing_player]
+	for player in players:
+		for order: Dictionary in game.orders_for_player(player):
+			if not bool(order.get("support", false)): continue
+			var piece_id := int(order.piece_id)
+			if piece_id < 0 or piece_id >= game.pieces.size() or not game.pieces[piece_id].alive: continue
+			var path: Array = order.get("path", [])
+			if path.is_empty() or game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING: continue
+			_draw_support_order(game.pieces[piece_id].position, path.back(), origin, cell)
+
+
+## One reinforcement: a bracket from the relief to a shield standing on the edge
+## of the ally's hex, and a ring around the hex itself. Deliberately unlike the
+## march ghost: no dashed run, no arrowhead driving into the square, and no
+## impulse number, because none of the three is true of an order whose whole
+## content is "stand with that formation".
+func _draw_support_order(from: Vector2i, to: Vector2i, origin: Vector2, cell: float) -> void:
+	var start := _cell_center(from, origin, cell)
+	var target := _cell_center(to, origin, cell)
+	var along := (target - start).normalized()
+	var across := Vector2(-along.y, along.x)
+	# Dashed as well as gold. Shape carries where colour cannot: a solid ring is
+	# what selection already draws, so this stays legible even to a player who
+	# reads the two hues as the same. Same vertex convention as _draw_hex.
+	var ring := PackedVector2Array()
+	for index in 6:
+		var angle := -PI * 0.5 + TAU * float(index) / 6.0
+		ring.append(target + Vector2(cos(angle), sin(angle)) * cell * 0.46)
+	for index in ring.size():
+		_draw_dashed_line(ring[index], ring[(index + 1) % ring.size()], SUPPORT_COLOR, maxf(1.8, cell * 0.045), cell * 0.1)
+	# On the ally's ring, on the side the relief is coming from. Neither hex's
+	# middle is usable - both are filled by a banner and its strength numeral -
+	# and the exact midpoint is worse still, because the green "has orders" check
+	# sits on the relief banner's corner and lands there for some directions and
+	# not others.
+	var badge := target - along * cell * 0.44
+	draw_line(start + along * cell * 0.32, badge, SUPPORT_COLOR, maxf(2.0, cell * 0.05))
+	var span := cell * 0.14
+	var shield := PackedVector2Array([
+		badge + along * span * 1.0,
+		badge + across * span * 0.7 + along * span * 0.15,
+		badge + across * span * 0.6 - along * span * 0.9,
+		badge - across * span * 0.6 - along * span * 0.9,
+		badge - across * span * 0.7 + along * span * 0.15,
+	])
+	# Seated on a dark disc so the badge holds its shape against grass, water and
+	# a banner alike rather than only against the one it was tuned on.
+	draw_circle(badge, span * 1.1, Color(0.02, 0.09, 0.16, 0.9))
+	draw_colored_polygon(shield, SUPPORT_COLOR)
+
+
 ## One of the six direction controls around the command anchor.
 ##
 ## These were drawn art with no hit testing of their own: the click resolved to
@@ -625,6 +704,11 @@ class DirectionArrow extends Control:
 	var direction := 0
 	var facing := Vector2.RIGHT
 	var tint := Color.WHITE
+	## Set when the hex this points at holds a formation the selection could
+	## reinforce. The arrow then reads as a shield and issues Support, so the
+	## order is reachable from the control the player is already using rather
+	## than only from a menu they have to know is there.
+	var supports := false
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
@@ -654,10 +738,28 @@ class DirectionArrow extends Control:
 	func _draw() -> void:
 		var radius := size.x * 0.5
 		var centre := Vector2(radius, radius)
-		draw_circle(centre, radius, Color(0.025, 0.16, 0.28, 0.9))
-		draw_arc(centre, radius, 0.0, TAU, 24, tint, maxf(1.6, radius * 0.21))
 		var vector := facing.normalized()
 		var perpendicular := Vector2(-vector.y, vector.x)
+		if supports:
+			# Inverted rather than merely reshaped. At the size these sit on the
+			# board a shield outline and a chevron are the same smudge, so the
+			# one that means something else is filled solid and carries the
+			# glyph as a cutout: it separates from its neighbours at a glance,
+			# before anyone has to make out what the shape is.
+			draw_circle(centre, radius, tint)
+			var nose := centre + vector * radius * 0.66
+			var shoulder := centre - vector * radius * 0.05
+			var heel := centre - vector * radius * 0.5
+			draw_colored_polygon(PackedVector2Array([
+				nose,
+				shoulder + perpendicular * radius * 0.48,
+				heel + perpendicular * radius * 0.36,
+				heel - perpendicular * radius * 0.36,
+				shoulder - perpendicular * radius * 0.48,
+			]), Color(0.02, 0.09, 0.16, 0.95))
+			return
+		draw_circle(centre, radius, Color(0.025, 0.16, 0.28, 0.9))
+		draw_arc(centre, radius, 0.0, TAU, 24, tint, maxf(1.6, radius * 0.21))
 		var tip := centre + vector * radius * 0.58
 		var back := centre - vector * radius * 0.42
 		draw_colored_polygon(PackedVector2Array([
@@ -715,7 +817,8 @@ func _sync_direction_arrows(origin: Vector2, cell: float) -> void:
 		# on the destination square stays readable.
 		var extent := cell * 0.19
 		arrow.facing = (destination_center - projected_center).normalized()
-		arrow.tint = tint
+		arrow.supports = not support_candidates_for(destination).is_empty()
+		arrow.tint = SUPPORT_COLOR if arrow.supports else tint
 		arrow.size = Vector2(extent * 2.0, extent * 2.0)
 		arrow.position = projected_center.lerp(destination_center, 0.5) - arrow.size * 0.5
 		arrow.visible = true
@@ -730,6 +833,12 @@ func _on_direction_arrow_chosen(direction: int) -> void:
 	var projected: Vector2i = game.pieces[anchor_id].position if game.phase == StrategoGame.PHASE_LEFTOVER_PLANNING else game.projected_main_destination(anchor_id)
 	var destination := HexGrid.neighbor(projected, direction)
 	if not game.is_inside(destination): return
+	# A shield arrow issues the order it is drawn as. Falling through to the
+	# ordinary step would submit the identical path permissively and lose the
+	# fact that it was meant as a reinforcement.
+	if not support_candidates_for(destination).is_empty():
+		issue_support_to(destination)
+		return
 	_issue_order_to_square(destination, game.piece_at(destination))
 	queue_redraw()
 
@@ -1104,6 +1213,7 @@ func begin_march(steps: Array) -> void:
 		_march_steps[piece_id].append({
 			"beat": _march_beats.find(int(step.get("impulse", 0))),
 			"from": from, "to": to, "bounce": bounce,
+			"support": bool(step.get("support", false)),
 		})
 		# A bounce ends where it began; only a real move advances the formation.
 		running[piece_id] = from if bounce else to
@@ -1152,7 +1262,16 @@ func _march_offset(piece_id: int, cell: float) -> Vector2:
 				# Out and back inside one beat: the formation commits, is
 				# refused, and returns. A bounce otherwise animates as nothing
 				# at all, which reads as the order having been ignored.
-				visual = from_point.lerp(to_point, _bounce_lunge(progress) * BOUNCE_LUNGE)
+				#
+				# A reinforcement that found its ally's hex quiet is the one
+				# bounce that is not a refusal. The lunge curve says "ran into
+				# something and was stopped", which is wrong twice over here:
+				# nothing stopped it, and what it appeared to charge was its own
+				# line. It leans in and settles back instead.
+				if bool(step.get("support", false)):
+					visual = from_point.lerp(to_point, _support_lean(progress) * SUPPORT_LEAN)
+				else:
+					visual = from_point.lerp(to_point, _bounce_lunge(progress) * BOUNCE_LUNGE)
 			else:
 				visual = from_point.lerp(to_point, eased)
 			break
@@ -1174,6 +1293,13 @@ static func _bounce_lunge(progress: float) -> float:
 		return 1.0
 	var give := (progress - BOUNCE_HOLD) / (1.0 - BOUNCE_HOLD)
 	return 1.0 - give * give
+
+
+## How far a relief has leaned toward the ally it came to stand with. A single
+## smooth rise and fall with no dead stop in it, because nothing refused it: it
+## moved up, found the hex quiet, and settled back into its own.
+static func _support_lean(progress: float) -> float:
+	return sin(progress * PI)
 
 
 ## A formation killed this round is off the board long before the round is
@@ -1473,7 +1599,16 @@ func _handle_right_click(screen_position: Vector2) -> void:
 		# shortcut. On an enemy this preserves the Attack/Volley choice; on an
 		# empty adjacent hex it makes Volley reachable instead of silently
 		# interpreting the right-click as movement.
-		if not _selected_archer_can_volley(clicked):
+		#
+		# A friendly hex the selection could reinforce needs the same right of
+		# way, and did not have it. The shortcut issues orders permissively, and
+		# permissive validation accepts walking into your own line, so the first
+		# right-click quietly succeeded as a plain march and never reached the
+		# menu. The second one appended the same hex to the same path, failed the
+		# adjacency check against itself, and only then fell through - which is
+		# why Support appeared to need two clicks and why the order it then
+		# issued was one the player already had.
+		if not _selected_archer_can_volley(clicked) and support_candidates_for(clicked).is_empty():
 			var result := _issue_order_to_square(clicked, clicked_piece, true)
 			if bool(result.get("ok", false)):
 				queue_redraw()
@@ -1512,35 +1647,54 @@ func _open_context_menu(screen_position: Vector2) -> void:
 	_context_menu.clear()
 	_context_menu_cell = cell
 	_context_menu_piece = int(occupant.id) if visible_occupant else StrategoGame.EMPTY
+	for entry in context_actions_for(cell):
+		_context_menu.add_item(String(entry[1]), int(entry[0]))
+	if _context_menu.item_count == 0: return
+	# A view built outside a scene tree has no screen position to anchor to. The
+	# entries above are still assembled, which is what a headless check of the
+	# menu reads; only the popping is skipped.
+	if not is_inside_tree(): return
+	_context_menu.position = Vector2i(get_screen_position() + screen_position)
+	_context_menu.reset_size()
+	_context_menu.popup()
+
+
+## What the menu would offer for `cell`, as [id, label] pairs in display order.
+##
+## Separated from the popup for the same reason support_candidates_for and the
+## Volley queries were: what the menu offers is a rule about the current phase
+## and selection, and it should be checkable without a window to click in.
+func context_actions_for(cell: Vector2i) -> Array:
+	var entries: Array = []
+	if game == null or not game.is_inside(cell): return entries
+	var occupant := game.piece_at(cell)
+	var visible_occupant := not occupant.is_empty() and game.is_piece_visible_to(occupant, viewing_player)
 	if visible_occupant:
-		_context_menu.add_item("Inspect", CONTEXT_EXAMINE)
+		entries.append([CONTEXT_EXAMINE, "Inspect"])
 		# Targets the unit under the cursor, not the current selection - the
 		# whole point is cancelling one formation's orders without disturbing
 		# whatever else is currently selected.
 		if int(occupant.player) == viewing_player and interaction_enabled and _piece_has_a_pending_order(int(occupant.id)):
-			_context_menu.add_item("Cancel Order", CONTEXT_CANCEL)
+			entries.append([CONTEXT_CANCEL, "Cancel Order"])
 		# Walking into an ally is the same order, but it does not read as one.
 		# Naming it is the point: reinforcing a formation that is about to be
 		# attacked should look like a decision, not a pathing accident.
 		if not support_candidates_for(cell).is_empty():
-			_context_menu.add_item("Support", CONTEXT_SUPPORT)
+			entries.append([CONTEXT_SUPPORT, "Support"])
 	var archer_id := _selected_archer_id()
 	if archer_id != StrategoGame.EMPTY:
 		var enemy_here := visible_occupant and not game.are_allied_players(viewing_player, int(occupant.player))
 		if enemy_here and game.ranged_order_is_available(viewing_player, archer_id, cell, int(occupant.id)):
-			_context_menu.add_item("Attack", CONTEXT_SHOOT)
+			entries.append([CONTEXT_SHOOT, "Attack"])
 		if game.ranged_order_is_available(viewing_player, archer_id, cell):
 			# "Volley" for suppressing fire: it reads as an action rather than as
 			# a description of the targeting mode.
-			_context_menu.add_item("Volley", CONTEXT_SUPPRESS)
+			entries.append([CONTEXT_SUPPRESS, "Volley"])
 			# Offered only once an ally has actually declared a Volley here, so
 			# the third choice appears exactly when there is something to join.
 			if game.volley_leader_at(viewing_player, cell, archer_id) != StrategoGame.EMPTY:
-				_context_menu.add_item("Join Volley", CONTEXT_JOIN_VOLLEY)
-	if _context_menu.item_count == 0: return
-	_context_menu.position = Vector2i(get_screen_position() + screen_position)
-	_context_menu.reset_size()
-	_context_menu.popup()
+				entries.append([CONTEXT_JOIN_VOLLEY, "Join Volley"])
+	return entries
 
 
 ## True when a formation has anything to cancel: a main-phase path, an aimed
@@ -1557,6 +1711,33 @@ func _selected_archer_id() -> int:
 	for piece_id in selected_piece_ids:
 		if game.pieces[piece_id].role == StrategoGame.ROLE_ARCHER: return int(piece_id)
 	return StrategoGame.EMPTY
+
+
+## Order every eligible member of the selection up onto `cell`. Shared by the
+## context menu and the direction arrows, so the two cannot drift apart, and
+## reports what it did rather than the generic "Order updated" every other order
+## emitted: support and an ordinary march are the same step, and the toast was
+## the only place the difference could have been stated.
+func issue_support_to(cell: Vector2i) -> bool:
+	var candidates := support_candidates_for(cell)
+	if candidates.is_empty(): return false
+	var before := _current_order_snapshot()
+	var ordered := 0
+	var refusal := "Invalid order."
+	for candidate_id in candidates:
+		var result := game.set_support_order(viewing_player, candidate_id, cell)
+		if bool(result.get("ok", false)): ordered += 1
+		else: refusal = String(result.get("message", refusal))
+	if ordered == 0:
+		order_changed.emit(refusal)
+		return false
+	if before != _current_order_snapshot(): _record_order_undo(before)
+	var holder := game.piece_at(cell)
+	var name := game.piece_display_code(holder) if not holder.is_empty() else "the line"
+	order_changed.emit("Moving up in support of %s." % name if ordered == 1 else "%d formations moving up in support of %s." % [ordered, name])
+	_emit_selected_description()
+	queue_redraw()
+	return true
 
 
 ## Which of the current selection could move up in support of the formation on
@@ -1597,19 +1778,7 @@ func _on_context_menu_pressed(id: int) -> void:
 			queue_redraw()
 		return
 	if id == CONTEXT_SUPPORT:
-		var candidates := support_candidates_for(_context_menu_cell)
-		if candidates.is_empty(): return
-		var before_support := _current_order_snapshot()
-		var ordered := 0
-		var refusal := "Invalid order."
-		for candidate_id in candidates:
-			var support_result := game.set_support_order(viewing_player, candidate_id, _context_menu_cell)
-			if bool(support_result.get("ok", false)): ordered += 1
-			else: refusal = String(support_result.get("message", refusal))
-		if ordered > 0 and before_support != _current_order_snapshot(): _record_order_undo(before_support)
-		order_changed.emit("Moving up in support." if ordered > 0 else refusal)
-		_emit_selected_description()
-		queue_redraw()
+		issue_support_to(_context_menu_cell)
 		return
 	var archer_id := _selected_archer_id()
 	if archer_id == StrategoGame.EMPTY: return

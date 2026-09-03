@@ -1001,6 +1001,13 @@ func set_unit_order(player: int, piece_id: int, path: Array, ranged_target: Vect
 		"piece_id": piece_id, "player": player, "path": normalized_path,
 		"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
 		"shot_type": "", "leftover": Vector2i(-1, -1),
+		# Kept on the order rather than consumed by the validation below, the way
+		# volley_support already is. Walking into an ally and reinforcing it are
+		# the same move, so intent is the only thing that separates them, and
+		# discarding it left nothing downstream able to tell them apart: the
+		# ghost drew a march, the bounce animated a refusal, and the player got
+		# the same "Order updated" either way.
+		"support": support and not normalized_path.is_empty(),
 	}
 	candidate.sequence = _next_order_sequence(order_for_piece(piece_id))
 	var support_position := normalized_path[normalized_path.size() - 1] if support and not normalized_path.is_empty() else Vector2i(-1, -1)
@@ -2606,9 +2613,46 @@ func _movement_event(piece_id: int, from: Vector2i, to: Vector2i, batch_name: St
 ## formations standing where they were refused from.
 func _bounce_event(ids: Array[int], position: Vector2i, batch_name: String, reason: String, stationary_id: int = EMPTY) -> Dictionary:
 	var origins: Dictionary = {}
+	# Which of these were reinforcing rather than being turned back. A relief
+	# that finds the hex quiet has not failed at anything, and saying so here is
+	# what lets the board draw it standing ready instead of lunging at its own
+	# line and being refused.
+	var supporting: Array[int] = []
 	for id in ids:
 		if id >= 0 and id < pieces.size(): origins[id] = pieces[id].position
-	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "origins": origins, "stationary_id": stationary_id, "to": position, "result": "bounce", "reason": reason}
+		if is_support_order(id): supporting.append(id)
+	return {"ok": true, "action": "bounce", "batch": batch_name, "combat": false, "participants": ids, "origins": origins, "supporting": supporting, "stationary_id": stationary_id, "to": position, "result": "bounce", "reason": reason}
+
+
+## Whether this formation's standing order is a deliberate reinforcement rather
+## than an ordinary march that happens to end on an ally.
+func is_support_order(piece_id: int) -> bool:
+	return bool(order_for_piece(piece_id).get("support", false))
+
+
+## What a reinforcement would bring to the hex it is stepping onto, in short
+## phrases a panel can list. Deliberately stated as what the relief does to its
+## own side rather than as a promised pool size: the comparative dice are earned
+## against whoever actually turns up, which planning cannot know. Raising the
+## side's best Weight or Strength is the part the relief controls, so that is
+## what this reports.
+func support_contribution(piece_id: int, target: Vector2i) -> Array[String]:
+	var lines: Array[String] = []
+	if piece_id < 0 or piece_id >= pieces.size(): return lines
+	var relief: Dictionary = pieces[piece_id]
+	var holder := piece_at(target)
+	if holder.is_empty() or not are_allied_players(int(relief.player), int(holder.player)): return lines
+	lines.append("+1 die, one per formation on the side")
+	var role := String(relief.role)
+	if role == ROLE_CAVALRY:
+		lines.append("+1 charge die: a relief is never braced")
+	elif role == ROLE_INFANTRY:
+		lines.append("no defence die: a relief is never braced")
+	if _weight_rank(relief) > _weight_rank(holder):
+		lines.append("raises the side's Weight to %s" % String(relief.weight))
+	if int(relief.strength) > int(holder.strength):
+		lines.append("raises the side's Strength to %d" % int(relief.strength))
+	return lines
 
 
 ## The only penalized bounce: a highest-score tie spanning opposing teams.
@@ -2907,6 +2951,10 @@ func _encode_main_orders() -> Array[Dictionary]:
 				# Reassigning it on load would place formations differently from
 				# the game this is meant to reproduce.
 				"sequence": int(order.get("sequence", 0)),
+				# Recorded because bounce events name the formations that were
+				# reinforcing, so a replay that dropped this would produce a
+				# different event digest than the game it is verifying.
+				"support": bool(order.get("support", false)),
 			})
 	return encoded
 
@@ -3281,6 +3329,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 			"piece_id": piece_id, "player": player, "path": path,
 			"ranged_target": Vector2i(-1, -1), "ranged_target_id": -1,
 			"leftover": Vector2i(-1, -1), "sequence": int(entry.get("sequence", 0)),
+			"support": bool(entry.get("support", false)),
 		}
 		if player not in orders:
 			orders[player] = {}
@@ -3293,7 +3342,7 @@ func apply_replay_main_orders(encoded_orders: Array) -> Dictionary:
 		# friendly formation holds may clear before the step comes off, and
 		# replay's job is to reproduce what was submitted, not to re-judge it
 		# under a stricter rule than was actually in force.
-		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, Vector2i(-1, -1), Vector2i(-1, -1), -1, false)
+		var result := set_unit_order(int(candidate.player), int(candidate.piece_id), candidate.path, Vector2i(-1, -1), Vector2i(-1, -1), -1, false, bool(candidate.get("support", false)))
 		if not bool(result.get("ok", false)):
 			orders.clear()
 			return {"ok": false, "message": "Recorded main order rejected: %s" % String(result.get("message", "invalid order"))}
