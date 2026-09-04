@@ -2367,6 +2367,62 @@ func _strongest_opposing_participant(piece_id: int, participants: Array) -> Dict
 	return selected if not selected.is_empty() else fallback
 
 
+## Where a beaten formation tries next when the hex directly behind it is taken
+## by one of its own. Treat directly away as 6 o'clock: clockwise from there is
+## its left-hand (7 o'clock) hex, then the right-hand (5 o'clock) one, then
+## wider, then straight back the way the enemy came. Returns {} when every one
+## of them is blocked.
+const RETREAT_FALLBACKS := [["left", 1], ["right", -1], ["wide left", 2], ["wide right", -2], ["backward", 3]]
+
+
+func _retreat_fallback(anchor: Vector2i, direction: int) -> Dictionary:
+	if direction < 0: return {}
+	for option in RETREAT_FALLBACKS:
+		var candidate_direction := (direction + int(option[1]) + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT
+		var candidate := HexGrid.neighbor(anchor, candidate_direction)
+		if is_inside(candidate) and not is_blocked_terrain(candidate) and piece_at(candidate).is_empty():
+			return {"target": candidate, "side": String(option[0])}
+	return {}
+
+
+## Who keeps the hex when several formations of one side fall back onto it. The
+## one whose straight line of retreat it was outranks one that had already been
+## shunted there, then the stronger, then the order the player issued, so the
+## answer never depends on the order the retreats happen to be listed in.
+func _retreat_claim_order(group: Array) -> Array:
+	var ordered := group.duplicate()
+	ordered.sort_custom(func(first: Dictionary, second: Dictionary) -> bool:
+		var first_direct := String(first.get("shunt_side", "")).is_empty()
+		var second_direct := String(second.get("shunt_side", "")).is_empty()
+		if first_direct != second_direct: return first_direct
+		var first_strength := int(pieces[int(first.piece_id)].strength)
+		var second_strength := int(pieces[int(second.piece_id)].strength)
+		if first_strength != second_strength: return first_strength > second_strength
+		return _order_sequence_for(int(first.piece_id)) < _order_sequence_for(int(second.piece_id)))
+	return ordered
+
+
+func _retreat_moved_event(retreat: Dictionary, target: Vector2i, shunt_side: String, batch_name: String) -> Dictionary:
+	var id := int(retreat.piece_id)
+	return {
+		"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id,
+		"from": retreat.from, "to": target, "direct_to": retreat.get("direct_to", target),
+		"shunt_side": shunt_side, "result": "retreat_shunted" if not shunt_side.is_empty() else "retreated",
+		"combat": false, "known_to": _move_viewers(int(pieces[id].player), retreat.from, target),
+	}
+
+
+func _retreat_lost_event(retreat: Dictionary, toward: Vector2i, reason: String, batch_name: String) -> Dictionary:
+	var id := int(retreat.piece_id)
+	# Viewers resolved before the removal, which blanks the position.
+	var lost_viewers := _move_viewers(int(pieces[id].player), retreat.from, toward)
+	return {
+		"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id,
+		"from": retreat.from, "to": toward, "result": "retreat_destroyed",
+		"reason": reason, "combat": false, "known_to": lost_viewers,
+	}
+
+
 func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array[Dictionary]:
 	var events: Array[Dictionary] = []
 	var valid_by_target: Dictionary = {}
@@ -2387,31 +2443,20 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 				if not are_allied_players(int(pieces[id].player), int(blocker.player)):
 					destroy_reason = "enemy_blocked"
 				else:
-					# Treat directly away as 6 o'clock. Moving clockwise from there is
-					# the retreating formation's left-hand (7 o'clock) hex, then the
-					# right-hand (5 o'clock) one. Past those it will take any hex it
-					# can still reach, in widening order. Only the three nearest used
-					# to be tried, which meant a side that moved reinforcements up
-					# behind its own line killed the formations falling back into it,
-					# and losing one fight could cost several formations that had
-					# somewhere to go the whole time.
+					# An ally is standing there. Only the three nearest hexes used to
+					# be tried, which meant a side that moved reinforcements up behind
+					# its own line killed the formations falling back into it.
 					var anchor: Vector2i = retreat.get("anchor", retreat.from)
 					var direction := int(retreat.get("direction", HexGrid.direction_between(anchor, direct_target)))
-					if direction >= 0:
-						for option in [["left", 1], ["right", -1], ["wide left", 2], ["wide right", -2], ["backward", 3]]:
-							var candidate_direction := (direction + int(option[1]) + HexGrid.DIRECTION_COUNT) % HexGrid.DIRECTION_COUNT
-							var candidate := HexGrid.neighbor(anchor, candidate_direction)
-							if is_inside(candidate) and not is_blocked_terrain(candidate) and piece_at(candidate).is_empty():
-								target = candidate
-								shunt_side = String(option[0])
-								break
-					if shunt_side.is_empty():
+					var fallback := _retreat_fallback(anchor, direction)
+					if fallback.is_empty():
 						destroy_reason = "friendly_congestion"
+					else:
+						target = fallback.target
+						shunt_side = String(fallback.side)
 		if not destroy_reason.is_empty():
-			# Viewers resolved before the removal, which blanks the position.
-			var lost_viewers := _move_viewers(int(pieces[id].player), retreat.from, direct_target)
+			var lost_event := _retreat_lost_event(retreat, direct_target, destroy_reason, batch_name)
 			_remove_piece(id)
-			var lost_event := {"ok": true, "action": "retreat", "batch": batch_name, "piece_id": id, "from": retreat.from, "to": direct_target, "result": "retreat_destroyed", "reason": destroy_reason, "combat": false, "known_to": lost_viewers}
 			events.append(lost_event)
 			battle_history.append(lost_event.duplicate(true))
 		else:
@@ -2421,28 +2466,57 @@ func _resolve_retreats(retreats: Array[Dictionary], batch_name: String) -> Array
 			resolved_retreat.direct_to = direct_target
 			resolved_retreat.shunt_side = shunt_side
 			valid_by_target[target].append(resolved_retreat)
+	# Settled first, so the board a converging group has to shunt around below is
+	# the finished one rather than one still being written.
+	var contested: Array = []
 	for target in valid_by_target:
 		var group: Array = valid_by_target[target]
 		if group.size() == 1:
 			var retreat: Dictionary = group[0]
 			_place_piece(int(retreat.piece_id), target, retreat.from)
-			var shunt_side := String(retreat.get("shunt_side", ""))
-			var moved_event := {"ok": true, "action": "retreat", "batch": batch_name, "piece_id": int(retreat.piece_id), "from": retreat.from, "to": target, "direct_to": retreat.get("direct_to", target), "shunt_side": shunt_side, "result": "retreat_shunted" if not shunt_side.is_empty() else "retreated", "combat": false, "known_to": _move_viewers(int(pieces[int(retreat.piece_id)].player), retreat.from, target)}
+			var moved_event := _retreat_moved_event(retreat, target, String(retreat.get("shunt_side", "")), batch_name)
 			events.append(moved_event)
 			battle_history.append(moved_event.duplicate(true))
 			continue
 		var teams: Dictionary = {}
 		for retreat: Dictionary in group: teams[_team_for_piece(int(retreat.piece_id))] = true
-		if teams.size() == 1:
-			var ids: Array[int] = []
-			for retreat: Dictionary in group:
-				ids.append(int(retreat.piece_id))
-				_remove_piece(int(retreat.piece_id))
-			var collision_event := {"ok": true, "action": "retreat_collision", "batch": batch_name, "to": target, "participants": ids, "result": "congestion_destroyed", "combat": false, "known_to": _battle_viewers_for_ids(ids)}
-			events.append(collision_event)
-			battle_history.append(collision_event.duplicate(true))
-		else:
-			events.append(_resolve_retreat_battle(group, target, batch_name))
+		if teams.size() == 1: contested.append({"target": target, "group": group})
+		else: events.append(_resolve_retreat_battle(group, target, batch_name))
+	# Several formations of one side backing into the same hex. This used to
+	# destroy every one of them, which made an ally standing in your retreat hex
+	# safer than an ally arriving at it: one already there is a blocker you shunt
+	# around, while one landing at the same moment killed you both. The widening
+	# search above exists because of the first case; this is the same fix for the
+	# second. One of them takes the hex, the rest look for their own, and only a
+	# formation with nowhere left at all is lost.
+	for entry_value in contested:
+		var entry: Dictionary = entry_value
+		var target: Vector2i = entry.target
+		var settled := false
+		for retreat_value in _retreat_claim_order(entry.group):
+			var retreat: Dictionary = retreat_value
+			var id := int(retreat.piece_id)
+			if not pieces[id].alive: continue
+			if not settled:
+				settled = true
+				_place_piece(id, target, retreat.from)
+				var claim_event := _retreat_moved_event(retreat, target, String(retreat.get("shunt_side", "")), batch_name)
+				events.append(claim_event)
+				battle_history.append(claim_event.duplicate(true))
+				continue
+			var anchor: Vector2i = retreat.get("anchor", retreat.from)
+			var direction := int(retreat.get("direction", -1))
+			var fallback := _retreat_fallback(anchor, direction)
+			if fallback.is_empty():
+				var lost_event := _retreat_lost_event(retreat, target, "friendly_congestion", batch_name)
+				_remove_piece(id)
+				events.append(lost_event)
+				battle_history.append(lost_event.duplicate(true))
+				continue
+			_place_piece(id, fallback.target, retreat.from)
+			var shunted_event := _retreat_moved_event(retreat, fallback.target, String(fallback.side), batch_name)
+			events.append(shunted_event)
+			battle_history.append(shunted_event.duplicate(true))
 	return events
 
 

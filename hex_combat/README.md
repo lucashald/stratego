@@ -458,7 +458,19 @@ right, and backward. If none of the five is free, it dies of friendly congestion
 
 Retreats from one batch resolve together, so two of them can want the same hex:
 
-- **Two allies** into one hex destroys both.
+- **Two or more allies** into one hex: one takes it and the rest look again. The
+  claim goes to whoever's straight line of retreat it was, then to the stronger,
+  then to the order the player issued. Everyone displaced re-runs the same
+  widening search from its own anchor, and only a formation with nowhere left at
+  all is lost.
+
+  This used to destroy every formation in the pile, which made an ally standing
+  in your retreat hex *safer* than an ally arriving at it: a formation already
+  there is a blocker you shunt around, while one landing at the same moment
+  killed you both. Reinforcing a defender could therefore get the pair of them
+  killed, because the relief vacated the very hex both were about to be pushed
+  into. The widening search above exists because of the standing-blocker version
+  of that complaint; the simultaneous-arrival version was simply never covered.
 - **Two enemies** into one hex fights a retreat battle. This is still scored
   per formation rather than per side, with the comparative Weight and Strength
   dice but no role die, because nobody there is charging and nobody is braced on
@@ -1016,9 +1028,14 @@ without leaking Role or Strength. `UnitIconCatalog` is the single place a
 
 Everything below was measured at commit `a8986c8`.
 
-**The suite passes.** 654 checks, 0 failures. Two assertions in it used to depend
+**The suite passes.** 664 checks, 0 failures. Two assertions in it used to depend
 on open dice and failed roughly one run in a hundred each; both are now pinned
-with forced rolls, and the suite was run twelve consecutive times to confirm it. Coverage includes hex topology,
+with forced rolls, and the suite was run twelve consecutive times to confirm it.
+
+**Replays recorded before the retreat change will not verify.** Converging allies
+now make room for each other instead of being destroyed, so any saved replay
+whose rounds contain one of those pile-ups replays to a different state than the
+digest it was written with. That is the rules change showing up, not corruption. Coverage includes hex topology,
 fog, impulse timing, movement and collisions, the side-based pool, bracing,
 placement order, crit cancelling, retreat widening, support, massed volleys,
 reposition, objectives, deployment, replay round trips and tamper rejection,
@@ -1042,11 +1059,18 @@ map every formation has spent its allowance by the third and proposes nothing.
 **Bot-vs-bot balance, 120 games per scenario from seed 1.** Note these are the
 bot's results, and the bot underplays fast flanking armies.
 
-| Scenario | Result | Mean length |
-| --- | --- | --- |
-| Highfield | Blue 86, Red 34 | 5.5 rounds |
-| Meeting | Blue 49, Red 71 | 8.2 rounds |
-| Skirmish | Blue 56, Red 62, 2 draws | 11.1 rounds |
+| Scenario | Result | Mean length | Before the retreat change |
+| --- | --- | --- | --- |
+| Highfield | Blue 81, Red 39 | 5.7 rounds | Blue 86, Red 34, 5.5 rounds |
+| Meeting | Blue 47, Red 73 | 7.9 rounds | Blue 49, Red 71, 8.2 rounds |
+| Skirmish | Blue 50, Red 69, 1 draw | 10.9 rounds | Blue 56, Red 62, 2 draws, 11.1 rounds |
+
+Letting converging allies live moved Highfield about four points back toward even
+and left Meeting where it was. Skirmish moved about six points to Red, which is
+roughly one standard deviation at this sample size and so is not separable from
+noise without a longer run. Battles also run marginally longer, and Highfield now
+ends by destruction slightly more often (20 games rather than 17), which is what
+you would expect from formations surviving traffic to go on fighting.
 
 **Highfield is no longer near-even.** The source comment on `HIGHFIELD_WARDENS`
 and the previous README both claim roughly 51/49 over 200 games. It now runs 72%

@@ -79,6 +79,7 @@ func _run() -> void:
 	_test_blocked_retreat_destroys_loser()
 	_test_friendly_blocked_retreat_shunts()
 	_test_enemy_retreat_collision_battle()
+	_test_allies_falling_back_on_one_hex_make_room_instead_of_dying()
 	_test_impulse_sighting_is_remembered()
 	_test_combat_reveal_requires_current_sight()
 	_test_bridge_end_of_round_victory()
@@ -2212,6 +2213,53 @@ func _test_friendly_blocked_retreat_shunts() -> void:
 	_expect(recorded.size() == 1 and String(recorded[0].get("action", "")) == "retreat", "a retreat is recorded in the battle history")
 	_expect(String(recorded[0].get("reason", "")) == "friendly_congestion" and int(recorded[0].get("piece_id", -1)) == boxed, "with the formation it destroyed and why")
 	_expect(not recorded[0].get("known_to", []).is_empty(), "and who was in a position to see it")
+
+
+func _test_allies_falling_back_on_one_hex_make_room_instead_of_dying() -> void:
+	# Two of one side beaten in the same fight and pushed onto the same hex used
+	# to destroy every one of them. That made an ally standing in your retreat
+	# hex safer than an ally arriving at it, which is backwards: a formation
+	# already there is a blocker you shunt around, while one landing at the same
+	# moment killed you both. Nothing had ever tested the rule, which is how it
+	# survived the widening search being added for the standing-blocker case.
+	var game := _test_game()
+	var holder := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(10, 10), 7)
+	var relief := game.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(9, 10), 7)
+	var charger := game.add_piece(StrategoGame.MEDIUM_CAVALRY, StrategoGame.RED, Vector2i(11, 9), 7)
+	game.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
+	# The relief steps up onto its ally, vacating the hex both will be pushed
+	# into, and the Cavalry charges the hill they are standing on.
+	_expect(bool(game.set_leftover_order(StrategoGame.BLUE, relief, Vector2i(10, 10)).get("ok", false)), "the relief moves up onto its ally")
+	_expect(bool(game.set_leftover_order(StrategoGame.RED, charger, Vector2i(10, 10)).get("ok", false)), "and the Cavalry charges the pair")
+	# Blue rolls first here, three dice for two bodies and the braced holder's
+	# defence die, keeping a 3 for 10; Red then keeps a 5 for 12 off its body and
+	# its charge. Blue loses by two and both fall back on the hex the relief just
+	# left.
+	var events := _ready_and_resolve_reposition(game, [3, 3, 3, 5, 1] as Array[int])
+	_expect(_events_with_action(events, "melee").size() == 1, "one fight, two Blue formations against the charge")
+	_expect(game.pieces[holder].alive and game.pieces[relief].alive, "both survive being beaten, because both had somewhere to go")
+	_expect(game.pieces[holder].position != game.pieces[relief].position, "and they end up on different hexes")
+	_expect(int(game.pieces[holder].strength) == 5 and int(game.pieces[relief].strength) == 5, "each paying the margin and nothing more")
+	_expect(_events_with_action(events, "retreat_collision").is_empty(), "no mutual destruction is reported, because none happened")
+	var shunted := 0
+	for event: Dictionary in _events_with_action(events, "retreat"):
+		if String(event.get("result", "")) == "retreat_shunted": shunted += 1
+	_expect(shunted == 1, "exactly one of them had to look elsewhere; the other took the hex")
+
+	# The rule that genuinely kills is still there: a formation with nowhere at
+	# all to go is lost, and boxing one in completely still does it.
+	var boxed := _test_game()
+	var trapped := boxed.add_piece(StrategoGame.MEDIUM_INFANTRY, StrategoGame.BLUE, Vector2i(0, 0), 7)
+	var attacker := boxed.add_piece(StrategoGame.MEDIUM_CAVALRY, StrategoGame.RED, Vector2i(0, 1), 7)
+	# (0,0) is a board corner, so every hex it could fall back to is off the
+	# board except the one the attacker is coming from.
+	boxed.phase = StrategoGame.PHASE_LEFTOVER_PLANNING
+	boxed.set_leftover_order(StrategoGame.RED, attacker, Vector2i(0, 0))
+	var boxed_events := _ready_and_resolve_reposition(boxed, [5, 1, 3, 3] as Array[int])
+	_expect(not boxed.pieces[trapped].alive, "a beaten formation with nowhere to fall back to is still destroyed")
+	var reasons: Array[String] = []
+	for event: Dictionary in _events_with_action(boxed_events, "retreat"): reasons.append(String(event.get("reason", "")))
+	_expect("off_board" in reasons, "and the log says why rather than reporting a collision")
 
 
 func _test_enemy_retreat_collision_battle() -> void:

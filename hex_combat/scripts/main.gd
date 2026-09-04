@@ -2061,6 +2061,11 @@ func _action_label(action: String) -> String:
 		"ranged": return "RANGED ATTACK"
 		"bounce": return "COLLISION BOUNCE"
 		"retreat": return "RETREAT"
+		# No longer produced: allies converging on one hex now make room for each
+		# other. Kept because an archived replay can still carry the event, and
+		# the fallback below would announce it as MELEE COMBAT between two of the
+		# player's own banners, which is what it used to do.
+		"retreat_collision": return "RETREAT COLLISION"
 		"leftover_move": return "REPOSITION"
 		"no_contact": return "NO VISIBLE CONTACT"
 	return "MELEE COMBAT"
